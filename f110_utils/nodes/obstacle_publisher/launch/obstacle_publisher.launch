@@ -3,6 +3,10 @@
        <arg name="start_s" default="0"/>
        <arg name="speed_scaler" default="0.5"/>
        <arg name="constant_speed" default="false"/>
+       <!-- Sinusoidal path deviation arguments -->
+       <arg name="path_amplitude" default="0.8"/>
+       <arg name="path_frequency" default="0.15"/>
+       <arg name="path_phase" default="0.0"/>
 
        <!-- Launch Collision detector as well -->
      <node name="collision_detector" pkg="obstacle_publisher" type="collision_detector.py" output="screen"/>
@@ -14,9 +18,13 @@
               <param name="trajectory" value="$(arg trajectory)"/>
               <param name="speed_scaler" value="$(arg speed_scaler)"/>
               <param name="constant_speed" value="$(arg constant_speed)"/>
+              <!-- Sinusoidal path deviation parameters -->
+              <param name="path_amplitude" value="$(arg path_amplitude)"/>
+              <param name="path_frequency" value="$(arg path_frequency)"/>
+              <param name="path_phase" value="$(arg path_phase)"/>
        </node>
 
 
     <!-- Launch Dynamic Obstacle Publisher -->
-    <!--node name="dynamic_obstacle_server" pkg="obstacle_publisher" type="dynamic_obs_pub_server.py" output="screen"/-->
+    <node name="dynamic_obstacle_server" pkg="obstacle_publisher" type="dynamic_obs_pub_server.py" output="screen"/>
 </launch>
