@@ -1,4 +1,0 @@
-car_init_theta: 0.0
-car_init_x: -0.9085476875265694
-car_init_y: 0.38109302976275217
-description: Starting position based on optimal centerline waypoint 10
