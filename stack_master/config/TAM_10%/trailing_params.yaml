@@ -1,0 +1,26 @@
+# ===================================================================
+# TAM_10% SCALED INDY CAR TRAILING CONTROLLER PARAMETERS
+# ===================================================================
+# Trailing controller parameters for 10% scaled TAM Indy car.
+# Distances scaled by 0.1 factor, control gains adjusted for smaller vehicle.
+# ===================================================================
+
+## Trailing Controller Parameters
+allow_accel_trailing: False
+trailing_mode: True #True = Distance, False = Time
+prioritize_dyn: True
+
+# Trailing gap - REALISTIC F1/10 FOLLOWING DISTANCE
+# ORIGINAL: 2.0m → F1/10: 1.0m (appropriate for F1/10 scale following)
+# SCALED by 0.1 factor: 0.2
+trailing_gap: 1.0
+
+# Control gains - UNCHANGED (dimensionless control parameters)
+trailing_p_gain: 1.0
+trailing_i_gain: 0.0  
+trailing_d_gain: 0.2
+
+# Blind trailing speed - REALISTIC F1/10 SPEED
+# ORIGINAL: 1.5 m/s → F1/10: 1.5 m/s (safe following speed)
+# SCALED according to velocity sclaing: 1.5 * wurzel(0.1) = 0.47
+blind_trailing_speed: 1.5

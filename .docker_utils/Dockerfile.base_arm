@@ -8,9 +8,10 @@ SHELL [ "/bin/bash", "-c" ]
 
 ADD ./.devcontainer/.install_utils /.install_utils
 
-# install ros packages
+# install ros packages and X11 support
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && xargs apt-get install -y < /.install_utils/linux_req_car.txt 
+RUN apt-get update && xargs apt-get install -y < /.install_utils/linux_req_car.txt && \
+        apt-get install -y xvfb xauth x11-utils 
 
 # install python packages
 RUN pip3 install "setuptools>=61,<65"
@@ -22,13 +23,31 @@ RUN pip3 install -r /.install_utils/requirements.txt && \
 # install catkin build tools
 RUN sh -c 'echo "deb http://packages.ros.org/ros/ubuntu `lsb_release -sc` main" \
         > /etc/apt/sources.list.d/ros-latest.list' && \
-        wget http://packages.ros.org/ros.key -O - | sudo apt-key add - && \
+        curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ros-latest.list && \
         apt-get update && apt-get install -y python3-catkin-tools
+
 
 # install cartographer
 RUN . /.install_utils/cartographer_req.sh && . /.install_utils/install_abseil.sh
 
 # install particle filter
 RUN . /.install_utils/dev_pf_setup.sh 
+
+# Create user atlas with sudo privileges
+ARG USERNAME=atlas
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+
+RUN groupadd --gid $USER_GID $USERNAME \
+        && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME -s /bin/bash \
+        && apt-get update \
+        && apt-get install -y sudo \
+        && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
+        && chmod 0440 /etc/sudoers.d/$USERNAME
+
+# Create catkin workspace directory structure
+RUN mkdir -p /home/$USERNAME/catkin_ws/src \
+        && chown -R $USERNAME:$USERNAME /home/$USERNAME/catkin_ws
 
 ENTRYPOINT [ "bash", "/.install_utils/ros_entrypoint.sh" ]

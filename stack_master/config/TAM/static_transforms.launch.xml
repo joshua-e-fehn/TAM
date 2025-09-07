@@ -1,0 +1,109 @@
+<!-- ================================================================= -->
+<!-- TAM INDY CAR STATIC TRANSFORMS CONFIGURATION                     -->
+<!-- ================================================================= -->
+<!-- This file defines the spatial relationships (transforms) between  -->
+<!-- coordinate frames on the TAM scaled Indy car. These transforms    -->
+<!-- are critical for sensor fusion, localization, and ensuring all    -->
+<!-- sensor data is properly aligned in the vehicle coordinate system. -->
+<!--                                                                   -->
+<!-- Data source: Eav24_default.json - actual measured sensor positions -->
+<!-- Coordinate system: ROS standard (X=forward, Y=left, Z=up)        -->
+<!-- ================================================================= -->
+
+<launch>
+  <arg name="pub_map_to_odom" default="True"/>
+  
+  <!-- ============================================================= -->
+  <!-- PRIMARY NAVIGATION SENSORS                                   -->
+  <!-- ============================================================= -->
+  
+  <!-- IMU (Inertial Measurement Unit) Transform -->
+  <!-- DATA SOURCE: Eav24_default.json -> kistlerLeverarm -> translation -->
+  <!-- ORIGINAL VALUES: x:148.1cm, y:0cm, z:18.7cm -->
+  <!-- CONVERTED TO METERS: x:1.481m, y:0.0m, z:0.187m -->
+  <!-- REASONING: Kistler is the primary high-precision INS/IMU system -->
+  <!-- ALTERNATIVE: Bosch leverarm at x:0.01m, y:0.02m, z:0.03m (backup system) -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_imu" 
+        args="1.481 0.0 0.187 0.0 0.0 0.0 1.0 /base_link /imu" />
+
+  <!-- Primary LiDAR Transform (for single-LiDAR compatibility) -->
+  <!-- DATA SOURCE: Eav24_default.json -> lidar_front -> leverArm -> translation -->
+  <!-- VALUES: x:85cm, y:0cm, z:67cm = x:0.85m, y:0.0m, z:0.67m -->
+  <!-- REASONING: Front-mounted LiDAR provides primary ranging/SLAM data -->
+  <!-- NOTE: This maintains compatibility with single-LiDAR systems expecting /laser frame -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_laser" 
+        args="0.85 0.0 0.67 0.0 0.0 0.0 1.0 /base_link /laser" />
+
+  <!-- ============================================================= -->
+  <!-- MULTI-SENSOR LIDAR ARRAY (360° COVERAGE)                     -->
+  <!-- ============================================================= -->
+  
+  <!-- Front LiDAR Transform -->
+  <!-- DATA SOURCE: Eav24_default.json -> lidar_front -> leverArm -->
+  <!-- POSITION: x:85cm, y:0cm, z:67cm forward-center mounted -->
+  <!-- ROTATION: No rotation (aligned with vehicle) -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_lidar_front" 
+        args="0.85 0.0 0.67 0.0 0.0 0.0 1.0 /base_link /lidar_front" />
+        
+  <!-- Left LiDAR Transform -->
+  <!-- DATA SOURCE: Eav24_default.json -> lidar_left -> leverArm -->
+  <!-- POSITION: x:15cm, y:-13cm, z:72cm (slightly left of center) -->
+  <!-- ROTATION: 240° yaw = -2.094 radians (pointing left-rear for coverage) -->
+  <!-- REASONING: Provides left-side and rear-left obstacle detection -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_lidar_left" 
+        args="0.15 -0.13 0.72 0.0 0.0 -2.094 0.0 /base_link /lidar_left" />
+        
+  <!-- Right LiDAR Transform -->
+  <!-- DATA SOURCE: Eav24_default.json -> lidar_right -> leverArm -->
+  <!-- POSITION: x:15cm, y:13cm, z:72cm (slightly right of center) -->
+  <!-- ROTATION: 120° yaw = 2.094 radians (pointing right-rear for coverage) -->
+  <!-- REASONING: Provides right-side and rear-right obstacle detection -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_lidar_right" 
+        args="0.15 0.13 0.72 0.0 0.0 2.094 0.0 /base_link /lidar_right" />
+
+  <!-- ============================================================= -->
+  <!-- VISION AND RADAR SENSORS                                     -->
+  <!-- ============================================================= -->
+
+  <!-- Front Camera Transform -->
+  <!-- DATA SOURCE: Eav24_default.json -> camera_front -> leverArm -> translation -->
+  <!-- POSITION: x:200cm, y:0cm, z:76cm = x:2.0m, y:0.0m, z:0.76m -->
+  <!-- REASONING: Far-forward mounting for maximum visual range and obstacle detection -->
+  <!-- SPECIFICATIONS: 1920x1080 resolution, 90° FOV, 20Hz update rate -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_camera" 
+        args="2.0 0.0 0.76 0.0 0.0 0.0 1.0 /base_link /camera_front" />
+
+  <!-- Front Radar Transform (co-located with camera) -->
+  <!-- DATA SOURCE: Eav24_default.json -> radar_front -> leverArm -> translation -->
+  <!-- POSITION: x:200cm, y:0cm, z:76cm = x:2.0m, y:0.0m, z:0.76m -->
+  <!-- REASONING: Co-located with camera for sensor fusion, provides range/velocity data -->
+  <!-- NOTE: Radar complements vision with all-weather capability -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_radar" 
+        args="2.0 0.0 0.76 0.0 0.0 0.0 1.0 /base_link /radar_front" />
+
+  <!-- ============================================================= -->
+  <!-- COORDINATE FRAME HIERARCHY                                   -->
+  <!-- ============================================================= -->
+  <!-- Map to Odom Transform (Global Localization) -->
+  <!-- REASONING: Establishes relationship between global map frame and local odometry -->
+  <!-- CONDITIONAL: Only published when localization system is not providing this transform -->
+  <group if="$(arg pub_map_to_odom)">
+    <node pkg="tf" type="static_transform_publisher" name="map_to_odom" 
+          args="0 0 0 0 0 0 /map /odom 10" />
+  </group>
+ 
+</launch>
+
+<!-- ================================================================= -->
+<!-- COORDINATE FRAME HIERARCHY SUMMARY:                              -->
+<!-- /map (global map frame)                                         -->
+<!--   └── /odom (odometry frame)                                     -->
+<!--       └── /base_link (vehicle center)                            -->
+<!--           ├── /imu (Kistler INS @ 1.481,0,0.187)               -->
+<!--           ├── /laser (primary LiDAR @ 0.85,0,0.67)             -->
+<!--           ├── /lidar_front (front LiDAR @ 0.85,0,0.67)         -->
+<!--           ├── /lidar_left (left LiDAR @ 0.15,-0.13,0.72)       -->
+<!--           ├── /lidar_right (right LiDAR @ 0.15,0.13,0.72)      -->
+<!--           ├── /camera_front (front camera @ 2.0,0,0.76)        -->
+<!--           └── /radar_front (front radar @ 2.0,0,0.76)          -->
+<!-- ================================================================= -->

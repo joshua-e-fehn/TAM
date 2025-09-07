@@ -1,0 +1,129 @@
+# ===================================================================
+# TAM INDY CAR PACEJKA TIRE MODEL CONFIGURATION
+# ===================================================================
+# This file implements the Pacejka "Magic Formula" tire model for the TAM scaled Indy car.
+# The Pacejka model describes tire force characteristics as a function of slip angle/ratio.
+# Formula: F = D * sin(C * atan(B * slip - E * (B * slip - atan(B * slip))))
+#
+# Data sources: vehicle_params_EAV24.yaml (tire characterization), vehicle_config.yaml (vehicle params)
+# The tire parameters appear to be professionally characterized for the specific Indy car tires.
+# ===================================================================
+
+# CONTROL INTERFACE PARAMETERS
+# ===================================================================
+
+# Steering offset [rad] - systematic bias in steering system
+# DATA SOURCES: car_model.yaml (0.0)
+# CHOSEN: 0.0 (assumes calibrated system)
+C_0d: 0.0
+
+# Steering gain [1/rad] - converts steering commands to wheel angles  
+# DATA SOURCES: car_model.yaml (0.0016), calculated from steering ratio
+# CHOSEN: 0.0016 (1/steering_ratio = 1/62.3)
+# REASONING: Direct mapping from car_model for consistency
+C_d: 0.0016
+
+# PACEJKA TIRE MODEL COEFFICIENTS - FRONT TIRES
+# ===================================================================
+# Magic Formula coefficients for front tire lateral force characteristics
+# DATA SOURCE: vehicle_params_EAV24.yaml pacejka.lat section (professionally characterized)
+
+C_Pf:
+- 13.71                         # B_F - Stiffness factor: Controls initial slope of force curve
+- 1.72                          # C_F - Shape factor: Affects curve steepness and peak sharpness  
+- 1.45                          # D_F - Peak factor: Maximum lateral force coefficient achievable
+- 0.0                           # E_F - Curvature factor: Controls curve shape after peak (set to 0 for simplified model)
+
+# PACEJKA TIRE MODEL COEFFICIENTS - REAR TIRES  
+# ===================================================================
+# Magic Formula coefficients for rear tire lateral force characteristics
+# DATA SOURCE: vehicle_params_EAV24.yaml pacejka.lat section (professionally characterized)
+# NOTE: Rear tires have different characteristics than front (typical for racing vehicles)
+
+C_Pr:
+- 17.17                         # B_R - Stiffness factor: Higher than front (stiffer rear tire response)
+- 1.76                          # C_R - Shape factor: Slightly different curve shape than front
+- 1.39                          # D_R - Peak factor: Slightly lower peak grip than front tires
+- 0.0                           # E_R - Curvature factor: Simplified model (no post-peak softening)
+
+# VEHICLE PHYSICAL PARAMETERS  
+# ===================================================================
+# Core vehicle parameters for tire force calculations and vehicle dynamics
+
+# Rolling resistance coefficient [-]
+# DATA SOURCES: vehicle_config.rolling_resistance.coeff (0.025), car_model.yaml (0.025)
+# CHOSEN: 0.025 (consistent across sources)
+# REASONING: Measured tire-road rolling resistance for longitudinal dynamics
+C_R: 0.025
+
+# Acceleration control gain - maps acceleration commands to tire forces
+# DATA SOURCE: car_model.yaml (8.0)
+# CHOSEN: 8.0 (tuned for high-power vehicle)
+C_acc: 8.0
+
+# Deceleration control gain - maps braking commands to tire forces  
+# DATA SOURCE: car_model.yaml (6.0)
+# CHOSEN: 6.0 (tuned for high-power braking)
+C_dec: 6.0
+
+# Yaw moment of inertia [kg⋅m²]
+# DATA SOURCES: vehicle_config.inertia.yaw (1000.0), vehicle_params_EAV24.I_Z (700)
+# CHOSEN: 1000.0 from vehicle_config
+# REASONING: More realistic for full-size vehicle, critical for yaw dynamics calculations
+Iz: 1000.0
+
+# Maximum acceleration [m/s²]
+# DATA SOURCE: car_model.yaml (10.0), vehicle_config planning_limits (10.0)
+# CHOSEN: 10.0 (consistent across sources)
+a_max: 10.0
+
+# Maximum deceleration [m/s²]
+# DATA SOURCE: car_model.yaml (-10.0), estimated from brake capability
+# CHOSEN: -10.0 (conservative symmetric limit)
+a_min: -10.0
+
+# Center of gravity height [m]
+# DATA SOURCES: vehicle_config.dimension.cog_height (0.287), vehicle_params_EAV24.h_cog_m (0.287)
+# CHOSEN: 0.287 (consistent across sources)
+# REASONING: Critical for load transfer calculations affecting tire forces
+h_cg: 0.287
+
+# Distance from center of mass to front axle [m]
+# DATA SOURCES: vehicle_config.dimension.distance_to_front_axle (1.733), vehicle_params_EAV24.l_F (1.802)
+# CHOSEN: 1.733 from vehicle_config
+# REASONING: Most recent measured value, affects front/rear load distribution
+lf: 1.733
+
+# Distance from center of mass to rear axle [m]
+# DATA SOURCES: vehicle_params_EAV24.l_R (1.312), calculated (1.382)
+# CHOSEN: 1.382 (calculated: wheelbase - lf for geometric consistency)
+# REASONING: Ensures lr + lf = wheelbase exactly
+lr: 1.382
+
+# Total wheelbase [m]
+# DATA SOURCE: vehicle_config.dimension.wheelbase (3.115)
+# CHOSEN: 3.115 (measured chassis dimension)
+wheelbase: 3.115
+
+# Vehicle mass [kg]
+# DATA SOURCES: vehicle_config.mass.total (742), vehicle_params_EAV24.m (782), Eav24_default.json (760)
+# CHOSEN: 742 from vehicle_config
+# REASONING: Most recent configuration, affects normal force calculations for tire model
+m: 742
+
+# Vehicle model identifier
+model_name: TAM
+
+# Tire friction coefficient [-] - overall tire-road grip multiplier
+# DATA SOURCE: No specific characterization available
+# CHOSEN: 1.0 (assumes optimal conditions, can be adjusted for different track surfaces)
+mu: 1.0
+
+# Steering time constant [s] - first-order lag in steering response
+# DATA SOURCE: vehicle_config.actuator.steering_delay (0.024)
+# CHOSEN: 0.024 (measured steering system response time)
+# REASONING: Important for tire slip angle dynamics calculations
+tau_steer: 0.024
+
+# Tire model type identifier
+tire_model: pacejka

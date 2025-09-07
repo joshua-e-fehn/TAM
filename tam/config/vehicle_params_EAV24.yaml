@@ -1,0 +1,78 @@
+m: 782                            ### mass of the vehicle [kg]
+I_Z: 700                         ### moment of inertial [kg*m^2]
+h_cog_m: 0.287                      ### height of mass centre [m]
+
+C_T: 12000                          # traction scale
+C_B: 10500                          # ?? where is is needed
+C_BF: 9750 #7500
+C_BR: 6500 #5000                          # brake scale
+air_density: 1.225
+rolling_resistance_coeff: 0.025
+drag_coeff: 1.3
+lift_coeff: -3.62
+cross_track_area: 1.0
+diff_cog_x: 0.02 # 0.04 -> 0.03 -> 0.02 moved to front for safety
+diff_cog_y: 0.0
+diff_cog_z: 0.0
+
+l_F: 1.802
+l_R: 1.312
+
+g: 9.81
+lambda: 780
+rho_long: 0.5
+wheel_radius_F_m: 0.6
+wheel_radius_R_m: 0.6
+axis_inertia_F: 100
+axis_inertia_R: 100
+
+# MPC specific
+v_x_mps_min_slip_calc: 3.0
+v_x_blend_min_mps: 3
+v_x_blend_max_mps: 5
+v_min_ref_mps: 3.0
+P_VDC_MinVelSlipCalc_mps: 3.0 # TODO(Georg J): unify min vel slip calc params
+
+# delays
+odometry_delay_s: 0.0                     # delay odometry update
+steering_delay_s: 0.04                    # delay steering
+throttle_delay_s: 0.09                  # delay drivetrain throttle
+brake_delay_s: 0.09                    # delay drivetrain throttle
+
+# offsets
+steering_offset_rad: 0.0
+
+# tire params
+C_GYF: 0.0001 # linear coupling factor for long-lat force
+C_GYR: 0.0001 # linear coupling factor for long-lat force
+# tire params
+# https://www.desmos.com/calculator/ddlkrudqun -> desmos paceijka
+# https://gitlab.lrz.de/iac/tam_offline_tire_params -> pacejka / fitting tool
+pacejka:
+  lat:
+    B_F: 13.71
+    C_F: 1.72
+    D_F: 1.45
+    E_F: 0.0
+    PD1_F: 1.45
+    PD2_F: -0.05
+    LMU_F: 1.0 # 0.64
+    FZ0_F: 6000
+    B_R: 17.17
+    C_R: 1.76
+    D_R: 1.39
+    E_R: 0.00
+    PD1_R: 1.4
+    PD2_R: -0.005
+    LMU_R: 1.3
+    FZ0_R: 6000
+
+  long:
+    B_F: 14.70
+    C_F: 1.933
+    D_F: 1.87
+    E_F: 0.68
+    B_R: 13.89
+    C_R: 1.930
+    D_R: 1.98
+    E_R: 0.62

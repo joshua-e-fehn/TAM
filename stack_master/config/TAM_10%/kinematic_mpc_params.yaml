@@ -1,0 +1,68 @@
+# ===================================================================
+# TAM_10% SCALED INDY CAR KINEMATIC MPC PARAMETERS
+# ===================================================================
+# Kinematic MPC parameters for 10% scaled TAM Indy car.
+# Scaling applied according to physical laws and dimensional analysis.
+# ===================================================================
+
+##########################
+# Controller settings    #
+##########################
+N: 40                           # Prediction horizon (unchanged)
+steps_delay: 3                  # Delay steps (unchanged)
+t_delay: 0.125                  # Time delay [s] (unchanged)
+MPC_freq: 20                    # MPC frequency [Hz] (unchanged)
+
+# Track parameters - SCALED APPROPRIATELY FOR F1/10
+# ORIGINAL: SCALED by 0.1 factor: 0.03m
+track_safety_margin: 0.1       # ORIGINAL: 0.3m → SCALED: 0.1m (realistic F1/10 margin)
+track_max_width: !!float 1e3   # Maximum track width [m] (large number, unchanged)
+# ORIGINAL: 1m → SCALED: 0.1m
+overtake_d: 0.5                 # ORIGINAL: 1m → SCALED: 0.5m (realistic F1/10 overtaking distance)
+
+##########################
+# Cost function settings #
+##########################
+# Cost weights - DIMENSIONLESS (unchanged)
+qac: !!float 1e-2               # Acceleration cost weight
+qddelta: !!float 1e-1           # Steering rate cost weight
+qadv: !!float 0                 # Advance cost weight
+qn: 20                          # Normal cost weight
+qalpha: 7                       # Alpha cost weight
+qv: !!float 10                  # Velocity cost weight
+
+# Slack variable weights - DIMENSIONLESS (unchanged)
+zl: !!float 10                  # Linear coefficient state slack variable
+zu: !!float 10                  # Linear coefficient input slack variable
+Zl: !!float 100                 # Quadratic coefficient state slack variable
+Zu: !!float 100                 # Quadratic coefficient input slack variable
+
+#####################
+# Model constraints #
+#####################
+# Steering constraints - UNCHANGED (angles don't scale)
+delta_min: !!float -0.40       # Minimum steering angle [rad]
+delta_max: !!float 0.40        # Maximum steering angle [rad]
+
+# Velocity constraints - REALISTIC FOR F1/10 SIMULATION
+# ORIGINAL: v_min=2, v_max=12 → PRACTICAL F1/10: v_min=1, v_max=8
+# REASONING: Matching typical F1/10 velocity ranges for stable simulation
+# ORIGINAL: SCALED by √(0.1) factor: v_min=0.632, v_max=3.8 --- IGNORE ---
+v_min: !!float 1.0              # Minimum velocity [m/s]
+v_max: !!float 8.0              # Maximum velocity [m/s]
+
+# Input constraints
+# Steering rate - REALISTIC FOR F1/10 SERVO CHARACTERISTICS
+# ORIGINAL: ±0.2 → F1/10: ±0.5 rad/s (realistic servo limits)
+# SCALED by 1/√(0.1) ≈ 3.16 factor for dynamic similarity --> +_0.63rad/s
+ddelta_min: !!float -0.5        # Minimum steering rate [rad/s]
+ddelta_max: !!float 0.5         # Maximum steering rate [rad/s]
+
+# Acceleration constraints - ADJUSTED FOR F1/10 CAPABILITIES
+# UNCHANGED (dimensionless a/g similarity) +- 10
+a_min: !!float -6               # Minimum acceleration [m/s²]
+a_max: !!float 6                # Maximum acceleration [m/s²]
+
+# Nonlinear constraint - ADJUSTED FOR F1/10 TIRE GRIP
+# UNCHANGED (dimensionless lateral g-force) alat_max: 10
+alat_max: !!float 6             # Maximum lateral acceleration [m/s²]

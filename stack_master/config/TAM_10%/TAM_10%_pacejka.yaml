@@ -1,0 +1,84 @@
+# ===================================================================
+# TAM_10% SCALED INDY CAR PACEJKA TIRE MODEL CONFIGURATION  
+# ===================================================================
+# Pacejka tire model for 10% scaled TAM Indy car (Indy → F1tenth scale).
+# 
+# SCALING APPROACH:
+# - Tire coefficients (B,C,D,E): UNCHANGED - material properties, non-dimensional
+# - Vehicle parameters: Scaled according to physical laws
+# - Control gains: Adjusted for smaller vehicle dynamics
+# ===================================================================
+
+# CONTROL INTERFACE - NON-DIMENSIONAL (unchanged)
+# ===================================================================
+
+C_0d: 0.0                       # Steering offset [rad] - angle, unchanged
+# ratio, unchanged: C_d: 0.0016
+C_d: -1.1                       # Steering gain [1/rad] - adjusted for F1/10 scale 
+
+# PACEJKA COEFFICIENTS - UNCHANGED (non-dimensional material properties)
+# ===================================================================
+
+# Front tire coefficients - UNCHANGED
+# REASONING: B, C, D, E are non-dimensional coefficients describing tire material
+# behavior independent of scale
+C_Pf:
+- 13.71                         # B_F - Stiffness factor (non-dimensional)
+- 1.72                          # C_F - Shape factor (non-dimensional)
+- 1.45                          # D_F - Peak factor (non-dimensional)  
+- 0.0                           # E_F - Curvature factor (non-dimensional)
+
+# Rear tire coefficients - UNCHANGED
+C_Pr:
+- 17.17                         # B_R - Stiffness factor (non-dimensional)
+- 1.76                          # C_R - Shape factor (non-dimensional)
+- 1.39                          # D_R - Peak factor (non-dimensional)
+- 0.0                           # E_R - Curvature factor (non-dimensional)
+
+# VEHICLE PARAMETERS - PROPERLY SCALED
+# ===================================================================
+
+# Rolling resistance - ADJUSTED FOR F1/10 SCALE (higher due to scale effects)
+# UNCHANGED (non-dimensional material property): C_R: 0.025
+C_R: 2.0
+
+# Control gains - ADJUSTED for F1/10 force scales and actuator characteristics
+C_acc: 8.0                      # Adjusted for F1/10 motor characteristics
+C_dec: 6.0                      # Adjusted for F1/10 braking characteristics
+
+# Moment of inertia - NUMERICALLY STABLE VALUE
+# ORIGINAL: 1000.0 → THEORETICAL: 0.01 kg⋅m² → PRACTICAL: 0.058 kg⋅m²
+# REASONING: Theoretical scaling too small for numerical stability, using realistic F1tenth value
+Iz: 0.058
+
+# Performance limits - ADJUSTED FOR F1/10 CAPABILITIES
+a_max: 6.0                      # Realistic F1/10 acceleration capability
+a_min: -6.0                     # Realistic F1/10 braking capability
+
+# Center of gravity height - SCALED LINEARLY
+# ORIGINAL: 0.287m → SCALED: 0.0287m
+h_cg: 0.0287
+
+# Wheelbase geometry - SCALED LINEARLY  
+lf: 0.1733                      # 1.733m → 0.1733m
+lr: 0.1382                      # 1.382m → 0.1382m
+wheelbase: 0.3115               # 3.115m → 0.3115m (F1tenth size)
+
+# Mass - REALISTIC FOR SIMULATION STABILITY
+# ORIGINAL: 742kg → THEORETICAL: 0.742kg → PRACTICAL: 3.5kg
+# REASONING: Realistic F1tenth mass prevents numerical instability
+m: 3.5
+
+# Vehicle identification
+model_name: TAM_10%
+
+# Tire friction - UNCHANGED (material property)
+mu: 1.0
+
+# Steering dynamics - ADJUSTED FOR F1/10 SIMULATION STABILITY
+# ORIGINAL: 0.024s → THEORETICAL: 0.0076s → PRACTICAL: 0.15s
+# REASONING: Matching NUC2 for stable F1/10 simulation characteristics
+tau_steer: 0.15
+
+# Model type
+tire_model: pacejka

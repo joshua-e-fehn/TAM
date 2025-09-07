@@ -1,0 +1,105 @@
+# EAV24
+vehicle:
+  actuator:
+    brake_delay: 0.01                   # [s]
+    gear_delay: 0.01                 # [s]
+    steering_delay: 0.024                # [s]
+    throttle_delay: 0.01               # [s]
+  aero:
+    air_density: 1.225                      # [kg/m^3]
+    drag_coeff: 1.4                         # [-]
+    lift_coeff: -3.62                         # [-]
+    cross_track_area: 1.0                      # [m^2]
+    diff_cog_x: 0.0              # [m]
+    diff_cog_y: 0.0              # [m]
+    diff_cog_z: 0.0              # [m]
+  brake:
+    brake_bias_front: 0.58                   # [-]
+    disc_area: 0.0                         # [m^2]
+    disc_radius: 0.0                        # [m]
+    pad_area: 0.0                            # [m^2]
+    pad_mean_radius: 0.117                  # [m]
+    pad_number: 1.0                         # [-] # The bore diameter is calculated assuming one friction area, even though there are 2 in real world
+    piston_diameter: 0.0772                # [m]
+    max_pressure: 12500000.0                    # [Pa]
+    friction_coeff: 0.39                      # [-]
+  dimension:
+    track_width_front: 1.606                              # [m] 
+    track_width_rear: 1.51                               # [m]
+    wheelbase: 3.115                            # [m]
+    distance_to_front_axle: 1.733                 # [m]
+    cog_height: 0.287                             # [m]
+    length: 5.23                               # [m]
+    width: 1.91                                # [m]
+    height: 0.0                               # [m]
+  drivetrain:
+    clutch_engagement_start: 190.0
+    clutch_max_torque_slope: 10.0
+    drivetrain_efficiency: 0.9
+    gear_ratios:
+      - 3.083 # 3.083 # 1 long setup commented out
+      - 2.286 # 2.286 # 2
+      - 1.765 # 1.706 # 3
+      - 1.421 # 1.389 # 4
+      - 1.190  # 1.15 # 5
+      - 1.036 # 0.938 # 6
+    transmission_ratio: 2.818
+  inertia:
+    roll: 70.0                                 # [kg*m^2]
+    pitch: 470.0                              # [kg*m^2]
+    yaw: 1000.0                            # [kg*m^2]
+    engine: 2.0                               # [kg*m^2]
+    wheel_front: 1.15                              # [kg*m^2]
+    wheel_rear: 1.35                               # [kg*m^2]
+  steering:
+    min_angle: -0.32                         # [rad]
+    max_angle: 0.32                          # [rad]
+    max_rate: 0.0                           # [rad/s]
+    ratio: 62.3                               # [-]
+  mass:
+    total: 742                                 # [kg]
+    wheel_front: 15.0                             # [kg]
+    wheel_rear: 15.0                            # [kg]
+  rolling_resistance:
+    coeff: 0.025                      # [-] 
+  engine:
+    rev_max: 942.0                                # [rad/s]
+    rev_idle: 104.5                              # [rad/s]
+    engine_map:
+      rpms:
+      - 0.0
+      - 0.0
+      throttles:
+      - 0.0
+      - 0.0
+      torques:
+      - 0.0
+      - 0.0
+  planning_limits:
+    ax_machine_limits:                 # [m/s^2] - acceleration that the engine allows at specific speed with linear interpolation between them
+      - 10.0         # @ 0.0 mps
+      - 10.0        # @ 10.0 mps
+      - 13.2        # @ 20.0 mps
+      - 10.2        # @ 30.0 mps
+      - 7.2         # @ 40.0 mps
+      - 4.6         # @ 50.0 mps
+      - 2.4         # @ 60.0 mps
+      - 0.3        # @ 70.0 mps
+      - 0.0         # @ 80.0 mps
+      - 0.0       # @ 90.0 mps
+    ax_machine_limits_p2p_enabled:
+      - 5.0
+      - 10.0
+      - 13.0
+      - 10.0
+      - 7.0
+      - 4.4
+      - 2.2
+      - 0.3
+      - 0.0
+      - 0.0
+    gg_exponent_ax_pos: 1.31          # [-] - exponent for the gggv ellipse in positive longitudinal accelerations
+    gg_exponent_ax_neg: 1.31          # [-] - exponent for the gggv ellipse in negative longitudinal accelerations
+    ax_min_scale: 0.91                 # [-] - linear scaling factor over all values in gggv diagram for the ax_min values
+    ax_max_scale: 1.01                 # [-] - linear scaling factor over all values in gggv diagram for the ax_max values
+    ay_scale: 1.01                     # [-] - linear scaling factor over all values in gggv diagram for the ay values

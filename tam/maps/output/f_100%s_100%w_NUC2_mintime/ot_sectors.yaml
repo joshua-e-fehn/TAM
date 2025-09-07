@@ -1,0 +1,12 @@
+Overtaking_sector0:
+  end: 431
+  ot_flag: true
+  start: 0
+Overtaking_sector1:
+  end: 863
+  ot_flag: true
+  start: 432
+n_sectors: 2
+ot_sector_begin: 0.5
+spline_len: 50
+yeet_factor: 2

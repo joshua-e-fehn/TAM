@@ -1,0 +1,146 @@
+
+# ===================================================================
+# TAM INDY CAR VESC CONFIGURATION (SIMULATION)
+# ===================================================================
+# This file configures the VESC (Vedder Electronic Speed Controller) interface for the TAM scaled Indy car.
+# NOTE: This is primarily for SIMULATION use - actual Indy cars don't use VESC hardware.
+# The parameters provide a realistic mapping between high-level commands and simulated vehicle responses.
+#
+# Data sources: Eav24_default.json (wheel data), vehicle_config.yaml (performance), NUC2 (scaling reference)
+# ===================================================================
+
+# MOTOR CONTROL MAPPING
+# ===================================================================
+
+# Speed to electrical RPM conversion gain [ERPM/(m/s)]
+# DATA SOURCES: NUC2 reference (4352), wheelbase scaling factor (3.115/0.32 ≈ 9.7x)
+# CHOSEN: 463 (calculated: 4352 / 9.7 ≈ 463)  
+# REASONING: Scales F1/10 mapping by wheelbase ratio to account for larger vehicle size
+speed_to_erpm_gain: 463
+
+# Speed to electrical RPM conversion offset [ERPM]
+# DATA SOURCES: NUC2 reference had 220.0 offset for hardware calibration
+# CHOSEN: 0.0 (no offset needed)
+# REASONING: Hardware-specific offsets not needed in simulation environment
+speed_to_erpm_offset: 0.0
+
+# ODOMETRY CONVERSION
+# ===================================================================
+
+# Tachometer ticks to distance conversion [m/tick]
+# DATA SOURCES: Eav24_default.json frontTire.tireRadius (0.31 m), assumed encoder resolution
+# CHOSEN: 0.0195 (calculated: 2π×0.31/100 = 0.0195)
+# REASONING: Wheel circumference divided by 100 encoder ticks per revolution (standard assumption)
+tachometer_ticks_to_meters_gain: 0.0195
+
+# PERFORMANCE LIMITS
+# ===================================================================
+
+# Maximum acceleration limit [m/s²]
+# DATA SOURCES: car_model.yaml a_max (10.0), vehicle_config planning_limits (10.0)
+# CHOSEN: 10.0 m/s² (consistent across configurations)
+# REASONING: Must match vehicle capability limits for realistic simulation
+max_acceleration: 10.0
+
+# Maximum servo speed (steering rate) [rad/s]
+# DATA SOURCES: car_model.yaml max_steering_velocity (2.0), NUC2 reference (3.2)
+# CHOSEN: 2.0 rad/s (more conservative than F1/10)
+# REASONING: Large high-speed vehicles require slower steering rates for stability
+max_servo_speed: 2.0
+
+# Maximum acceleration current [A]
+# DATA SOURCES: NUC2 reference (65 A), power scaling for Indy car
+# CHOSEN: 200 A (~3x scaling for high-power vehicle)
+# REASONING: Indy cars have much more powerful drivetrains requiring higher current limits
+max_accel_current: 200
+
+# Maximum brake current [A]  
+# DATA SOURCES: NUC2 reference (50 A), power scaling for Indy car
+# CHOSEN: 150 A (~3x scaling for high-power braking)
+# REASONING: Powerful brake systems need higher current capability
+max_brake_current: 150
+
+# STEERING MAPPING
+# ===================================================================
+
+# Steering angle to servo position gain [servo_units/rad]
+# DATA SOURCES: car_model.yaml max_steering_angle (0.32 rad)
+# CHOSEN: -3.125 (calculated: -1/0.32 = -3.125)
+# REASONING: Maps ±0.32 rad steering to 0-1 servo range, negative for direction convention
+steering_angle_to_servo_gain: -3.125
+
+# Steering angle to servo position offset [servo_units]
+# CHOSEN: 0.5 (center position in 0-1 servo range)
+# REASONING: 0.5 represents neutral/centered servo position
+steering_angle_to_servo_offset: 0.5
+
+# CONTROL GAINS
+# ===================================================================
+
+# Acceleration to current mapping [A/(m/s²)]
+# DATA SOURCES: NUC2 reference (8.938), scaled for higher power
+# CHOSEN: 20.0 (~2.2x increase from F1/10)
+# REASONING: Higher-power drivetrain needs higher gains to achieve commanded accelerations
+acceleration_to_current_gain: 20.0
+
+# Deceleration to current mapping [A/(m/s²)]
+# DATA SOURCES: NUC2 reference (5.936), scaled for higher power
+# CHOSEN: 15.0 (~2.5x increase from F1/10)  
+# REASONING: Powerful braking systems require higher current-to-deceleration mapping
+deceleration_to_current_gain: 15.0
+
+# Velocity to current mapping [A/(m/s)]
+# DATA SOURCES: NUC2 reference (3.693), reduced for efficiency
+# CHOSEN: 2.0 (lower value for high-speed efficiency)
+# REASONING: High-speed vehicles may need less velocity-dependent current for efficiency
+velocity_to_current_gain: 2.0
+
+# VEHICLE PHYSICAL PARAMETERS
+# ===================================================================
+
+# Vehicle wheelbase [m]
+# DATA SOURCES: vehicle_config.dimension.wheelbase (3.115), car_model.yaml (3.115)
+# CHOSEN: 3.115 m (consistent across all sources)
+# REASONING: Fundamental chassis dimension used by odometry calculations
+wheelbase: 3.115
+
+# SYSTEM DYNAMICS
+# ===================================================================
+
+# Current control time constant [s]
+# DATA SOURCES: vehicle_config.actuator.steering_delay (0.024), NUC2 reference (0.05)
+# CHOSEN: 0.024 s (matches measured steering system delay)
+# REASONING: Aligns current control response with actual vehicle dynamics
+current_time_constant: 0.024
+
+# Control loop rates [Hz]
+servo_smoother_rate: 75.0       # Steering command rate
+throttle_smoother_rate: 75.0    # Throttle command rate  
+current_smoother_rate: 100.0    # Current control rate
+
+# TIMEOUT SETTINGS
+# ===================================================================
+# Safety timeouts for command watchdog functionality
+servo_timeout: 0.1              # Steering command timeout [s]
+motor_timeout: 0.1              # Motor command timeout [s] 
+current_timeout: 0.1            # Current command timeout [s]
+
+# TRANSFORM PUBLISHING
+# ===================================================================
+# Disable VESC odometry TF publishing (handled by vehicle model)
+vesc_to_odom/publish_tf: false
+
+# SIMULATION DRIVER SETTINGS
+# ===================================================================
+# Configuration for VESC driver interface (simulation-specific limits)
+vesc_driver:
+  port: /dev/null               # Not used in simulation
+  duty_cycle_min: 0.0
+  duty_cycle_max: 1.0           # Full duty cycle range
+  current_max: 200.0            # Maximum current [A] (matches max_accel_current)
+  brake_min: -30000             # Minimum brake value (scaled for high power)
+  brake_max: 30000              # Maximum acceleration value (scaled for high power)
+  speed_min: -50000             # Minimum speed [ERPM] (scaled range)
+  speed_max: 50000              # Maximum speed [ERPM] (scaled range) 
+  servo_min: 0.0                # Minimum servo position
+  servo_max: 1.0                # Maximum servo position

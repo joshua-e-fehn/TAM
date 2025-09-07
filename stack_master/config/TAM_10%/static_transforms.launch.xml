@@ -1,0 +1,52 @@
+<!-- ================================================================= -->
+<!-- TAM_10% SCALED INDY CAR STATIC TRANSFORMS - NUC2 COMPATIBLE     -->
+<!-- ================================================================= -->
+<!-- Sensor configuration matching NUC2 for simulation compatibility -->
+<!-- NUC2 has: IMU (with rotation) + single LiDAR                    -->
+<!-- All positions scaled by 0.1 factor from NUC2 reference values  -->
+<!-- ================================================================= -->
+
+<launch>
+  <arg name="pub_map_to_odom" default="True"/>
+  
+  <!-- ============================================================= -->
+  <!-- NUC2-COMPATIBLE SENSOR CONFIGURATION - SCALED 10%            -->
+  <!-- ============================================================= -->
+  
+  <!-- IMU Transform - SCALED FROM NUC2 REFERENCE -->
+  <!-- NUC2 ORIGINAL: 0.07, 0.0, 0.05 with 90° rotation -->
+  <!-- SCALED 10%: 0.007, 0.0, 0.005 with SAME rotation (angles don't scale) -->
+  <!-- REASONING: Maintains NUC2 IMU mounting orientation for sensor fusion compatibility -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_imu" 
+        args="0.007 0.0 0.005 0.0 0.0 0.7071068 0.7071068 /base_link /imu" />
+
+  <!-- LiDAR Transform - SCALED FROM NUC2 REFERENCE -->
+  <!-- NUC2 ORIGINAL: 0.285, 0.0, 0.127 no rotation -->
+  <!-- SCALED 10%: 0.0285, 0.0, 0.0127 no rotation -->
+  <!-- REASONING: Single LiDAR setup matching NUC2 for simulation compatibility -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_laser" 
+        args="0.0285 0.0 0.0127 0.0 0.0 0.0 1.0 /base_link /laser" />
+
+  <!-- ============================================================= -->
+  <!-- MAP COORDINATE SYSTEM - UNCHANGED                            -->
+  <!-- ============================================================= -->
+  
+  <!-- Map to Odom Transform - UNCHANGED (coordinate system hierarchy) -->
+  <group if="$(arg pub_map_to_odom)">
+    <node pkg="tf" type="static_transform_publisher" name="map_to_odom" 
+          args="0 0 0 0 0 0 /map /odom 10" />
+  </group>
+ 
+</launch>
+
+<!-- ================================================================= -->
+<!-- SCALED NUC2-COMPATIBLE COORDINATE FRAME SUMMARY (10% scale):     -->
+<!-- /map (global map frame)                                         -->
+<!--   └── /odom (odometry frame)                                     -->
+<!--       └── /base_link (vehicle center)                            -->
+<!--           ├── /imu (@ 0.007, 0, 0.005) [rotated 90°]           -->
+<!--           └── /laser (@ 0.0285, 0, 0.0127) [forward-mounted]    -->
+<!--                                                                 -->
+<!-- SIMULATION COMPATIBILITY: Matches NUC2 sensor configuration     -->
+<!-- SCALING: All distances scaled by 0.1, rotations unchanged      -->
+<!-- ================================================================= -->

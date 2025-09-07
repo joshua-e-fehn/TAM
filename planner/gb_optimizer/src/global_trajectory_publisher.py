@@ -8,10 +8,12 @@ from visualization_msgs.msg import MarkerArray
 
 from readwrite_global_waypoints import read_global_waypoints
 
+
 class GlobalRepublisher:
     """
     Node for publishing the global waypoints/markers and track bounds markers frequently after they have been calculated
     """
+
     def __init__(self):
 
         rospy.init_node('global_republisher_node', anonymous=True)
@@ -21,53 +23,69 @@ class GlobalRepublisher:
         self.track_bounds = None
 
         rospy.Subscriber('/global_waypoints', WpntArray, self.glb_wpnts_cb)
-        rospy.Subscriber('/global_waypoints/markers', MarkerArray, self.glb_markers_cb)
+        rospy.Subscriber('/global_waypoints/markers',
+                         MarkerArray, self.glb_markers_cb)
         rospy.Subscriber('/trackbounds/markers', MarkerArray, self.bounds_cb)
 
-        self.glb_wpnts_pub = rospy.Publisher('global_waypoints', WpntArray, queue_size=10)
-        self.glb_markers_pub = rospy.Publisher('global_waypoints/markers', MarkerArray, queue_size=10)
-        self.vis_track_bnds = rospy.Publisher('trackbounds/markers', MarkerArray, queue_size=10)
+        self.glb_wpnts_pub = rospy.Publisher(
+            'global_waypoints', WpntArray, queue_size=10)
+        self.glb_markers_pub = rospy.Publisher(
+            'global_waypoints/markers', MarkerArray, queue_size=10)
+        self.vis_track_bnds = rospy.Publisher(
+            'trackbounds/markers', MarkerArray, queue_size=10)
 
         # shortest_path
         self.glb_sp_markers = None
         self.glb_sp_wpnts = None
-        rospy.Subscriber('/global_waypoints/shortest_path', WpntArray, self.glb_sp_wpnts_cb)
-        rospy.Subscriber('/global_waypoints/shortest_path/markers', MarkerArray, self.glb_sp_markers_cb)
-        self.glb_sp_wpnts_pub = rospy.Publisher('global_waypoints/shortest_path', WpntArray, queue_size=10)
-        self.glb_sp_markers_pub = rospy.Publisher('global_waypoints/shortest_path/markers', MarkerArray, queue_size=10)
+        rospy.Subscriber('/global_waypoints/shortest_path',
+                         WpntArray, self.glb_sp_wpnts_cb)
+        rospy.Subscriber('/global_waypoints/shortest_path/markers',
+                         MarkerArray, self.glb_sp_markers_cb)
+        self.glb_sp_wpnts_pub = rospy.Publisher(
+            'global_waypoints/shortest_path', WpntArray, queue_size=10)
+        self.glb_sp_markers_pub = rospy.Publisher(
+            'global_waypoints/shortest_path/markers', MarkerArray, queue_size=10)
 
         # centerline
         self.centerline_wpnts = None
         self.centerline_markers = None
-        rospy.Subscriber('/centerline_waypoints', WpntArray, self.centerline_wpnt_cb)
-        rospy.Subscriber('/centerline_waypoints/markers', MarkerArray, self.centerline_markers_cb)
-        self.centerline_wpnts_pub = rospy.Publisher('/centerline_waypoints', WpntArray, queue_size=10)
-        self.centerline_markers_pub = rospy.Publisher('/centerline_waypoints/markers', MarkerArray, queue_size=10)
+        rospy.Subscriber('/centerline_waypoints',
+                         WpntArray, self.centerline_wpnt_cb)
+        rospy.Subscriber('/centerline_waypoints/markers',
+                         MarkerArray, self.centerline_markers_cb)
+        self.centerline_wpnts_pub = rospy.Publisher(
+            '/centerline_waypoints', WpntArray, queue_size=10)
+        self.centerline_markers_pub = rospy.Publisher(
+            '/centerline_waypoints/markers', MarkerArray, queue_size=10)
 
         # map infos
         self.map_infos = None
         rospy.Subscriber('/map_infos', String, self.map_info_cb)
         self.map_info_pub = rospy.Publisher('map_infos', String, queue_size=10)
-        
+
         self.est_lap_time = None
         rospy.Subscriber('estimated_lap_time', Float32, self.est_lap_time_cb)
-        self.est_lap_time_pub = rospy.Publisher('estimated_lap_time', Float32, queue_size=10)
+        self.est_lap_time_pub = rospy.Publisher(
+            'estimated_lap_time', Float32, queue_size=10)
 
-
-        # graph lattice 
+        # graph lattice
         self.graph_lattice = None
         rospy.Subscriber('/lattice_viz', MarkerArray, self.lattice_cb)
-        self.lattice_pub = rospy.Publisher('/lattice_viz', MarkerArray, queue_size=10)
+        self.lattice_pub = rospy.Publisher(
+            '/lattice_viz', MarkerArray, queue_size=10)
         # Read info from json file if it is provided, so everything is always published
         if rospy.has_param('/global_republisher/map_name'):
             map_name = rospy.get_param('/global_republisher/map_name')
             loginfo(f"Reading parameters from {map_name}")
 
             try:
-                self.map_infos, self.est_lap_time, self.centerline_markers, self.centerline_wpnts,\
-                self.glb_markers, self.glb_wpnts,\
-                self.glb_sp_markers, self.glb_sp_wpnts, \
-                self.track_bounds = read_global_waypoints(map_name)
+                self.map_infos, self.est_lap_time, self.centerline_markers, self.centerline_wpnts, \
+                    self.glb_markers, self.glb_wpnts, \
+                    self.glb_sp_markers, self.glb_sp_wpnts, \
+                    self.track_bounds = read_global_waypoints(map_name)
+
+                # Update colors to match new color scheme
+                self.update_trajectory_colors()
             except FileNotFoundError:
                 rospy.logwarn(f"{map_name} param not found. Not publishing")
         else:
@@ -97,13 +115,42 @@ class GlobalRepublisher:
         self.track_bounds = data
 
     def map_info_cb(self, data):
-        self.map_infos = data    
-    
+        self.map_infos = data
+
     def est_lap_time_cb(self, data):
         self.est_lap_time = data
 
     def lattice_cb(self, data):
         self.graph_lattice = data
+
+    def update_trajectory_colors(self):
+        """Update trajectory marker colors and shapes to the new scheme:
+        - Racing line: Blue spheres
+        - Shortest path: Yellow cubes
+        """
+        # Update racing line markers to blue spheres
+        if self.glb_markers is not None:
+            for marker in self.glb_markers.markers:
+                marker.type = marker.SPHERE
+                marker.scale.x = 0.12
+                marker.scale.y = 0.12
+                marker.scale.z = 0.12
+                marker.color.r = 0.0  # Blue
+                marker.color.g = 0.0
+                marker.color.b = 1.0
+                marker.color.a = 1.0
+
+        # Update shortest path markers to yellow cubes
+        if self.glb_sp_markers is not None:
+            for marker in self.glb_sp_markers.markers:
+                marker.type = marker.CUBE
+                marker.scale.x = 0.15
+                marker.scale.y = 0.15
+                marker.scale.z = 0.15
+                marker.color.r = 1.0  # Yellow
+                marker.color.g = 1.0
+                marker.color.b = 0.0
+                marker.color.a = 1.0
 
     def global_republisher(self):
         rate = rospy.Rate(0.5)  # in Hertz

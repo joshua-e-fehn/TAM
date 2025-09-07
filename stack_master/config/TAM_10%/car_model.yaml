@@ -1,0 +1,129 @@
+# ===================================================================
+# TAM_10% SCALED INDY CAR MODEL CONFIGURATION
+# ===================================================================
+# This file defines a 10% scaled-down version of the TAM Indy car for testing.
+# GOAL: Scale full Indy car (3.115m wheelbase) down to F1tenth size (~0.32m wheelbase)
+# 
+# SCALING STRATEGY (Physical Similarity Laws):
+# - Linear dimensions: 10% (0.1x) 
+# - Mass: Volume scaling = (0.1)³ = 0.001x
+# - Moment of inertia: Mass × length² = (0.1)⁵ = 0.00001x  
+# - Velocities: Time scaling = √(length) = √(0.1) ≈ 0.316x for similar dynamics
+# - Accelerations: Can remain similar (gravitational scaling)
+# - Non-dimensional values: UNCHANGED (angles, ratios, coefficients)
+# ===================================================================
+
+# PHYSICAL PROPERTIES - PROPERLY SCALED
+# ===================================================================
+
+# Vehicle mass [kg] - SCALED BUT NUMERICALLY STABLE  
+# ORIGINAL: 742 kg → THEORETICAL: 742 × (0.1)³ = 0.742 kg
+# PRACTICAL: 3.5 kg (similar to NUC2 for realistic F1tenth mass)
+# REASONING: Theoretical scaling gives unrealistically light vehicle
+# Using realistic F1tenth mass that maintains handling characteristics
+m: 3.5
+
+# Yaw moment of inertia [kg⋅m²] - SCALED BUT NUMERICALLY STABLE
+# ORIGINAL: 1000.0 → THEORETICAL: 1000.0 × (0.1)⁵ = 0.01 kg⋅m²
+# PRACTICAL: 0.058 kg⋅m² (similar to NUC2 for numerical stability)
+# REASONING: Theoretical scaling gives too small values causing NaN in simulation
+# Using realistic F1tenth value that maintains dynamic similarity without numerical issues
+Iz: 0.058
+
+# Distance from center of mass to front axle [m] - SCALED LINEARLY
+# ORIGINAL: 1.733m → SCALED: 0.1733m  
+lf: 0.1733
+
+# Distance from center of mass to rear axle [m] - SCALED LINEARLY
+# ORIGINAL: 1.382m → SCALED: 0.1382m
+lr: 0.1382
+
+# Total wheelbase [m] - SCALED LINEARLY
+# ORIGINAL: 3.115m → SCALED: 0.3115m (similar to F1tenth ~0.32m)
+wheelbase: 0.3115
+
+# Center of gravity height [m] - SCALED LINEARLY
+# ORIGINAL: 0.287m → SCALED: 0.0287m
+h_cg: 0.0287
+
+# PERFORMANCE LIMITS - DYNAMICALLY SIMILAR SCALING
+# ===================================================================
+
+# Maximum acceleration [m/s²] - KEEP SIMILAR (does NOT scale!)
+# ORIGINAL: 10.0 → ADJUSTED: 6.0 m/s²
+# PHYSICS: For dynamic similarity, a/g = constant. Since g is constant, acceleration stays similar.
+# REASONING: Both Indy cars and F1tenth cars experience similar g-forces at their grip limits.
+# Real F1tenth: ~6-8 m/s², Real Indy: ~10-15 m/s² - adjusted for F1tenth capabilities
+a_max: 6.0
+
+# Maximum deceleration [m/s²] - KEEP SIMILAR (does NOT scale!)
+# ORIGINAL: -10.0 → ADJUSTED: -6.0 m/s²
+# PHYSICS: Braking forces scale with grip, which is proportional to weight (mg)
+# Therefore: braking acceleration = F_brake/m ∝ (mg)/m = g = constant
+a_min: -6.0
+
+# Maximum velocity [m/s] - PRACTICAL LIMIT FOR SIMULATION
+# ORIGINAL: 90.0 m/s → THEORETICAL: 90.0 × √(0.1) = 28.5 m/s
+# PRACTICAL: 15.0 m/s (more conservative F1tenth limit matching NUC2)
+# PHYSICS: For similar cornering dynamics: v²/(gR) = constant
+# Since R scales by L, velocity scales by √L
+# COMPROMISE: Use practical F1tenth limit for simulation stability
+v_max: 28.5
+
+# Minimum velocity [m/s]
+v_min: 0.0
+
+# CONTROL PARAMETERS
+# ===================================================================
+
+# Steering offset [rad] - UNCHANGED (non-dimensional)
+C_0d: 0.0
+
+# Steering gain [1/rad] - ADJUSTED FOR F1/10 SCALE
+# REASONING: F1/10 steering systems have different characteristics than full-size vehicles
+# UNCHANGED (ratio, non-dimensional) C_d:0.0016
+C_d: -1.1
+
+# Acceleration control gain - ADJUSTED FOR F1/10 ACTUATORS
+# Force scaling: F = ma, if m scales by 0.001 and a is similar, F scales by 0.001
+# Control output scaling depends on actuator type - adjusted for F1/10 motor characteristics
+C_acc: 8.0
+
+# Deceleration control gain - ADJUSTED FOR F1/10 ACTUATORS  
+C_dec: 6.0
+
+# Rolling resistance coefficient - ADJUSTED FOR F1/10 SCALE
+# F1/10 cars typically have higher rolling resistance due to scale effects
+# UNCHANGED (non-dimensional material property) C_R: 0.025
+C_R: 2.0
+
+# Velocity control parameters - ADJUSTED FOR F1/10 MOTOR CHARACTERISTICS
+# UNCHANGED (pure gains) C_v:1.0, C_0v:0.0
+C_0v: 100
+C_v: 20
+
+# STEERING DYNAMICS
+# ===================================================================
+
+# Steering time constant [s] - REALISTIC FOR F1/10 SIMULATION STABILITY
+# ORIGINAL: 0.024s → THEORETICAL: 0.024 × √(0.1) ≈ 0.0076s  
+# PRACTICAL: 0.15s (matching NUC2 for numerical stability in F1/10 simulation)
+# REASONING: Very small time constants can cause simulation instability
+tau_steer: 0.15
+
+# Maximum steering angle [rad] - ADJUSTED FOR F1/10 CAPABILITIES
+# REASONING: F1/10 cars typically have larger steering angles than full-size race cars
+# Using NUC2 reference for realistic F1/10 steering limits
+# UNCHANGED (angles don't scale) max_steering_angle: 0.32
+max_steering_angle: 0.42
+
+# Maximum steering rate [rad/s] - ADJUSTED FOR F1/10 SERVO CHARACTERISTICS
+# ORIGINAL: 2.0 → ADJUSTED: 3.2 rad/s (matching NUC2 servo capabilities)
+# REASONING: F1/10 servo motors have different rate limits than full-size steering systems
+# SCALED FOR DYNAMIC CIMILARITY: ORIGINAL: 2.0 --> SCALED: 2.0 / √(0.1) = 6.3 rad/s (too high for F1/10 servos)
+# REASONING: Angular velocity scales inversely with time scale
+max_steering_velocity: 3.2
+
+# VEHICLE IDENTIFICATION
+# ===================================================================
+racecar_version: TAM_10%

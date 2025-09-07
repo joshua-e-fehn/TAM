@@ -1,0 +1,139 @@
+# ===================================================================
+# TAM INDY CAR MODEL CONFIGURATION
+# ===================================================================
+# This file defines the physical properties and performance limits for the TAM scaled Indy car.
+# Data sources prioritized as: vehicle_config.yaml > vehicle_params_EAV24.yaml > Eav24_default.json
+# 
+# Key rationale: vehicle_config.yaml contains the most detailed and recent vehicle specifications,
+# while other sources provide backup/validation data or legacy parameters.
+# ===================================================================
+
+# PHYSICAL PROPERTIES
+# ===================================================================
+
+# Vehicle mass [kg]
+# DATA SOURCES: vehicle_config (742), vehicle_params_EAV24 (782), Eav24_default.json (760)
+# CHOSEN: 742 kg from vehicle_config.mass.total
+# REASONING: Most recent configuration file, likely represents final vehicle weight after optimization
+m: 742
+
+# Yaw moment of inertia [kg⋅m²] 
+# DATA SOURCES: vehicle_config.inertia.yaw (1000.0), vehicle_params_EAV24.I_Z (700)
+# CHOSEN: 1000.0 kg⋅m² from vehicle_config
+# REASONING: Higher value more realistic for full-size Indy car geometry vs potentially scaled model value
+Iz: 1000.0
+
+# Distance from center of mass to front axle [m]
+# DATA SOURCES: vehicle_config.dimension.distance_to_front_axle (1.733), vehicle_params_EAV24.l_F (1.802)
+# CHOSEN: 1.733 m from vehicle_config
+# REASONING: Measured dimension from detailed configuration, affects weight distribution and handling
+lf: 1.733
+
+# Distance from center of mass to rear axle [m] 
+# DATA SOURCES: vehicle_params_EAV24.l_R (1.312), calculated from geometry
+# CHOSEN: 1.382 m (calculated: wheelbase - lf = 3.115 - 1.733)
+# REASONING: Ensures geometric consistency rather than using potentially outdated parameter
+lr: 1.382
+
+# Total wheelbase [m]
+# DATA SOURCES: vehicle_config.dimension.wheelbase (3.115), calculated from params (1.802+1.312=3.114)
+# CHOSEN: 3.115 m from vehicle_config
+# REASONING: Fundamental chassis dimension that should be precisely measured
+wheelbase: 3.115
+
+# Center of gravity height [m]
+# DATA SOURCES: vehicle_config.dimension.cog_height (0.287), vehicle_params_EAV24.h_cog_m (0.287)
+# CHOSEN: 0.287 m (consistent across sources)
+# REASONING: Critical for vehicle stability, both sources agree on this measured value
+h_cg: 0.287
+
+# PERFORMANCE LIMITS  
+# ===================================================================
+
+# Maximum acceleration [m/s²]
+# DATA SOURCES: vehicle_config.planning_limits.ax_machine_limits[0] (10.0), peak values up to 13.2
+# CHOSEN: 10.0 m/s² 
+# REASONING: Baseline acceleration capability at low speeds, higher values are speed-dependent
+a_max: 10.0
+
+# Maximum deceleration [m/s²] 
+# DATA SOURCES: No direct specification in config files
+# CHOSEN: -10.0 m/s² (symmetric to acceleration)
+# REASONING: Conservative estimate; real Indy cars can brake harder due to downforce, but requires validation
+a_min: -10.0
+
+# Maximum velocity [m/s] (~200 mph)
+# DATA SOURCES: Planning limits extend to 90 m/s in speed arrays
+# CHOSEN: 90.0 m/s 
+# REASONING: Typical Indy car top speed, matches planning limit ranges
+v_max: 90.0 
+# TODO: 70.0
+
+# Minimum velocity [m/s]
+# CHOSEN: 0.0 m/s (physical minimum - stationary)
+v_min: 0.0
+
+# CONTROL PARAMETERS
+# ===================================================================
+
+# Steering offset [rad] - systematic bias in steering system
+# DATA SOURCES: No specific calibration data available
+# CHOSEN: 0.0 rad (assumes properly calibrated system)
+C_0d: 0.0
+
+# Steering gain [1/rad] - converts steering commands to wheel angles
+# DATA SOURCES: vehicle_config.steering.ratio (62.3)
+# CHOSEN: 0.0016 (calculated: 1/steering_ratio = 1/62.3)
+# REASONING: Inverse of steering ratio gives direct wheel angle per steering input
+C_d: 0.0016
+
+# Acceleration to command gain - maps desired acceleration to control output
+# DATA SOURCES: No direct mapping available, tuning parameter
+# CHOSEN: 8.0 (scaled up from F1/10 baseline for high-power vehicle)
+# REASONING: Higher-power drivetrain requires higher gain, subject to empirical tuning
+C_acc: 8.0
+
+# Deceleration to command gain - maps desired deceleration to brake output
+# DATA SOURCES: No direct mapping available, tuning parameter  
+# CHOSEN: 6.0 (lower than acceleration gain)
+# REASONING: Brake systems typically have different response characteristics
+C_dec: 6.0
+
+# Rolling resistance coefficient [-]
+# DATA SOURCES: vehicle_config.rolling_resistance.coeff (0.025)
+# CHOSEN: 0.025 (direct from config)
+# REASONING: Measured tire-road rolling resistance for vehicle dynamics calculations
+C_R: 0.025
+
+# Velocity offset - baseline current for velocity control
+# CHOSEN: 0.0 (simplified linear mapping)
+C_0v: 0.0
+
+# Velocity gain - proportional velocity control gain
+# CHOSEN: 1.0 (unity gain for direct mapping)
+C_v: 1.0
+
+# STEERING DYNAMICS
+# ===================================================================
+
+# Steering time constant [s] - first-order lag in steering response
+# DATA SOURCES: vehicle_config.actuator.steering_delay (0.024)
+# CHOSEN: 0.024 s (measured steering system response time)
+# REASONING: Critical for control system stability and realistic dynamics modeling
+tau_steer: 0.024
+
+# Maximum steering angle [rad] 
+# DATA SOURCES: vehicle_config.steering.max_angle (0.32), Eav24_default.json maxAngle (0.34 rad)
+# CHOSEN: 0.32 rad from vehicle_config (~18.3°)
+# REASONING: More conservative limit appropriate for high-speed stability
+max_steering_angle: 0.32
+
+# Maximum steering rate [rad/s]
+# DATA SOURCES: vehicle_config.steering.max_rate (0.0 - not configured)
+# CHOSEN: 2.0 rad/s (conservative engineering estimate)
+# REASONING: High-speed vehicles need limited steering rates for stability, allows full lock-to-lock in ~0.32s
+max_steering_velocity: 2.0
+
+# VEHICLE IDENTIFICATION
+# ===================================================================
+racecar_version: TAM

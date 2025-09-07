@@ -1,0 +1,677 @@
+{
+	"name": "tum",
+	"type": "Eav24",
+	"specName": "Default",
+	"location": {
+		"x": 0,
+		"y": 0,
+		"z": 0
+	},
+	"rotation": {
+		"pitch": 0,
+		"yaw": 0,
+		"roll": 0
+	},
+	"spawnCriteria": "Now",
+	"tags": [],
+	"payloads": [
+		{
+			"typeName": "GroundTruthSensor",
+			"bEnabled": true,
+			"body": {
+				"myGroundTruthDsd": {
+					"streamName": "ground_truth",
+					"rateHz": 100.0
+				},
+				"opponentGroundTruthDsd": {
+					"streamName": "v2v_ground_truth",
+					"rateHz": 100.0
+				},
+				"bUseOpponentRelativeRotation": false
+			}
+		},
+		{
+			"typeName": "WorldTextComponent",
+			"bEnabled": true,
+			"body": {
+				"bUseObjectName": true,
+				"defaultString": "Dan",
+				"fontSize": 34,
+				"offsetCm": {
+					"x": 0,
+					"y": 0,
+					"z": 150
+				}
+			}
+		},
+		{
+			"typeName": "Ros2",
+			"body": {
+				"domainId": 0
+			}
+		},
+		{
+			"typeName": "WheeledVehicleReplayIpd",
+			"bEnabled": true,
+			"body": {
+				"bEnableRecording": true,
+				"recordMotionMinSpeedThreshold": 0.01,
+				"bEnableReplay": false,
+				"bApplyInitialConfig": false,
+				"bRecordSingleLap": true,
+				"initialConfig": {
+					"playRate": 1.0,
+	                "profile": "yas_qg_middle",
+	                "bUseRandomProfile": false,
+	                "replayAction": "start",
+	                "bStartReplayAtRandomTime": false,
+	                "relativeDistance": 0
+				}
+			}
+		},
+		{
+			"typeName": "WheeledVehicleAutopilot",
+			"bEnabled": false,
+			"body": {
+				"pointSequenceName": "CiRoute"
+			}
+		},
+		{
+			"typeName": "LwiIpd",
+			"body":
+			{
+				"listenPort": 30602,
+				"bEnableControl": false,
+				"txAddress": "127.0.0.1",
+				"txPort": 30603
+			}
+		},
+		{
+			"typeName": "VehicleLaneMonitorIpd",
+			"body": {
+				"laneName": "Default",
+				"laneDetectionWidthCm": 174,
+				"laneDetectionLengthCm": 110,
+				"bPublishLaps": false,
+				"bPublishLateralLanePercent": false,
+				"bTickWithPhysics": true,
+				"bDetectBounds": false
+			}
+		},
+		{
+			"typeName": "Eav24Initializer",
+			"specName": "",
+			"body": {
+				"defaultInputMode": "CAN",
+				"bEnablePrimaryCan": true,
+				"primaryCanName": "vcan0",
+				"kistlerLeverarm": {
+					"translation": {
+							"x": 148.1,
+							"y": 0,
+							"z": 18.7
+						},
+						"translationUnits": "centimeters",
+						"rotation": {
+							"pitch": 0,
+							"yaw": 0,
+							"roll": 0
+						},
+						"rotationUnits": "degrees"
+				},
+				"boschLeverarm": {
+					"translation": {
+							"x": 1,
+							"y": 2,
+							"z": 3
+						},
+						"translationUnits": "centimeters",
+						"rotation": {
+							"pitch": 0,
+							"yaw": 0,
+							"roll": 0
+						},
+						"rotationUnits": "degrees"
+				},
+				"bEnableSecondaryCan": true,
+				"secondaryCanName": "vcan1",
+				"canReceiveRate": 10000.0,
+				"canLowSendRate": 1.0,
+				"canMedSendRate": 100.0,
+				"canHighSendRate": 100.0,
+				"bHudEnabled": true,
+				"bRenderHudInWorld": false,
+				"bLidarEnabled": false,
+				"bCameraEnabled": false,
+				"bRadarEnabled": false,
+				"bPublishInputs": false,
+				"bPublishGroundTruth": true,
+				"teamNumber": 33
+			}
+		},
+		{
+			"typeName": "WheeledVehicleInitializer",
+			"specName": "",
+			"body": {
+				"mass": 760,
+				"centerOfMass": {
+					"x": 0,
+					"y": 0,
+					"z": 0
+				},
+				"inertia": {
+					"x": 0,
+					"y": 0,
+					"z": 0
+				},
+				"steering": {
+					"maxAngle": 19.595156593,
+					"ratio": 1,
+					"delay": 0,
+					"delaySeconds": 0,
+					"bandwidth": 20,
+					"rate": 1000,
+					"bIsPhysicalActuator": true
+				},
+				"powertrain": {
+					"numGears": 6,
+					"finalGearRatio": 2.818,
+					"gearRatios": [ 3.083, 2.286, 1.7647, 1.421, 1.19, 1.036 ],
+					"enginePoly": [ -1.647e-16, 5.906e-12, -7.246e-8, 0.000366, -0.648, 524.881 ],
+					"throttleBandwidth": 2,
+					"throttleRate": 50,
+					"torqueRate": 500,
+					"throttleMapInput": [
+						0,
+						0.33000001311302185,
+						0.6600000262260437,
+						1
+					],
+					"throttleMapOutput": [
+						0,
+						0.5,
+						0.80000001192092896,
+						1
+					],
+					"engineRpmMax": 7000,
+					"engineRpmMin": 1500,
+					"engineRpmNoise": 10,
+					"engineFrictionTorque": 30,
+					"engineInertia": 0.20000000298023224,
+					"frontDifferentialDamping": 0,
+					"rearDifferentialDamping": 5,
+					"bHasRearSolidAxel": false
+				},
+				"brake": {
+					"delay": 0,
+					"delaySeconds": 0,
+					"maxKpa": 100,
+					"kpaToNm": 20,
+					"frontToRearRatio": 0.44999998807907104,
+					"bandwidth": 20,
+					"rate": 6000
+				},
+				"suspension": {
+					"kArbFront": 1277262,
+					"kArbRear": 287433,
+					"kSpring": 107552,
+					"cDamper": 8000,
+					"lSpring": 0.30000001192092896,
+					"coilBindLength": 0.0099999997764825821
+				},
+				"frontTire": {
+					"relaxLenY": 0.10000000149011612,
+					"relaxLenX": 0.10000000149011612,
+					"rollResForce": 60,
+					"wheelInertia": 2,
+					"tireRadius": 0.31000000238418579,
+					"p": [ 0.0002000000474974513, 4.9999997473787516e-05, 9.9999997473787516e-05, 9.9999997473787516e-06, 0.0012000000474974513, 1.2000000476837158, 0.00030000001424923539 ],
+					"mt": 10,
+					"ct": 3,
+					"ht": 12,
+					"acp": 0.0099999997764825821,
+					"thermalFrictionMapInput": [
+						0,
+						30,
+						70,
+						100,
+						130
+					],
+					"thermalFrictionMapOutput": [
+						0.80000001192092896,
+						0.89999997615814209,
+						1,
+						1,
+						0.80000001192092896
+					],
+					"InitTemp": 21.0
+				},
+				"rearTire": {
+					"relaxLenY": 0.10000000149011612,
+					"relaxLenX": 0.10000000149011612,
+					"rollResForce": 60,
+					"wheelInertia": 2,
+					"tireRadius": 0.31000000238418579,
+					"p": [ 0.0000100000474974513, 1.9999997473787516e-05, 9.9999997473787516e-05, 9.9999997473787516e-06, 0.0012000000474974513, 1.2000000476837158, 0.00030000001424923539 ],
+					"mt": 10,
+					"ct": 3,
+					"ht": 12,
+					"acp": 0.0099999997764825821,
+					"thermalFrictionMapInput": [
+						0,
+						30,
+						70,
+						100,
+						130
+					],
+					"thermalFrictionMapOutput": [
+						0.80000001192092896,
+						0.89999997615814209,
+						1,
+						1,
+						0.80000001192092896
+					],
+					"InitTemp": 21.0
+				},
+				"aero":
+				{
+					"frontalArea": 1.0,
+					"frontDownforceCoefficient": 1.683,
+					"rearDownforceCoefficient": 2.227,
+					"frontDownforcePosition":
+					{
+						"x": 1.7332808971405029,
+						"y": 0,
+						"z": 0
+					},
+					"rearDownforcePosition": {
+						"x": -1.3817191123962402,
+						"y": 0,
+						"z": 0
+					},
+					"cd": 1.194,
+					"dragForcePosition":
+					{
+						"x": 0,
+						"y": 0,
+						"z": 0
+					},
+					"airDensity": 0.6115
+				},
+				"bUseTireThermalModel": false,
+				"bPhysicalBreakActuator": true
+			}
+		},
+		{
+			"typeName": "VectornavIpd",
+			"specName": "",
+			"bEnabled": true,
+			"body": {
+				"componentConfig": {
+					"instanceName": "vectornav"
+				},
+				"sensorDesc":
+				{
+					"frame": "",
+					"leverArm": {
+						"translation": {
+							"x": 0,
+							"y": 0,
+							"z": 0
+						},
+						"translationUnits": "centimeters",
+						"rotation": {
+							"pitch": 0,
+							"yaw": 0,
+							"roll": 0
+						},
+						"rotationUnits": "degrees"
+					},
+					"namedLeverArms": {
+						"Imu": {
+							"translation": {
+								"x": 0,
+								"y": 0,
+								"z": 0
+							},
+							"translationUnits": "centimeters",
+							"rotation": {
+								"pitch": 0,
+								"yaw": 0,
+								"roll": 0
+							},
+							"rotationUnits": "degrees"
+						},
+						"PrimaryGnss": {
+							"translation": {
+								"x": -10,
+								"y": 0,
+								"z": 100
+							},
+							"translationUnits": "centimeters",
+							"rotation": {
+								"pitch": 0,
+								"yaw": 0,
+								"roll": 0
+							},
+							"rotationUnits": "degrees"
+						},
+						"SecondaryGnss": {
+							"translation": {
+								"x": 174,
+								"y": 0,
+								"z": 57
+							},
+							"translationUnits": "centimeters",
+							"rotation": {
+								"pitch": 0,
+								"yaw": 0,
+								"roll": 0
+							},
+							"rotationUnits": "degrees"
+						}
+					},
+					"namedDataStreams": {
+						"CommonGroup": {
+							"bEnabled": true,
+							"streamName": "vectornav/raw/common",
+							"rateHz": 100
+						},
+						"GpsGroup": {
+							"bEnabled": true,
+							"streamName": "vectornav/raw/gps",
+							"rateHz": 100
+						},
+						"Gps2Group": {
+							"bEnabled": true,
+							"streamName": "vectornav/raw/gps2",
+							"rateHz": 100
+						},
+						"ImuGroup": {
+							"bEnabled": true,
+							"streamName": "vectornav/raw/imu",
+							"rateHz": 250
+						},
+						"AttitudeGroup": {
+							"bEnabled": true,
+							"streamName": "vectornav/raw/attitude",
+							"rateHz": 100
+						},
+						"Tii": {
+							"bEnabled": true,
+							"streamName": "a2rl/vn/ins",
+							"rateHz": 100
+						},
+						"NavSatFix": {
+							"bEnabled": true,
+							"streamName": "vectornav/nav_sat_fix",
+							"rateHz": 100
+						}
+					}
+				}
+			}
+		},
+		{
+			"typeName": "GenericLidarIpd",
+			"specName": "",
+			"bEnabled": true,
+			"body": {
+				"NoiseConfig": {
+					"DepthNoiseStdDev": 0.005,
+					"DropoutProbability": 0.1
+				},
+				"componentConfig": {
+					"instanceName": "lidar_front"
+				},
+				"sensorDesc": {
+					"frame": "lidar_front",
+					"leverArm": {
+						"translation": {
+							"x": 85,
+							"y": 0,
+							"z": 67
+						},
+						"translationUnits": "centimeters",
+						"rotation": {
+							"pitch": 0,
+							"yaw": 0,
+							"roll": 0
+						},
+						"rotationUnits": "degrees"
+					},
+					"dataStream": {
+						"interfaceType": "ros2",
+						"interfaceName": "",
+						"streamName": "lidar_front/points",
+						"rateHz": 15,
+						"options": []
+					}
+				}
+			}
+		},
+		{
+			"typeName": "GenericLidarIpd",
+			"specName": "",
+			"bEnabled": true,
+			"body": {
+				"NoiseConfig": {
+					"DepthNoiseStdDev": 0.005,
+					"DropoutProbability": 0.1
+				},
+				"componentConfig": {
+					"instanceName": "lidar_left"
+				},
+				"sensorDesc": {
+					"frame": "lidar_left",
+					"leverArm": {
+						"translation": {
+							"x": 15,
+							"y": -13,
+							"z": 72
+						},
+						"translationUnits": "centimeters",
+						"rotation": {
+							"pitch": 0,
+							"yaw": 240,
+							"roll": 0
+						},
+						"rotationUnits": "degrees"
+					},
+					"dataStream": {
+						"interfaceType": "ros2",
+						"interfaceName": "",
+						"streamName": "lidar_left/points",
+						"rateHz": 15,
+						"options": []
+					}
+				}
+			}
+		},
+		{
+			"typeName": "GenericLidarIpd",
+			"specName": "",
+			"bEnabled": true,
+			"body": {
+				"NoiseConfig": {
+					"DepthNoiseStdDev": 0.005,
+					"DropoutProbability": 0.1
+				},
+				"componentConfig": {
+					"instanceName": "lidar_right"
+				},
+				"sensorDesc": {
+					"frame": "lidar_right",
+					"leverArm": {
+						"translation": {
+							"x": 15,
+							"y": 13,
+							"z": 72
+						},
+						"translationUnits": "centimeters",
+						"rotation": {
+							"pitch": 0,
+							"yaw": 120,
+							"roll": 0
+						},
+						"rotationUnits": "degrees"
+					},
+					"dataStream": {
+						"interfaceType": "ros2",
+						"interfaceName": "",
+						"streamName": "lidar_right/points",
+						"rateHz": 15,
+						"options": []
+					}
+				}
+			}
+		},
+		{
+			"typeName": "CameraSensor",
+			"specName": "",
+			"bEnabled": true,
+			"body":
+			{
+				"componentConfig": {
+					"instanceName": "camera_front"
+				},
+				"frameWidth": 1920,
+				"frameHeight": 1080,
+				"fov": 90.0,
+				"sensorDesc": {
+					"frame": "sensor",
+					"leverArm": {
+						"translation": {
+							"x": 200,
+							"y": 0,
+							"z": 76
+						},
+						"translationUnits": "centimeters",
+						"rotation": {
+							"pitch": 0,
+							"yaw": 0,
+							"roll": 0
+						},
+						"rotationUnits": "degrees"
+					},
+					"dataStream": {
+						"interfaceType": "ros2",
+						"interfaceName": "",
+						"streamName": "camera_middle",
+						"rateHz": 20,
+						"options": []
+					}
+				}
+			}
+		},
+		{
+			"typeName": "RadarSensor",
+			"specName": "",
+			"bEnabled": true,
+			"body":
+			{
+				"componentConfig": {
+					"instanceName": "radar_front"
+				},
+				"sensorDesc":
+				{
+					"frame": "sensor",
+					"leverArm": {
+						"translation": {
+							"x": 200,
+							"y": 0,
+							"z": 76
+						},
+						"translationUnits": "centimeters",
+						"rotation": {
+							"pitch": 0,
+							"yaw": 0,
+							"roll": 0
+						},
+						"rotationUnits": "degrees"
+					},
+					"dataStream": {
+						"interfaceType": "ros2",
+						"interfaceName": "",
+						"streamName": "radar",
+						"rateHz": 30,
+						"options": []
+					}
+				}
+			}
+		},
+		{
+			"typeName": "SimViewTargetIpd",
+			"specName": "",
+			"body": {
+				"firstCameraIndex": 0,
+				"cameras": [
+					{
+						"name": "Cam0",
+						"offsetCm":
+						{
+							"x": -800,
+							"y": 0,
+							"z": 200
+						},
+						"rotation": {
+							"pitch": -5,
+							"yaw": 0,
+							"roll": 0
+						},
+						"fovDegrees": 90,
+						"bEnableTranslationLag": false,
+						"bEnableRotationLag": false
+					},
+					{
+						"name": "Cam1",
+						"offsetCm": {
+							"x": -200,
+							"y": 300,
+							"z": 50
+						},
+						"rotation": {
+							"pitch": 0,
+							"yaw": -45,
+							"roll": 0
+						},
+						"fovDegrees": 90,
+						"bEnableTranslationLag": false,
+						"bEnableRotationLag": false
+					},
+					{
+						"name": "Cam2",
+						"offsetCm": {
+							"x": -100,
+							"y": 0,
+							"z": 1300
+						},
+						"rotation": {
+							"pitch": -85,
+							"yaw": 0,
+							"roll": 0
+						},
+						"fovDegrees": 90,
+						"bEnableTranslationLag": false,
+						"bEnableRotationLag": false
+					},
+					{
+						"name": "Cam3",
+						"offsetCm": {
+							"x": 50,
+							"y": 0,
+							"z": 90
+						},
+						"rotation": {
+							"pitch": 0,
+							"yaw": 0,
+							"roll": 0
+						},
+						"fovDegrees": 90,
+						"bEnableTranslationLag": false,
+						"bEnableRotationLag": false
+					}
+				]
+			}
+		}
+	]
+}

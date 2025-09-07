@@ -1,0 +1,106 @@
+# ===================================================================
+# TAM_10% SCALED INDY CAR VESC CONFIGURATION (SIMULATION)
+# ===================================================================
+# VESC configuration for 10% scaled TAM Indy car testing.
+# Provides realistic control mapping for smaller vehicle dynamics.
+# ===================================================================
+
+# MOTOR CONTROL MAPPING - SCALED
+# ===================================================================
+
+# Speed to electrical RPM conversion - ADJUSTED FOR F1/10 SCALE
+# ORIGINAL: 463 → F1/10: 2000 (realistic for F1/10 motor characteristics)
+# REASONING: F1/10 motors have different speed/RPM characteristics than full-scale
+speed_to_erpm_gain: 2000
+
+# Speed offset - UNCHANGED
+speed_to_erpm_offset: 0.0
+
+# ODOMETRY CONVERSION - SCALED
+# ===================================================================
+
+# Tachometer to distance conversion - ADJUSTED FOR F1/10 WHEEL SIZE
+# ORIGINAL: 0.0195 → F1/10: 0.002 (realistic for F1/10 wheel circumference)
+# REASONING: F1/10 wheels are approximately 10cm diameter vs full-scale wheels
+tachometer_ticks_to_meters_gain: 0.002
+
+# PERFORMANCE LIMITS - CORRECTED WITH DIMENSIONLESS ANALYSIS
+# ===================================================================
+
+# Maximum acceleration - ADJUSTED FOR F1/10 CAPABILITIES
+# ORIGINAL: 10.0 → F1/10: 6.0 m/s² (realistic F1/10 acceleration capability)
+# REASONING: F1/10 cars have lower acceleration than theoretical scaling would suggest
+max_acceleration: 6.0
+
+# Maximum servo speed - ADJUSTED FOR F1/10 SERVO CHARACTERISTICS
+# ORIGINAL: 2.0 → F1/10: 3.2 rad/s (matching NUC2 servo capabilities)
+# REASONING: F1/10 servos have specific rate limits regardless of scale theory
+max_servo_speed: 3.2
+
+# Current limits - REALISTIC FOR F1/10 MOTORS
+# ORIGINAL: 200A → F1/10: 20A (realistic for F1/10 motor current limits)
+max_accel_current: 20
+max_brake_current: 15
+
+# STEERING MAPPING - UNCHANGED (angle-based)
+# ===================================================================
+
+# Steering mapping - UNCHANGED (angles don't scale)
+steering_angle_to_servo_gain: -3.125
+steering_angle_to_servo_offset: 0.5
+
+# CONTROL GAINS - ADJUSTED FOR SCALE
+# ===================================================================
+
+# Acceleration control - ADJUSTED FOR F1/10 MOTOR CHARACTERISTICS
+# ORIGINAL: 20.0 → F1/10: 50.0 (adjusted for F1/10 motor response)
+acceleration_to_current_gain: 50.0
+
+# Deceleration control - ADJUSTED FOR F1/10 MOTOR CHARACTERISTICS
+# ORIGINAL: 15.0 → F1/10: 40.0 (adjusted for F1/10 braking response)
+deceleration_to_current_gain: 40.0
+
+# Velocity control - ADJUSTED FOR F1/10 SCALE
+velocity_to_current_gain: 10.0
+
+# VEHICLE PARAMETERS - SCALED
+# ===================================================================
+
+# Wheelbase - SCALED DOWN 10%
+# ORIGINAL: 3.115m → SCALED: 0.3115m
+wheelbase: 0.3115
+
+# SYSTEM DYNAMICS - CORRECTED WITH DIMENSIONLESS ANALYSIS
+# ===================================================================
+
+# Time constants - REALISTIC FOR F1/10 SIMULATION STABILITY
+# ORIGINAL: 0.024s → F1/10: 0.15s (matching NUC2 for stable simulation)
+# REASONING: F1/10 simulation requires stable time constants for numerical stability
+current_time_constant: 0.15
+
+# Control rates - REALISTIC FOR F1/10 SIMULATION
+servo_smoother_rate: 75.0       # Appropriate rate for F1/10 servo control
+throttle_smoother_rate: 75.0    # Appropriate rate for F1/10 motor control
+current_smoother_rate: 100.0    # Standard rate for current control
+
+# Timeouts - UNCHANGED
+servo_timeout: 0.1
+motor_timeout: 0.1
+current_timeout: 0.1
+
+# Transform publishing
+vesc_to_odom/publish_tf: false
+
+# SIMULATION DRIVER SETTINGS - ADJUSTED FOR F1/10
+# ===================================================================
+vesc_driver:
+  port: /dev/null
+  duty_cycle_min: 0.0
+  duty_cycle_max: 1.0
+  current_max: 20.0             # F1/10 current limits
+  brake_min: -2000              # F1/10 brake limits
+  brake_max: 2000               # F1/10 acceleration limits  
+  speed_min: -3000              # F1/10 speed range
+  speed_max: 3000               # F1/10 speed range
+  servo_min: 0.0
+  servo_max: 1.0

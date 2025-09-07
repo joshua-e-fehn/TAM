@@ -1,0 +1,55 @@
+# ===================================================================
+# TAM_10% SCALED INDY CAR L1 CONTROLLER PARAMETERS
+# ===================================================================
+# L1 controller parameters for 10% scaled TAM Indy car.
+# Distances scaled by 0.1 factor, speeds by √(0.1) ≈ 0.316 factor.
+# ===================================================================
+
+## L1 Parameters
+
+# Time parameters - UNCHANGED (dimensionless)
+t_clip_min: 0.8
+t_clip_max: 5
+
+# L1 control parameters - DIMENSIONLESS (unchanged)
+m_l1: 0.6
+q_l1: -0.165
+
+# Lookahead parameters - DIMENSIONLESS (unchanged)
+speed_lookahead: 0.25
+lat_err_coeff: 1
+
+# Steering scaling parameters - DIMENSIONLESS (unchanged)
+acc_scaler_for_steer: 1.2
+dec_scaler_for_steer: 0.9
+
+# Speed scaling parameters - ADJUSTED FOR F1/10 VELOCITY RANGE
+# ORIGINAL speeds adjusted for realistic F1/10 capabilities
+# F1/10 typical speeds: 1-8 m/s → choosing conservative scaling points
+# SCALED according to velocity scaling factor √(0.1) ≈ 0.316
+# 7.0, 8.0 --> 2.2, 2.5 m/s (realistic top speed)
+
+start_scale_speed: 3.0
+end_scale_speed: 4.0
+downscale_factor: 0.2
+
+# Speed lookahead for steering - DIMENSIONLESS (unchanged)
+speed_lookahead_for_steer: 0.0
+
+## Trailing Controller Parameters
+prioritize_dyn: True
+
+# Trailing gap - REALISTIC F1/10 FOLLOWING DISTANCE  
+# ORIGINAL: 2m → F1/10: 1.0m (realistic following distance for F1/10 scale)
+# SCALED by 0.1 factor: 0.2
+trailing_gap: 1.0
+
+# Control gains - DIMENSIONLESS (unchanged)
+trailing_p_gain: 1
+trailing_i_gain: 0.0
+trailing_d_gain: 0.2
+
+# Blind trailing speed - REALISTIC F1/10 SPEED
+# ORIGINAL: 1.5 m/s → F1/10: 1.5 m/s (safe following speed for F1/10)
+# SCALED by wurzel(0.1) factor: 1.5 --> 0.47
+blind_trailing_speed: 1.5

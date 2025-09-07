@@ -1,0 +1,9 @@
+free_thresh: 0.196
+image: marina_10%s_100%w_NUC2_mintime.png
+negate: 0
+occupied_thresh: 0.65
+origin:
+- -38.7896572
+- -77.0142177
+- 0
+resolution: 0.05000000074505806
