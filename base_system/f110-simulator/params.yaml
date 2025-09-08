@@ -89,27 +89,27 @@ keyboard_steer_ang: .3  # radians
 obstacle_size: 2
 
 # The names of topics to listen and publish to
-joy_topic: "joy"
-drive_topic: "drive"
-map_topic: "map"
-distance_transform_topic: "dt"
-scan_topic: "scan"
-pose_topic: "weirdo"
-ground_truth_pose_topic: "car_state/pose"
-odom_topic: "car_state/odom"
-pitch_topic: "car_state/pitch"
-imu_topic: "vesc/sensors/imu/raw"
-pose_rviz_topic: "initialpose"
-keyboard_topic: "key"
-brake_bool_topic: "brake_bool"
-mux_topic: "mux"
+joy_topic: "/joy"
+drive_topic: "/drive"
+map_topic: "/map"
+distance_transform_topic: "/dt"
+scan_topic: "/scan"
+pose_topic: "/weirdo"
+ground_truth_pose_topic: "/car_state/pose"
+odom_topic: "/car_state/odom"
+pitch_topic: "/car_state/pitch"
+imu_topic: "/vesc/sensors/imu/raw"
+pose_rviz_topic: "/initialpose"
+keyboard_topic: "/key"
+brake_bool_topic: "/brake_bool"
+mux_topic: "/mux"
 
 # Topic names of various drive channels
-rand_drive_topic: "rand_drive"
-brake_drive_topic: "brake"
-nav_drive_topic: "vesc/high_level/ackermann_cmd_mux/input/nav_1"
+rand_drive_topic: "/rand_drive"
+brake_drive_topic: "/brake"
+nav_drive_topic: "/vesc/high_level/ackermann_cmd_mux/input/nav_1"
 # **Add name for new planning method here**
-new_drive_topic: "new_drive"
+new_drive_topic: "/new_drive"
 
 # name of file to write collision log to 
 collision_file: "collision_file"

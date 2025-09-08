@@ -51,6 +51,8 @@
   <!-- Car 1 -->
   <group if="$(eval car1 != '')" ns="$(arg car1)">
     <param name="frame_prefix" value="$(arg frame_prefix_car1)"/>
+    <!-- Set tf_prefix for robot_state_publisher -->
+    <param name="racecar/robot_state_publisher/tf_prefix" value="$(arg frame_prefix_car1)"/>
     <include file="$(find stack_master)/launch/headtohead.launch">
       <arg name="planner" value="$(arg planner_car1)"/>
       <arg name="racecar_version" value="$(arg version_car1)"/>
@@ -71,32 +73,21 @@
       <node pkg="tf" type="static_transform_publisher" name="car1_global_map_link"
             args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car1)map 10" />
     </group>
-    <!-- Bridge namespace frames to prefix frames for RViz robot models -->
-    <node pkg="tf" type="static_transform_publisher" name="car1_namespace_bridge"
-          args="0 0 0 0 0 0 $(arg frame_prefix_car1)base_link car1/base_link 10" />
-    <!-- Add missing wheel transforms for robot model visualization (using longer period to avoid conflicts) -->
+    <!-- Bridge the prefixed robot model frames to the main TF tree -->
+    <node pkg="tf" type="static_transform_publisher" name="car1_robot_model_bridge"
+          args="0 0 0 0 0 0 car1_base_link car1_/base_link 10" />
+    <!-- Add missing front wheel transforms for robot model -->
     <node pkg="tf" type="static_transform_publisher" name="car1_front_left_wheel_tf"
-          args="0 0 0 0 0 0 car1/front_left_hinge car1/front_left_wheel 100" />
+          args="0 0 0 0 0 0 car1_/front_left_hinge car1_/front_left_wheel 10" />
     <node pkg="tf" type="static_transform_publisher" name="car1_front_right_wheel_tf"
-          args="0 0 0 0 0 0 car1/front_right_hinge car1/front_right_wheel 100" />
-    <!-- Bridge non-namespaced frames to namespaced frames -->
-    <node pkg="tf" type="static_transform_publisher" name="car1_base_link_bridge"
-          args="0 0 0 0 0 0 car1/base_link base_link 10" />
-    <node pkg="tf" type="static_transform_publisher" name="car1_laser_bridge"
-          args="0 0 0 0 0 0 car1/laser_model laser_model 10" />
-    <node pkg="tf" type="static_transform_publisher" name="car1_back_left_wheel_bridge"
-          args="0 0 0 0 0 0 car1/back_left_wheel back_left_wheel 10" />
-    <node pkg="tf" type="static_transform_publisher" name="car1_back_right_wheel_bridge"
-          args="0 0 0 0 0 0 car1/back_right_wheel back_right_wheel 10" />
-    <node pkg="tf" type="static_transform_publisher" name="car1_front_left_hinge_bridge"
-          args="0 0 0 0 0 0 car1/front_left_hinge front_left_hinge 10" />
-    <node pkg="tf" type="static_transform_publisher" name="car1_front_right_hinge_bridge"
-          args="0 0 0 0 0 0 car1/front_right_hinge front_right_hinge 10" />
+          args="0 0 0 0 0 0 car1_/front_right_hinge car1_/front_right_wheel 10" />
   </group>
 
   <!-- Car 2 -->
   <group if="$(eval car2 != '')" ns="$(arg car2)">
     <param name="frame_prefix" value="$(arg frame_prefix_car2)"/>
+    <!-- Set tf_prefix for robot_state_publisher -->
+    <param name="racecar/robot_state_publisher/tf_prefix" value="$(arg frame_prefix_car2)"/>
     <include file="$(find stack_master)/launch/headtohead.launch">
       <arg name="planner" value="$(arg planner_car2)"/>
       <arg name="racecar_version" value="$(arg version_car2)"/>
@@ -116,14 +107,14 @@
       <node pkg="tf" type="static_transform_publisher" name="car2_global_map_link"
             args="2 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car2)map 10" />
     </group>
-    <!-- Bridge namespace frames to prefix frames for RViz robot models -->
-    <node pkg="tf" type="static_transform_publisher" name="car2_namespace_bridge"
-          args="0 0 0 0 0 0 $(arg frame_prefix_car2)base_link car2/base_link 10" />
-    <!-- Add missing wheel transforms for robot model visualization (using longer period to avoid conflicts) -->
+    <!-- Bridge the prefixed robot model frames to the main TF tree -->
+    <node pkg="tf" type="static_transform_publisher" name="car2_robot_model_bridge"
+          args="0 0 0 0 0 0 car2_base_link car2_/base_link 10" />
+    <!-- Add missing front wheel transforms for robot model -->
     <node pkg="tf" type="static_transform_publisher" name="car2_front_left_wheel_tf"
-          args="0 0 0 0 0 0 car2/front_left_hinge car2/front_left_wheel 100" />
+          args="0 0 0 0 0 0 car2_/front_left_hinge car2_/front_left_wheel 10" />
     <node pkg="tf" type="static_transform_publisher" name="car2_front_right_wheel_tf"
-          args="0 0 0 0 0 0 car2/front_right_hinge car2/front_right_wheel 100" />
+          args="0 0 0 0 0 0 car2_/front_right_hinge car2_/front_right_wheel 10" />
   </group>
 
   <!-- Additional cars (3 & 4) can be enabled by setting car3 / car4 args -->

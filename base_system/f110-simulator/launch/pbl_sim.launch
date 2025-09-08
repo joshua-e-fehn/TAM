@@ -92,7 +92,6 @@
   <!-- Begin the simulator with the parameters from params.yaml -->
   <node pkg="f1tenth_simulator" name="f1tenth_simulator" type="simulator" output="screen">
     <rosparam command="load" file="$(find f1tenth_simulator)/pbl_params.yaml"/>
-    <rosparam command="load" file="$(arg base_map_dir)/maps/$(arg map_name)/$(arg map_name).yaml"/>
   </node>
 
   <!-- Launch RVIZ -->
