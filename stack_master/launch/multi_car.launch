@@ -1,0 +1,194 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- List of car namespaces to spawn -->
+  <arg name="cars" default="car1,car2"/>
+  <!-- Per-car planner selection (comma separated, aligns with cars) -->
+  <arg name="planners" default="spliner,spliner"/>
+  <!-- Per-car map names (comma separated) -->
+  <arg name="maps" default="M1,M1"/>
+  <!-- Single global map argument (preferred). Overrides individual defaults unless explicitly set per car. -->
+  <arg name="global_map" default="M1"/>
+  <!-- Per-car racecar versions (hardware profiles) -->
+  <arg name="versions" default="NUC2,NUC2"/>
+  <!-- Optional per-car frame prefixes (comma separated) -->
+  <arg name="frame_prefixes" default="car1_,car2_"/>
+  <!-- Simulation flag applied to all cars -->
+  <arg name="sim" default="True"/>
+  <!-- Launch a single consolidated RViz instead of one per car -->
+  <arg name="rviz" default="True"/>
+  <!-- Global neutral map frame support -->
+  <arg name="use_global_map" default="True"/>
+  <arg name="global_map_frame" default="map"/>
+
+  <!-- Helper python expansion using eval is brittle; split CSV lists in bash style via subst args -->
+  <!-- We iterate by index because roslaunch lacks native list iteration; replicate pattern for 4 cars max -->
+  <arg name="car1" default="car1"/>
+  <arg name="car2" default="car2"/>
+  <arg name="car3" default=""/>
+  <arg name="car4" default=""/>
+
+  <!-- Internal: map each idx to selected value by position using subst; users can override directly -->
+  <arg name="planner_car1" default="spliner"/>
+  <arg name="planner_car2" default="spliner"/>
+  <arg name="planner_car3" default="spliner"/>
+  <arg name="planner_car4" default="spliner"/>
+
+  <arg name="map_car1" default="$(arg global_map)"/>
+  <arg name="map_car2" default="$(arg global_map)"/>
+  <arg name="map_car3" default="$(arg global_map)"/>
+  <arg name="map_car4" default="$(arg global_map)"/>
+
+  <arg name="version_car1" default="NUC2"/>
+  <arg name="version_car2" default="NUC2"/>
+  <arg name="version_car3" default="NUC2"/>
+  <arg name="version_car4" default="NUC2"/>
+
+  <arg name="frame_prefix_car1" default="car1_"/>
+  <arg name="frame_prefix_car2" default="car2_"/>
+  <arg name="frame_prefix_car3" default="car3_"/>
+  <arg name="frame_prefix_car4" default="car4_"/>
+
+  <!-- Car 1 -->
+  <group if="$(eval car1 != '')" ns="$(arg car1)">
+    <param name="frame_prefix" value="$(arg frame_prefix_car1)"/>
+    <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="planner" value="$(arg planner_car1)"/>
+      <arg name="racecar_version" value="$(arg version_car1)"/>
+      <arg name="measure" value="False"/>
+  <arg name="map_name" value="$(arg map_car1)"/>
+    </include>
+    <include file="$(find stack_master)/launch/base_system.launch">
+      <arg name="map_name" value="$(arg map_car1)"/>
+      <arg name="racecar_version" value="$(arg version_car1)"/>
+      <arg name="sim" value="$(arg sim)"/>
+  <!-- Disable per-car RViz inside simulator include by forcing arg -->
+  <arg name="rviz" value="False"/>
+    </include>
+    <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
+      <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
+    </include>
+    <group if="$(arg use_global_map)">
+      <node pkg="tf" type="static_transform_publisher" name="car1_global_map_link"
+            args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car1)map 10" />
+    </group>
+    <!-- Bridge namespace frames to prefix frames for RViz robot models -->
+    <node pkg="tf" type="static_transform_publisher" name="car1_namespace_bridge"
+          args="0 0 0 0 0 0 $(arg frame_prefix_car1)base_link car1/base_link 10" />
+    <!-- Add missing wheel transforms for robot model visualization (using longer period to avoid conflicts) -->
+    <node pkg="tf" type="static_transform_publisher" name="car1_front_left_wheel_tf"
+          args="0 0 0 0 0 0 car1/front_left_hinge car1/front_left_wheel 100" />
+    <node pkg="tf" type="static_transform_publisher" name="car1_front_right_wheel_tf"
+          args="0 0 0 0 0 0 car1/front_right_hinge car1/front_right_wheel 100" />
+    <!-- Bridge non-namespaced frames to namespaced frames -->
+    <node pkg="tf" type="static_transform_publisher" name="car1_base_link_bridge"
+          args="0 0 0 0 0 0 car1/base_link base_link 10" />
+    <node pkg="tf" type="static_transform_publisher" name="car1_laser_bridge"
+          args="0 0 0 0 0 0 car1/laser_model laser_model 10" />
+    <node pkg="tf" type="static_transform_publisher" name="car1_back_left_wheel_bridge"
+          args="0 0 0 0 0 0 car1/back_left_wheel back_left_wheel 10" />
+    <node pkg="tf" type="static_transform_publisher" name="car1_back_right_wheel_bridge"
+          args="0 0 0 0 0 0 car1/back_right_wheel back_right_wheel 10" />
+    <node pkg="tf" type="static_transform_publisher" name="car1_front_left_hinge_bridge"
+          args="0 0 0 0 0 0 car1/front_left_hinge front_left_hinge 10" />
+    <node pkg="tf" type="static_transform_publisher" name="car1_front_right_hinge_bridge"
+          args="0 0 0 0 0 0 car1/front_right_hinge front_right_hinge 10" />
+  </group>
+
+  <!-- Car 2 -->
+  <group if="$(eval car2 != '')" ns="$(arg car2)">
+    <param name="frame_prefix" value="$(arg frame_prefix_car2)"/>
+    <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="planner" value="$(arg planner_car2)"/>
+      <arg name="racecar_version" value="$(arg version_car2)"/>
+      <arg name="measure" value="False"/>
+  <arg name="map_name" value="$(arg map_car2)"/>
+    </include>
+    <include file="$(find stack_master)/launch/base_system.launch">
+      <arg name="map_name" value="$(arg map_car2)"/>
+      <arg name="racecar_version" value="$(arg version_car2)"/>
+      <arg name="sim" value="$(arg sim)"/>
+  <arg name="rviz" value="False"/>
+    </include>
+    <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
+      <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
+    </include>
+    <group if="$(arg use_global_map)">
+      <node pkg="tf" type="static_transform_publisher" name="car2_global_map_link"
+            args="2 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car2)map 10" />
+    </group>
+    <!-- Bridge namespace frames to prefix frames for RViz robot models -->
+    <node pkg="tf" type="static_transform_publisher" name="car2_namespace_bridge"
+          args="0 0 0 0 0 0 $(arg frame_prefix_car2)base_link car2/base_link 10" />
+    <!-- Add missing wheel transforms for robot model visualization (using longer period to avoid conflicts) -->
+    <node pkg="tf" type="static_transform_publisher" name="car2_front_left_wheel_tf"
+          args="0 0 0 0 0 0 car2/front_left_hinge car2/front_left_wheel 100" />
+    <node pkg="tf" type="static_transform_publisher" name="car2_front_right_wheel_tf"
+          args="0 0 0 0 0 0 car2/front_right_hinge car2/front_right_wheel 100" />
+  </group>
+
+  <!-- Additional cars (3 & 4) can be enabled by setting car3 / car4 args -->
+  <group if="$(eval car3 != '')" ns="$(arg car3)">
+    <param name="frame_prefix" value="$(arg frame_prefix_car3)"/>
+    <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="planner" value="$(arg planner_car3)"/>
+      <arg name="racecar_version" value="$(arg version_car3)"/>
+      <arg name="measure" value="False"/>
+  <arg name="map_name" value="$(arg map_car3)"/>
+    </include>
+    <include file="$(find stack_master)/launch/base_system.launch">
+      <arg name="map_name" value="$(arg map_car3)"/>
+      <arg name="racecar_version" value="$(arg version_car3)"/>
+      <arg name="sim" value="$(arg sim)"/>
+  <arg name="rviz" value="False"/>
+    </include>
+    <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
+      <arg name="frame_prefix" value="$(arg frame_prefix_car3)"/>
+    </include>
+    <group if="$(arg use_global_map)">
+      <node pkg="tf" type="static_transform_publisher" name="car3_global_map_link"
+            args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car3)map 10" />
+    </group>
+  </group>
+
+  <group if="$(eval car4 != '')" ns="$(arg car4)">
+    <param name="frame_prefix" value="$(arg frame_prefix_car4)"/>
+    <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="planner" value="$(arg planner_car4)"/>
+      <arg name="racecar_version" value="$(arg version_car4)"/>
+      <arg name="measure" value="False"/>
+  <arg name="map_name" value="$(arg map_car4)"/>
+    </include>
+    <include file="$(find stack_master)/launch/base_system.launch">
+      <arg name="map_name" value="$(arg map_car4)"/>
+      <arg name="racecar_version" value="$(arg version_car4)"/>
+      <arg name="sim" value="$(arg sim)"/>
+      <arg name="rviz" value="False"/>
+    </include>
+    <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
+      <arg name="frame_prefix" value="$(arg frame_prefix_car4)"/>
+    </include>
+    <group if="$(arg use_global_map)">
+      <node pkg="tf" type="static_transform_publisher" name="car4_global_map_link"
+            args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car4)map 10" />
+    </group>
+  </group>
+
+  <!-- Load global parameters required by various nodes -->
+  <rosparam ns="map_params" command="load" file="$(find stack_master)/maps/$(arg global_map)/speed_scaling.yaml"/>
+  <rosparam ns="ot_map_params" command="load" file="$(find stack_master)/maps/$(arg global_map)/ot_sectors.yaml"/>
+  
+  <!-- Load state machine parameters globally -->
+  <rosparam ns="state_machine" command="load" file="$(find stack_master)/config/state_machine_params.yaml"/>
+  
+  <!-- Load velocity scaler debug parameter globally -->
+  <param name="/velocity_scaler/debug_plot" value="false"/>
+  
+  <!-- Set global sim parameter -->
+  <param name="/sim" value="$(arg sim)"/>
+
+  <!-- Single consolidated RViz outside namespaces -->
+  <group if="$(arg rviz)">
+    <node pkg="rviz" type="rviz" name="multi_car_rviz" args="-d $(find stack_master)/rviz/multi_car.rviz" output="screen"/>
+  </group>
+
+</launch>

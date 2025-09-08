@@ -44,8 +44,15 @@ VescToOdom::VescToOdom(ros::NodeHandle nh, ros::NodeHandle private_nh) :
   use_servo_cmd_(true), publish_tf_(false), x_(0.0), y_(0.0), yaw_(0.0)
 {
   // get ROS parameters
+  std::string frame_prefix;
+  private_nh.param("frame_prefix", frame_prefix, std::string(""));
+  if (!frame_prefix.empty() && frame_prefix.back() != '/') frame_prefix += "/";
   private_nh.param("odom_frame", odom_frame_, odom_frame_);
   private_nh.param("base_frame", base_frame_, base_frame_);
+  if (!frame_prefix.empty()) {
+    odom_frame_ = frame_prefix + odom_frame_;
+    base_frame_ = frame_prefix + base_frame_;
+  }
   private_nh.param("use_servo_cmd_to_calc_angular_velocity", use_servo_cmd_, use_servo_cmd_);
   if (!getRequiredParam(nh, "speed_to_erpm_gain", &speed_to_erpm_gain_))
     return;
@@ -156,8 +163,8 @@ void VescToOdom::vescStateCallback(const vesc_msgs::VescStateStamped::ConstPtr& 
   if (publish_tf_)
   {
     geometry_msgs::TransformStamped tf;
-    tf.header.frame_id = odom_frame_;
-    tf.child_frame_id = base_frame_;
+  tf.header.frame_id = odom_frame_;
+  tf.child_frame_id = base_frame_;
     tf.header.stamp = ros::Time::now();
     tf.transform.translation.x = x_;
     tf.transform.translation.y = y_;

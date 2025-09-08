@@ -3,7 +3,8 @@ import tf2_ros
 from nav_msgs.msg import Odometry
 import geometry_msgs.msg
 
-def handle_odom_update(msg:Odometry):
+
+def handle_odom_update(msg: Odometry):
     # Transforms from odom to base_link.
     br = tf2_ros.TransformBroadcaster()
     t = geometry_msgs.msg.TransformStamped()
@@ -25,10 +26,16 @@ def handle_odom_update(msg:Odometry):
 
     br.sendTransform(t)
 
-if __name__=="__main__":
-    rospy.init_node("odom_transform_broadcaster", anonymous=True)
-    odom_topic = rospy.get_param("/transform_broadcaster/odom_topic")
-    tf_child_frame = rospy.get_param("/transform_broadcaster/child_frame", "base_link")
-    rospy.Subscriber(odom_topic, Odometry, handle_odom_update)
 
+if __name__ == "__main__":
+    rospy.init_node("odom_transform_broadcaster", anonymous=True)
+    # Use private params with fallback to legacy globals for backward compatibility
+    odom_topic = rospy.get_param('~odom_topic', rospy.get_param(
+        '/transform_broadcaster/odom_topic', 'odom'))
+    frame_prefix = rospy.get_param('~frame_prefix', '')
+    if frame_prefix and not frame_prefix.endswith('/'):
+        frame_prefix += '/'
+    tf_child_frame = frame_prefix + rospy.get_param('~child_frame', rospy.get_param(
+        '/transform_broadcaster/child_frame', 'base_link'))
+    rospy.Subscriber(odom_topic, Odometry, handle_odom_update)
     rospy.spin()

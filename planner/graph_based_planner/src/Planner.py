@@ -1,103 +1,133 @@
 #!/usr/bin/env python3
+from std_msgs.msg import Float32MultiArray, MultiArrayDimension, Float32
+from f110_msgs.msg import WpntArray, Wpnt, ObstacleArray
+from visualization_msgs.msg import Marker, MarkerArray
+from tf.transformations import euler_from_quaternion
+from dynamic_reconfigure.msg import Config
+from geometry_msgs.msg import Point
+from nav_msgs.msg import Odometry
+import rospkg
+from math import sin, cos
+import cProfile
+import pstats
+import time
+import hashlib
+import uuid
+import rospy
+import numpy as np
 import sys
 import os
 
 os.environ['OPENBLAS_NUM_THREADS'] = "1"
-import numpy as np
-import rospy
-import uuid
-import hashlib
-import time
-import pstats
-import cProfile
-from math import sin, cos
 
-import GraphBasedPlanner.graph_ltpl.Graph_LTPL
-import GraphBasedPlanner.graph_ltpl.imp_global_traj.src.import_globtraj_csv
-
-import rospkg
-from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Point
-from dynamic_reconfigure.msg import Config
-from tf.transformations import euler_from_quaternion
-from visualization_msgs.msg import Marker, MarkerArray
-from f110_msgs.msg import WpntArray, Wpnt, ObstacleArray
-from std_msgs.msg import Float32MultiArray, MultiArrayDimension, Float32
+# Ensure local graph_ltpl (with full submodules) takes precedence over any incomplete site-packages version
+local_pkg_root = os.path.join(os.path.dirname(
+    os.path.realpath(__file__)), 'GraphBasedPlanner')
+if local_pkg_root not in sys.path:
+    sys.path.insert(0, local_pkg_root)
+try:
+    import graph_ltpl.Graph_LTPL  # type: ignore
+    import graph_ltpl.imp_global_traj.src.import_globtraj_csv  # type: ignore
+except ModuleNotFoundError as e:
+    rospy.logerr(
+        f"[GraphPlanner] Failed to import local graph_ltpl modules: {e}")
+    raise
 
 
 class GraphPlanner:
     def __init__(self):
-        self.waypoints = None # Global waypoints used by this planner
+        self.waypoints = None  # Global waypoints used by this planner
         self.current_position = None
         self.current_position_frenet = None
         self.current_heading = None
         self.current_speed = None
-        self.waypoints_original = None #Standard global waypoints
+        self.waypoints_original = None  # Standard global waypoints
         self.map_name = None
-        self.obstacle_arr = None # Obstacle array
-        self.speed_scaling = None # Speed scaling for car
-        self.max_s = None # Max s coordinate for specific map
+        self.obstacle_arr = None  # Obstacle array
+        self.speed_scaling = None  # Speed scaling for car
+        self.max_s = None  # Max s coordinate for specific map
         self.timer = None
-        self.wp_flag = False # Flag used to save compute
-        self.close_to_s0 = False # Flag that tells if car is close to s=0
-        self.examined_points = 80 # Number of examined points in deciding between left or right overtake
-        self.display_graph = rospy.get_param('/GraphPlanner/display_graph', True) # Send graph markers or not
-        self.testing = rospy.get_param('/GraphPlanner/testing', True) # True if on real car, False if simulation
-        self.follow_mode = rospy.get_param('/GraphPlanner/follow_mode', 0) # Set to 2 for aggressive follow, 0 brakes often
-        self.waypoint_distance = 0.1 # [m] distance between waypoints in global trajectory
-        self.num_waypoints = 0 # Number of waypoints in global trajectory
+        self.wp_flag = False  # Flag used to save compute
+        self.close_to_s0 = False  # Flag that tells if car is close to s=0
+        # Number of examined points in deciding between left or right overtake
+        self.examined_points = 80
+        # Use private (~) first for multi-car namespaces; fallback to legacy global param names
+        self.display_graph = rospy.get_param(
+            '~display_graph', rospy.get_param('/GraphPlanner/display_graph', True))
+        self.testing = rospy.get_param(
+            '~testing', rospy.get_param('/GraphPlanner/testing', True))
+        self.follow_mode = rospy.get_param(
+            '~follow_mode', rospy.get_param('/GraphPlanner/follow_mode', 0))
+        # [m] distance between waypoints in global trajectory
+        self.waypoint_distance = 0.1
+        self.num_waypoints = 0  # Number of waypoints in global trajectory
         pkg_path = rospkg.RosPack().get_path("graph_based_planner")
-        self.measuring = rospy.get_param("/measure", False)
-        
-        # Profiling stuff
-        self.profile = rospy.get_param("/profile", False)
+        self.measuring = rospy.get_param(
+            '~measure', rospy.get_param('/measure', False))
+
+        # Profiling
+        self.profile = rospy.get_param(
+            '~profile', rospy.get_param('/profile', False))
         self.profiler = cProfile.Profile()
-        self.profile_filename = pkg_path + "/logs/" + "graph_based_profile_log.prof" # TODO change name 
-        self.profile_report_filename = pkg_path + "/logs/" + "graph_based_profile_report.txt" # TODO change name
+        self.profile_filename = pkg_path + "/logs/graph_based_profile_log.prof"
+        self.profile_report_filename = pkg_path + \
+            "/logs/graph_based_profile_report.txt"
 
-        # Subscribed topics
-        rospy.Subscriber('/global_waypoints', WpntArray, self.waypoints_cb)
-        rospy.Subscriber('/car_state/odom', Odometry, self.odom_cb)
-        rospy.Subscriber('/perception/obstacles', ObstacleArray, self.obstacles_cb)
-        rospy.Subscriber('/dyn_sector_server/parameter_updates', Config, self.dyn_params_cb)
-        rospy.Subscriber('/car_state/odom_frenet', Odometry, self.odom_fre_cb)
+        # Subscribed topics (relative for namespacing)
+        rospy.Subscriber('global_waypoints', WpntArray, self.waypoints_cb)
+        rospy.Subscriber('car_state/odom', Odometry, self.odom_cb)
+        rospy.Subscriber('perception/obstacles',
+                         ObstacleArray, self.obstacles_cb)
+        rospy.Subscriber('dyn_sector_server/parameter_updates',
+                         Config, self.dyn_params_cb)
+        rospy.Subscriber('car_state/odom_frenet', Odometry, self.odom_fre_cb)
 
-        # Published topics
-        self.lattice_visualizer = rospy.Publisher('/lattice_viz', MarkerArray, queue_size=10)
-        self.action_mrk = rospy.Publisher('/action_marker', Marker, queue_size=10)
-        self.path_pub = rospy.Publisher('/planner/graph_based_wpnts', Float32MultiArray, queue_size=10)
+        # Published topics (relative for namespacing)
+        self.lattice_visualizer = rospy.Publisher(
+            'lattice_viz', MarkerArray, queue_size=10)
+        self.action_mrk = rospy.Publisher(
+            'action_marker', Marker, queue_size=10)
+        self.path_pub = rospy.Publisher(
+            'planner/graph_based_wpnts', Float32MultiArray, queue_size=10)
         if self.measuring:
-            self.latency_pub = rospy.Publisher("/planner/graph_based/latency", Float32, queue_size=10)
+            self.latency_pub = rospy.Publisher(
+                'planner/graph_based/latency', Float32, queue_size=10)
 
+        # Paths
         self.toppath = os.path.dirname(os.path.realpath(__file__))
         sys.path.append(self.toppath)
-        self.toppath = self.toppath + "/GraphBasedPlanner"
+        self.toppath = os.path.join(self.toppath, 'GraphBasedPlanner')
         sys.path.append(self.toppath)
 
-        # Define all relevant paths
+        # Map / trajectory file paths
         self.set_map_name()
         self.path_dict = {
-            'globtraj_input_path': self.toppath + "/inputs/traj_ltpl_cl/traj_ltpl_cl_" + self.map_name + ".csv",
-            'graph_store_path': self.toppath + "/inputs/stored_graph.pckl",
-            'ltpl_offline_param_path': self.toppath + "/params/ltpl_config_offline.ini",
-            'ltpl_online_param_path': self.toppath + "/params/ltpl_config_online.ini",
+            'globtraj_input_path': os.path.join(self.toppath, 'inputs', 'traj_ltpl_cl', f'traj_ltpl_cl_{self.map_name}.csv'),
+            'graph_store_path': os.path.join(self.toppath, 'inputs', 'stored_graph.pckl'),
+            'ltpl_offline_param_path': os.path.join(self.toppath, 'params', 'ltpl_config_offline.ini'),
+            'ltpl_online_param_path': os.path.join(self.toppath, 'params', 'ltpl_config_online.ini'),
         }
-        
-        # load ax max
-        racecar_version = rospy.get_param("/racecar_version")
-        sys_id_path = rospkg.RosPack().get_path("steering_lookup")
-        ax_max_path = str(sys_id_path) + f"/../id_analyser/models/{racecar_version}/ax_max_machines.csv"
-        # load ax max skipping first line
-        self.ax_max = np.loadtxt(ax_max_path, delimiter=',', skiprows=1)
-        
-        # TODO hardcoding, these could all be read from a config
+
+        # Vehicle specific limits
+        racecar_version = rospy.get_param(
+            '~racecar_version', rospy.get_param('/racecar_version'))
+        sys_id_path = rospkg.RosPack().get_path('steering_lookup')
+        ax_max_path = f"{sys_id_path}/../id_analyser/models/{racecar_version}/ax_max_machines.csv"
+        if os.path.exists(ax_max_path):
+            self.ax_max = np.loadtxt(ax_max_path, delimiter=',', skiprows=1)
+        else:
+            rospy.logwarn(
+                f"[GraphPlanner] ax_max file not found at {ax_max_path}; defaulting to empty array")
+            self.ax_max = np.empty((0,))
+
+        # TODO: configurable
         self.trailing_distance = 1
         self.v_max = 15
-        
 
     #############
     # CALLBACKS #
     #############
+
     def dyn_params_cb(self, data: Config):
         """
                 Callback function of /obstacles subscriber.
@@ -175,7 +205,8 @@ class GraphPlanner:
                 # Get normalized normal vector from frenet space
                 vector_base_glob = self.frenettoglob(wpnt.s_m, 0.0)
                 vector_tip_glob = self.frenettoglob(wpnt.s_m, -1.0)
-                dir = np.asarray([vector_tip_glob[0] - vector_base_glob[0], vector_tip_glob[1] - vector_base_glob[1]])
+                dir = np.asarray(
+                    [vector_tip_glob[0] - vector_base_glob[0], vector_tip_glob[1] - vector_base_glob[1]])
                 norm_vec = self.unit_vector(dir)
 
                 # Construct new waypoints with normal vector and alpha parameter set to 0 (which means refline == raceline)
@@ -189,7 +220,7 @@ class GraphPlanner:
             self.num_waypoints = len(self.waypoints)
         else:
             pass
-    
+
     #############
     # FUNCTIONS #
     #############
@@ -304,8 +335,8 @@ class GraphPlanner:
         for edge in edges:
             spline = graphbase.get_edge(edge[0], edge[1], edge[2], edge[3])
             spline_coords = spline[1][:, 0:2]
-            #if not self.debug:
-                #spline_coords = [spline_coords[0], spline_coords[int(len(spline_coords) / 2)], spline_coords[-1]]
+            # if not self.debug:
+            # spline_coords = [spline_coords[0], spline_coords[int(len(spline_coords) / 2)], spline_coords[-1]]
             spline_cost = spline[2]
             edge_marker = Marker()
             edge_marker.points = []
@@ -351,7 +382,8 @@ class GraphPlanner:
 
             edge_markers.markers.append(edge_marker)
             i = i + 1
-        rospy.loginfo("[Graph Based Planner] Number of nodes and edges is " + str(i))
+        rospy.loginfo(
+            "[Graph Based Planner] Number of nodes and edges is " + str(i))
         # Publish edge markers
         self.lattice_visualizer.publish(edge_markers)
 
@@ -380,14 +412,16 @@ class GraphPlanner:
         ls = []
         for obs in matr:
             glob = self.frenettoglob(obs[0], obs[1])
-            ls.append([glob[0], glob[1], obs[2], obs[0] - self.current_position_frenet[0]])
+            ls.append([glob[0], glob[1], obs[2], obs[0] -
+                      self.current_position_frenet[0]])
         glob_mat = np.asarray(ls)
         # Take only obstacles with s greater than s_ego if the car is not close to s0
         if not self.close_to_s0:
             glob_mat = glob_mat[glob_mat[:, -1] >= 0]
         # Get closest obstacle
         if glob_mat.shape[0] != 0:
-            idx = np.argmin(np.linalg.norm(np.subtract(glob_mat[:, :2], self.current_position), axis=1))
+            idx = np.argmin(np.linalg.norm(np.subtract(
+                glob_mat[:, :2], self.current_position), axis=1))
             return obs_arr_copy[obs_arr_copy[:, 0] == glob_mat[idx, 2]]
         else:
             return None
@@ -405,7 +439,7 @@ class GraphPlanner:
         int
             Index of the element in the array which is closest in absolute value to the station
         """
-        return (np.round(s/self.waypoint_distance).astype(int))%self.num_waypoints
+        return (np.round(s/self.waypoint_distance).astype(int)) % self.num_waypoints
 
     def unit_vector(self, vector):
         """Calculates the unit vector of a vector
@@ -465,7 +499,8 @@ class GraphPlanner:
                 p2 = self.frenettoglob(obs[2], obs[3])
                 dir_vector = np.array([p2[0] - p1[0], p2[1] - p1[1]])
                 # Calculate theta
-                theta = self.angle_between(dir_vector, np.array([0, 1]))  # Zero is north
+                theta = self.angle_between(
+                    dir_vector, np.array([0, 1]))  # Zero is north
                 ide = obs[0]
                 type = 'physical'
                 X = obs_in_map[0]
@@ -473,13 +508,15 @@ class GraphPlanner:
                 length = obs[8]
                 width = length
                 # Convert velocity vector from cartesian frame to Frenet frame
-                velocity_vector_in_cartesian = self.fromfrenet_to_cartesian(obs[9], obs[10], obs[6])
-                velocity_magnitude = np.linalg.norm(velocity_vector_in_cartesian)
-                
-                #velocity_projected_along_north = np.dot(velocity_vector_in_cartesian, np.array([0, -1])) \
-                                       #/ np.linalg.norm(np.array([0, -1]))
+                velocity_vector_in_cartesian = self.fromfrenet_to_cartesian(
+                    obs[9], obs[10], obs[6])
+                velocity_magnitude = np.linalg.norm(
+                    velocity_vector_in_cartesian)
+
+                # velocity_projected_along_north = np.dot(velocity_vector_in_cartesian, np.array([0, -1])) \
+                # / np.linalg.norm(np.array([0, -1]))
                 v = velocity_magnitude if not obs[11] else 0.0
-                
+
                 # Fill object dict
                 obj = {'id': ide, 'type': type, 'X': X, 'Y': Y, 'theta': theta, 'v': v, 'length': length,
                        'width': width}
@@ -509,8 +546,10 @@ class GraphPlanner:
         closest_wpnt_idx = self.find_global_index(object_s)
         delta_psi = self.waypoints_original[closest_wpnt_idx, 6]
         # Rotate vector using psi
-        velocity_x = velocity_s * np.cos(delta_psi) + velocity_d * np.sin(delta_psi)
-        velocity_y = velocity_s * - np.sin(delta_psi) + velocity_d * np.sin(delta_psi)
+        velocity_x = velocity_s * \
+            np.cos(delta_psi) + velocity_d * np.sin(delta_psi)
+        velocity_y = velocity_s * - \
+            np.sin(delta_psi) + velocity_d * np.sin(delta_psi)
         return np.asarray([velocity_x, velocity_y])
 
     def visualize_action(self, action: str):
@@ -530,7 +569,7 @@ class GraphPlanner:
         mrk.color.a = 1.0
         mrk.color.g = 1.0
         mrk.pose.position.x = 0
-        mrk.pose.position.y = -3  #TODO: set position in a smart way
+        mrk.pose.position.y = -3  # TODO: set position in a smart way
         mrk.pose.position.z = 0
         mrk.scale.x = 2
         mrk.scale.y = 2
@@ -638,12 +677,13 @@ class GraphPlanner:
             [s, d] array in Frenet frame
         """
         point = np.tile([x, y], (len(self.waypoints_original[:, 2:4]), 1))
-        closest_pt_idx = np.argmin(np.linalg.norm(self.waypoints_original[:, 2:4] - point, axis=1))
+        closest_pt_idx = np.argmin(np.linalg.norm(
+            self.waypoints_original[:, 2:4] - point, axis=1))
         s = self.waypoints_original[closest_pt_idx, 0]
         d_x = x - self.waypoints_original[closest_pt_idx, 2]
         d_y = y - self.waypoints_original[closest_pt_idx, 3]
-        d =  -d_x * sin(self.waypoints_original[closest_pt_idx, 6]) +\
-              d_y * cos(self.waypoints_original[closest_pt_idx, 6])
+        d = -d_x * sin(self.waypoints_original[closest_pt_idx, 6]) +\
+            d_y * cos(self.waypoints_original[closest_pt_idx, 6])
         return np.asarray([s, d])
 
     def frenettoglob(self, s, d):
@@ -665,7 +705,7 @@ class GraphPlanner:
         closest_pt_idx = self.find_global_index(s)
         d_s = s - self.waypoints_original[closest_pt_idx, 0]
         x = self.waypoints_original[closest_pt_idx, 2] + (d_s * cos(self.waypoints_original[closest_pt_idx, 6])) \
-            -d * sin(self.waypoints_original[closest_pt_idx, 6])
+            - d * sin(self.waypoints_original[closest_pt_idx, 6])
         y = self.waypoints_original[closest_pt_idx, 3] + (d * cos(self.waypoints_original[closest_pt_idx, 6])) +\
             (d_s * sin(self.waypoints_original[closest_pt_idx, 6]))
         return np.asarray([x, y])
@@ -683,7 +723,7 @@ class GraphPlanner:
         string
             Name of the chosen action
         """
-        #If both left and right overtake is possible, compare their costs and choose the best
+        # If both left and right overtake is possible, compare their costs and choose the best
         if "right" in traj_set.keys() and "left" in traj_set.keys():
             path_r = traj_set['right'][0]
             path_l = traj_set['left'][0]
@@ -699,12 +739,12 @@ class GraphPlanner:
             else:
                 sliced_path_r = path_r[np.where(((self.current_position_frenet[0] <
                                                   (path_r[:, 0] + self.current_position_frenet[0]) % self.max_s) & (
-                                                         path_r[:, 5] > 0)
-                                                 | ((path_r[:, 0] + self.current_position_frenet[0]) > self.max_s)))]
+                    path_r[:, 5] > 0)
+                    | ((path_r[:, 0] + self.current_position_frenet[0]) > self.max_s)))]
                 sliced_path_l = path_l[np.where(((self.current_position_frenet[0] <
                                                   (path_l[:, 0] + self.current_position_frenet[0]) % self.max_s) & (
-                                                         path_l[:, 5] > 0)
-                                                 | ((path_l[:, 0] + self.current_position_frenet[0]) > self.max_s)))]
+                    path_l[:, 5] > 0)
+                    | ((path_l[:, 0] + self.current_position_frenet[0]) > self.max_s)))]
             # Calculate costs for paths
             cost_r = self.traj_cost(sliced_path_r[:self.examined_points, :])
             cost_l = self.traj_cost(sliced_path_l[:self.examined_points, :])
@@ -723,89 +763,82 @@ class GraphPlanner:
     # MAIN LOOP #
     #############
     def planner_loop(self):
-        """
-                Main online loop
-        """
-        ### INITIALIZATION ###
-
-        # Wait for global waypoints
+        """Main online loop (rewritten for proper indentation & namespacing)."""
+        # INITIALIZATION
         rospy.loginfo('[Graph Based Planner] Waiting for Global Waypoints...')
-        rospy.wait_for_message('/global_waypoints', WpntArray)
+        rospy.wait_for_message('global_waypoints', WpntArray)
         rospy.loginfo('[Graph Based Planner] Global Waypoints received!')
         self.max_s = np.amax(self.waypoints_original[:, 0])
-        # Wait for Odometry
+
         rospy.loginfo('[Graph Based Planner] Waiting for Odometry...')
-        rospy.wait_for_message('/car_state/odom', Odometry)
+        rospy.wait_for_message('car_state/odom', Odometry)
         rospy.loginfo('[Graph Based Planner] Odometry received!')
-        # Wait for speed scaling
-        rospy.loginfo('[Graph Based Planner] Waiting for Dynamic parameters...')
+
+        rospy.loginfo(
+            '[Graph Based Planner] Waiting for Dynamic parameters...')
         rospy.wait_for_message('dyn_sector_server/parameter_updates', Config)
         rospy.loginfo('[Graph Based Planner] Dynamic parameters received!')
 
-        # Check existence/create trajectory file
+        # Check existence / create trajectory file
         if not self.create_map_csv():
-            rospy.loginfo('[Graph Based Planner] Found an already existing trajectory file for this map!')
+            rospy.loginfo(
+                '[Graph Based Planner] Found an already existing trajectory file for this map!')
         else:
-            rospy.loginfo('[Graph Based Planner] Created a new trajectory file for this map!')
+            rospy.loginfo(
+                '[Graph Based Planner] Created a new trajectory file for this map!')
 
-        # Intialize graph_ltpl-class
-        ltpl_obj = GraphBasedPlanner.graph_ltpl.Graph_LTPL.Graph_LTPL(path_dict=self.path_dict,
-                                                                      visual_mode=False,
-                                                                      log_to_file=False)
-        # Calculate offline graph
+        # Initialize graph object
+        ltpl_obj = graph_ltpl.Graph_LTPL.Graph_LTPL(
+            path_dict=self.path_dict,
+            visual_mode=False,
+            log_to_file=False)
         ltpl_obj.graph_init(veh_param_mass=3.5)
-        # Visualize graph
+
         if self.display_graph:
             graph_container = ltpl_obj._Graph_LTPL__graph_base
             self.visualize_lattice(graph_container)
 
-        # Set start pos
-        ltpl_obj.set_startpos(pos_est=self.current_position,
-                              heading_est=self.current_heading + np.pi / 2)  # Zero heading is north, self.current_heading's zero is east
-        #Initializations
+        # Set start position
+        ltpl_obj.set_startpos(
+            pos_est=self.current_position,
+            heading_est=self.current_heading + np.pi / 2)  # Zero heading is north, current heading zero is east
+
         traj_set = {'straight': None}
         prev_action = 'straight'
         sel_action = 'straight'
         self.visualize_action('straight')
-        main_rate=rospy.Rate(30)
+        main_rate = rospy.Rate(30)
 
         if self.profile:
-            self.profiler.enable() # it is disabled on shutdown
-         
+            self.profiler.enable()
+
         while not rospy.is_shutdown():
             start_time = time.perf_counter()
-            
-            # Handle close to s0 flag
-            self.close_to_s0 = self.current_position_frenet[0] < 0.5 or self.current_position_frenet[0] > self.max_s - 0.5
-            
-            # -- SELECT ONE OF THE PROVIDED TRAJECTORIES --------------------------------------------------------------
+
+            # Flag for wrap-around
+            self.close_to_s0 = (self.current_position_frenet[0] < 0.5 or
+                                self.current_position_frenet[0] > self.max_s - 0.5)
+
             prev_action = sel_action
-            
-            # Get object list
+
             obj_list = self.get_obj_list()
-            
-            # Calculate paths
             ltpl_obj.calc_paths(prev_action_id=sel_action,
-                                object_list=obj_list
-                                )
+                                object_list=obj_list)
 
-            # Calculate velocity profile and retrieve trajectories
-            traj_set = ltpl_obj.calc_vel_profile(pos_est=self.current_position,
-                                                 vel_est=self.current_speed,
-                                                 vel_max=self.v_max,
-                                                 ax_max_machines=self.ax_max,
-                                                 safety_d=self.trailing_distance
-                                                 )[0]
+            traj_set = ltpl_obj.calc_vel_profile(
+                pos_est=self.current_position,
+                vel_est=self.current_speed,
+                vel_max=self.v_max,
+                ax_max_machines=self.ax_max,
+                safety_d=self.trailing_distance
+            )[0]
 
-            # Select a trajectory and send it to the controller
             sel_action = self.choose_action(traj_set)
 
-            # Send latency
             if self.measuring:
                 latency = time.perf_counter() - start_time
                 self.latency_pub.publish(latency)
-            
-            # Visualize action
+
             if sel_action is not prev_action:
                 self.visualize_action(sel_action)
 
@@ -818,9 +851,11 @@ class GraphPlanner:
             self.profiler.disable()
             self.profiler.dump_stats(self.profile_filename)
             with open(self.profile_report_filename, "w") as file:
-                self.profiler_formatter = pstats.Stats(self.profiler, stream=file)
+                self.profiler_formatter = pstats.Stats(
+                    self.profiler, stream=file)
                 self.profiler_formatter.sort_stats('cumtime')
                 self.profiler_formatter.print_stats()
+
 
 if __name__ == '__main__':
     # Initialize node

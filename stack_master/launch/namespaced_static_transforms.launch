@@ -1,0 +1,22 @@
+<launch>
+  <!-- Publishes static transforms; frame_prefix is a literal prefix (e.g., car1_) inserted into frame ids -->
+  <arg name="frame_prefix" default=""/>
+  <arg name="publish_map_odom" default="True"/>
+  <arg name="publish_odom_base" default="True"/>
+
+  <!-- laser relative to base_link -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_laser"
+        args="0.285 0.0 0.127 0 0 0 1 $(arg frame_prefix)base_link $(arg frame_prefix)laser_model" />
+
+  <!-- map -> odom (identity) -->
+  <group if="$(arg publish_map_odom)">
+    <node pkg="tf" type="static_transform_publisher" name="map_to_odom"
+          args="0 0 0 0 0 0 $(arg frame_prefix)map $(arg frame_prefix)odom 10" />
+  </group>
+
+  <!-- odom -> base_link (identity placeholder) -->
+  <group if="$(arg publish_odom_base)">
+    <node pkg="tf" type="static_transform_publisher" name="odom_to_base_link"
+          args="0 0 0 0 0 0 $(arg frame_prefix)odom $(arg frame_prefix)base_link 10" />
+  </group>
+</launch>

@@ -1,12 +1,15 @@
 <?xml version="1.0"?>
 <launch>
     <arg name="racecar_version" default="NUC2" /> <!--  JETx / NUCx ... -->
+    <!-- Added to satisfy graph_based planner param passing in multi-car launches -->
+    <arg name="map_name" default="" />
     <arg name="MAP_mode" default="safe" /> <!--  safe / aggressive -->
     <arg name="LU_table" default="NUC2_pacejka" />
     <arg name="ctrl_algo" default="MAP" /> <!--  MAP / PP / STMPC / KMPC-->
     <arg name="measure" default="False" />
     <arg name="perception" default="True" /> <!--  True / False. False to disable the perception module when using the dummy obstacle publisher -->
     <arg name="planner" default="spliner" /> <!--  spliner / predictive_spliner / graph_based / frenet -->
+    <!-- Namespaced measure flag (no leading slash) -->
     <param name="measure" value="$(arg measure)" />
 
     <!-- CONTROLLER -->
@@ -97,7 +100,6 @@
 
         <arg name="follow_mode" default="0"/>  <!-- Set to 2 for aggressive follow, 0 brakes often -->
         <arg name="display_graph" default="True"/>
-        <arg name="map_name"/>
         <node name="GraphPlanner" pkg="graph_based_planner" type="Planner.py" output="screen">
             <param name="follow_mode" value="$(arg follow_mode)"/>
             <param name="display_graph" value="$(arg display_graph)"/>

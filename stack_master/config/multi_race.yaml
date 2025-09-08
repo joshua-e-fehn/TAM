@@ -1,0 +1,18 @@
+# Multi-car race configuration
+cars:
+  - name: car1
+    namespace: car1
+    racecar_version: NUC2
+    map_name: f
+    planner: spliner           # spliner | predictive_spliner | graph_based | frenet
+    ctrl_algo: MAP             # MAP | PP | STMPC | KMPC
+    LU_table: NUC2_pacejka
+  - name: car2
+    namespace: car2
+    racecar_version: NUC2
+    map_name: f
+    planner: graph_based
+    ctrl_algo: PP
+    LU_table: NUC2_pacejka
+sim: true
+measure: false

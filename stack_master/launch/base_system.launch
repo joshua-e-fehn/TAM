@@ -14,9 +14,12 @@
     doc="If using the F110 Simulator, what tire model to use." />
   <arg name="scanalign" default="False"
     doc="Whether to launch the scan-align node that calculates localization accuracy." />
+  <arg name="rviz" default="True"
+    doc="Whether to launch RViz inside simulator include (only used when sim:=True)." />
 
+  <!-- Namespaced parameters (avoid writing to global /sim) -->
   <param name="racecar_version" value="$(arg racecar_version)" />
-  <param name="/sim" value="$(arg sim)" />
+  <param name="sim" value="$(arg sim)" />
 
   <group unless="$(arg sim)">
     <!-- launch vesc driver, cartographer, mux, tf_transformer... - complete base -->
@@ -36,6 +39,7 @@
       <arg name="map_name" value="$(arg map_name)" />
       <arg name="racecar_version" value="$(arg racecar_version)" />
       <arg name="tire_model" value="$(arg tire_model)" />
+  <arg name="rviz" value="$(arg rviz)" />
     </include>
   </group>
 

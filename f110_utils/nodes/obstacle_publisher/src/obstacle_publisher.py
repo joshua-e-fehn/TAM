@@ -35,18 +35,23 @@ class ObstaclePublisher:
         self.dynamic_obstacle = self.init_dynamic_obstacle()
         self.obj_len = 0.5
 
-        # Parameters
+        # Parameters (prefer private; fall back to legacy global keys for backward compatibility)
         self.speed_scaler = rospy.get_param(
-            "obstacle_publisher/speed_scaler", 1)
+            '~speed_scaler', rospy.get_param('obstacle_publisher/speed_scaler', 1))
         self.constant = rospy.get_param(
-            "obstacle_publisher/constant_speed", False)
+            '~constant_speed', rospy.get_param('obstacle_publisher/constant_speed', False))
 
         # Sinusoidal path deviation parameters
         self.path_amplitude = rospy.get_param(
-            "obstacle_publisher/path_amplitude", 0.0)
+            '~path_amplitude', rospy.get_param('obstacle_publisher/path_amplitude', 0.0))
         self.path_frequency = rospy.get_param(
-            "obstacle_publisher/path_frequency", 0.1)
-        self.path_phase = rospy.get_param("obstacle_publisher/path_phase", 0.0)
+            '~path_frequency', rospy.get_param('obstacle_publisher/path_frequency', 0.1))
+        self.path_phase = rospy.get_param(
+            '~path_phase', rospy.get_param('obstacle_publisher/path_phase', 0.0))
+
+        # Frames (allow override & multi-car namespacing). Map frame may be prefixed externally.
+        self.map_frame = rospy.get_param(
+            '~map_frame', rospy.get_param('/map_frame', 'map'))
 
         # Initialize dynamic reconfigure client
         self.dyn_client = None
@@ -74,15 +79,15 @@ class ObstaclePublisher:
 
         # choose trajectory
         self.waypoints_type = rospy.get_param(
-            "/obstacle_publisher/trajectory", "min_curv")
+            '~trajectory', rospy.get_param('obstacle_publisher/trajectory', 'min_curv'))
         if self.waypoints_type == "min_curv":
-            self.waypoints_topic = "/global_waypoints"
+            self.waypoints_topic = "global_waypoints"
         elif self.waypoints_type == "shortest_path":
-            self.waypoints_topic = "/global_waypoints/shortest_path"
+            self.waypoints_topic = "global_waypoints/shortest_path"
         elif self.waypoints_type == "centerline":
-            self.waypoints_topic = "/centerline_waypoints"
+            self.waypoints_topic = "centerline_waypoints"
         elif self.waypoints_type == "updated":
-            self.waypoints_topic = "/global_waypoints_updated"
+            self.waypoints_topic = "global_waypoints_updated"
             print("Using updated waypoints")
         elif self.waypoints_type == "min_time":
             raise NotImplementedError(
@@ -93,16 +98,17 @@ class ObstaclePublisher:
                 f"Waypoints of type {self.waypoints_type} are not supported."
             )
 
-        self.starting_s = rospy.get_param("/obstacle_publisher/start_s", 0)
-        rospy.Subscriber("/car_state/odom_frenet", Odometry, self.odom_cb)
+        self.starting_s = rospy.get_param(
+            '~start_s', rospy.get_param('obstacle_publisher/start_s', 0))
+        rospy.Subscriber('car_state/odom_frenet', Odometry, self.odom_cb)
         self.car_odom = Odometry()
 
         self.obstacle_pub = rospy.Publisher(
-            "/perception/obstacles", ObstacleArray, queue_size=10)
+            'perception/obstacles', ObstacleArray, queue_size=10)
         self.obstacle_mrk_pub = rospy.Publisher(
-            "/dummy_obstacle_markers", MarkerArray, queue_size=10)
+            'dummy_obstacle_markers', MarkerArray, queue_size=10)
         self.opponent_traj_pub = rospy.Publisher(
-            "/opponent_waypoints", OpponentTrajectory, queue_size=10)
+            'opponent_waypoints', OpponentTrajectory, queue_size=10)
 
         # Frenet Conversion Service
         rospy.wait_for_service("convert_glob2frenet_service")

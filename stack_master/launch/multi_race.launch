@@ -1,0 +1,50 @@
+<launch>
+  <arg name="config_file" default="$(find stack_master)/config/multi_race.yaml" />
+  <rosparam command="load" file="$(arg config_file)" />
+
+  <!-- Iterate two cars (static expansion); for more cars extend manually or generate via script -->
+  <!-- Car 1 -->
+  <group ns="car1">
+    <param name="racecar_version" value="$(eval param['cars'][0]['racecar_version'])" />
+    <param name="controller_manager/ctrl_algo" value="$(eval param['cars'][0]['ctrl_algo'])" />
+    <param name="controller_manager/LU_table" value="$(eval param['cars'][0]['LU_table'])" />
+    <param name="measure" value="$(eval param['measure'])" />
+  <param name="sim" value="$(eval param['sim'])" />
+    <include file="$(find stack_master)/launch/base_system.launch">
+      <arg name="map_name" value="$(eval param['cars'][0]['map_name'])" />
+      <arg name="racecar_version" value="$(eval param['cars'][0]['racecar_version'])" />
+      <arg name="sim" value="$(eval param['sim'])" />
+    </include>
+    <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="racecar_version" value="$(eval param['cars'][0]['racecar_version'])" />
+      <arg name="planner" value="$(eval param['cars'][0]['planner'])" />
+      <arg name="ctrl_algo" value="$(eval param['cars'][0]['ctrl_algo'])" />
+      <arg name="LU_table" value="$(eval param['cars'][0]['LU_table'])" />
+      <arg name="measure" value="$(eval param['measure'])" />
+      <arg name="perception" value="True" />
+    </include>
+  </group>
+
+  <!-- Car 2 -->
+  <group ns="car2">
+    <param name="racecar_version" value="$(eval param['cars'][1]['racecar_version'])" />
+    <param name="controller_manager/ctrl_algo" value="$(eval param['cars'][1]['ctrl_algo'])" />
+    <param name="controller_manager/LU_table" value="$(eval param['cars'][1]['LU_table'])" />
+    <param name="measure" value="$(eval param['measure'])" />
+  <param name="sim" value="$(eval param['sim'])" />
+    <include file="$(find stack_master)/launch/base_system.launch">
+      <arg name="map_name" value="$(eval param['cars'][1]['map_name'])" />
+      <arg name="racecar_version" value="$(eval param['cars'][1]['racecar_version'])" />
+      <arg name="sim" value="$(eval param['sim'])" />
+    </include>
+    <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="racecar_version" value="$(eval param['cars'][1]['racecar_version'])" />
+      <arg name="planner" value="$(eval param['cars'][1]['planner'])" />
+      <arg name="ctrl_algo" value="$(eval param['cars'][1]['ctrl_algo'])" />
+      <arg name="LU_table" value="$(eval param['cars'][1]['LU_table'])" />
+      <arg name="measure" value="$(eval param['measure'])" />
+      <arg name="perception" value="True" />
+    </include>
+  </group>
+
+</launch>
