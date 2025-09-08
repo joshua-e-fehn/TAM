@@ -2,9 +2,13 @@
 <launch>
   <!-- Set the car to be simulator -->
   <arg name="racecar_version" default="SIM"/>
+  <param name="racecar_version" value="$(arg racecar_version)"/>
   <param name="/racecar_version" value="$(arg racecar_version)"/>
   <arg name="tire_model" default="pacejka"/> <!-- pacejka or linear -->
+  <param name="tire_model" value="$(arg tire_model)"/>
   <param name="/tire_model" value="$(arg tire_model)"/>
+  <!-- Frame prefix argument for multi-car support -->
+  <arg name="frame_prefix" default=""/>
 
   <!-- Set the gb optimizer config -->
   <arg name="gb_conf_path" default="$(find stack_master)/config/global_planner_params.yaml"/>
@@ -17,13 +21,15 @@
 
   <!-- Launch a map from the maps folder-->
   <arg name="map_name" default="hangar"/>
-  <node pkg="map_server" name="map_server" type="map_server" args="$(arg base_map_dir)/maps/$(arg map_name)/$(arg map_name).yaml"/>
+  <!-- Note: Map server now launched globally in multi_car.launch -->
 
   <!-- Launch the racecar model -->
-  <include file="$(find f1tenth_simulator)/launch/racecar_model.launch"/>
+  <include file="$(find f1tenth_simulator)/launch/racecar_model.launch">
+    <arg name="tf_prefix" value="$(arg frame_prefix)"/>
+  </include>
 
-  <!-- Add the tire parameters -->
-  <rosparam ns="model_params" command="load" file="$(find stack_master)/config/$(arg racecar_version)/$(arg racecar_version)_$(arg tire_model).yaml"/>
+  <!-- Add the tire parameters globally so all simulators can access them -->
+  <rosparam ns="/model_params" command="load" file="$(find stack_master)/config/$(arg racecar_version)/$(arg racecar_version)_$(arg tire_model).yaml"/>
 
   <!-- Launch the mux node with the parameters from params.yaml -->
   <node pkg="f1tenth_simulator" name="mux_controller" type="mux" output="screen">
@@ -83,15 +89,21 @@
     <rosparam ns="map_params" command="load" file="$(arg base_map_dir)/maps/$(arg map_name)/speed_scaling.yaml"/>
     <rosparam ns="ot_map_params" command="load" file="$(arg base_map_dir)/maps/$(arg map_name)/ot_sectors.yaml"/>
   
-    <!--  launch gb repub -->
-    <node name="global_republisher" pkg="gb_optimizer" type="global_trajectory_publisher.py" output="screen">
-      <param name="map_name" value="$(arg map_name)"/>
-    </node>
+    <!--  Note: Global republisher now launched globally in multi_car.launch -->
   </group>
 
   <!-- Begin the simulator with the parameters from params.yaml -->
   <node pkg="f1tenth_simulator" name="f1tenth_simulator" type="simulator" output="screen">
     <rosparam command="load" file="$(find f1tenth_simulator)/pbl_params.yaml"/>
+    <!-- Override frame parameters with prefixed versions if frame_prefix is set -->
+    <param name="base_frame" value="$(arg frame_prefix)base_link" if="$(eval arg('frame_prefix') != '')" />
+    <param name="scan_frame" value="$(arg frame_prefix)laser" if="$(eval arg('frame_prefix') != '')" />
+    <param name="map_frame" value="$(arg frame_prefix)map" if="$(eval arg('frame_prefix') != '')" />
+    <!-- Override wheel frame parameters with prefixed versions if frame_prefix is set -->
+    <param name="front_left_wheel_frame" value="$(arg frame_prefix)/front_left_wheel" if="$(eval arg('frame_prefix') != '')" />
+    <param name="front_right_wheel_frame" value="$(arg frame_prefix)/front_right_wheel" if="$(eval arg('frame_prefix') != '')" />
+    <param name="front_left_hinge_frame" value="$(arg frame_prefix)/front_left_hinge" if="$(eval arg('frame_prefix') != '')" />
+    <param name="front_right_hinge_frame" value="$(arg frame_prefix)/front_right_hinge" if="$(eval arg('frame_prefix') != '')" />
   </node>
 
   <!-- Launch RVIZ -->

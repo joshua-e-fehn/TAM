@@ -85,18 +85,8 @@ Visualization Manager:
       Color Scheme: map
       Draw Behind: false
       Enabled: true
-      Name: Map
-      Topic: /car1/map
-      Unreliable: false
-      Value: true
-    - Class: rviz/Map
-      Alpha: 0.3
-      Class: rviz/Map
-      Color Scheme: costmap
-      Draw Behind: true
-      Enabled: true
-      Name: Map_car2
-      Topic: /car2/map
+      Name: Global_Map
+      Topic: /map
       Unreliable: false
       Value: true
     - Class: rviz/MarkerArray
@@ -115,29 +105,15 @@ Visualization Manager:
       Value: true
     - Class: rviz/MarkerArray
       Enabled: true
-      Marker Topic: /car1/global_waypoints/markers
-      Name: car1_waypoints
+      Marker Topic: /global_waypoints/markers
+      Name: global_waypoints
       Namespaces: {}
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
       Enabled: true
-      Marker Topic: /car2/global_waypoints/markers
-      Name: car2_waypoints
-      Namespaces: {}
-      Queue Size: 100
-      Value: true
-    - Class: rviz/MarkerArray
-      Enabled: true
-      Marker Topic: /car1/global_waypoints/shortest_path/markers
-      Name: car1_shortest_path_markers
-      Namespaces: {}
-      Queue Size: 100
-      Value: true
-    - Class: rviz/MarkerArray
-      Enabled: true
-      Marker Topic: /car2/global_waypoints/shortest_path/markers
-      Name: car2_shortest_path_markers
+      Marker Topic: /global_waypoints/shortest_path/markers
+      Name: global_shortest_path
       Namespaces: {}
       Queue Size: 100
       Value: true

@@ -20,6 +20,15 @@
   <arg name="use_global_map" default="True"/>
   <arg name="global_map_frame" default="map"/>
 
+  <!-- Global Map Server - shared by all cars -->
+  <node pkg="map_server" name="global_map_server" type="map_server" 
+        args="$(find stack_master)/maps/$(arg global_map)/$(arg global_map).yaml"/>
+  
+  <!-- Global Waypoint Publisher - shared by all cars -->
+  <node name="global_waypoint_publisher" pkg="gb_optimizer" type="global_trajectory_publisher.py" output="screen">
+    <param name="/global_republisher/map_name" value="$(arg global_map)"/>
+  </node>
+
   <!-- Helper python expansion using eval is brittle; split CSV lists in bash style via subst args -->
   <!-- We iterate by index because roslaunch lacks native list iteration; replicate pattern for 4 cars max -->
   <arg name="car1" default="car1"/>
@@ -53,6 +62,10 @@
     <param name="frame_prefix" value="$(arg frame_prefix_car1)"/>
     <!-- Set tf_prefix for robot_state_publisher -->
     <param name="racecar/robot_state_publisher/tf_prefix" value="$(arg frame_prefix_car1)"/>
+    <!-- Set frame parameters for f1tenth_simulator to use prefixed frames -->
+    <param name="f1tenth_simulator/base_frame" value="$(arg frame_prefix_car1)base_link"/>
+    <param name="f1tenth_simulator/scan_frame" value="$(arg frame_prefix_car1)laser"/>
+    <param name="f1tenth_simulator/map_frame" value="$(arg frame_prefix_car1)map"/>
     <include file="$(find stack_master)/launch/headtohead.launch">
       <arg name="planner" value="$(arg planner_car1)"/>
       <arg name="racecar_version" value="$(arg version_car1)"/>
@@ -63,8 +76,8 @@
       <arg name="map_name" value="$(arg map_car1)"/>
       <arg name="racecar_version" value="$(arg version_car1)"/>
       <arg name="sim" value="$(arg sim)"/>
-  <!-- Disable per-car RViz inside simulator include by forcing arg -->
-  <arg name="rviz" value="False"/>
+      <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
+      <arg name="rviz" value="False"/>
     </include>
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
@@ -76,11 +89,6 @@
     <!-- Bridge the prefixed robot model frames to the main TF tree -->
     <node pkg="tf" type="static_transform_publisher" name="car1_robot_model_bridge"
           args="0 0 0 0 0 0 car1_base_link car1_/base_link 10" />
-    <!-- Add missing front wheel transforms for robot model -->
-    <node pkg="tf" type="static_transform_publisher" name="car1_front_left_wheel_tf"
-          args="0 0 0 0 0 0 car1_/front_left_hinge car1_/front_left_wheel 10" />
-    <node pkg="tf" type="static_transform_publisher" name="car1_front_right_wheel_tf"
-          args="0 0 0 0 0 0 car1_/front_right_hinge car1_/front_right_wheel 10" />
   </group>
 
   <!-- Car 2 -->
@@ -88,6 +96,10 @@
     <param name="frame_prefix" value="$(arg frame_prefix_car2)"/>
     <!-- Set tf_prefix for robot_state_publisher -->
     <param name="racecar/robot_state_publisher/tf_prefix" value="$(arg frame_prefix_car2)"/>
+    <!-- Set frame parameters for f1tenth_simulator to use prefixed frames -->
+    <param name="f1tenth_simulator/base_frame" value="$(arg frame_prefix_car2)base_link"/>
+    <param name="f1tenth_simulator/scan_frame" value="$(arg frame_prefix_car2)laser"/>
+    <param name="f1tenth_simulator/map_frame" value="$(arg frame_prefix_car2)map"/>
     <include file="$(find stack_master)/launch/headtohead.launch">
       <arg name="planner" value="$(arg planner_car2)"/>
       <arg name="racecar_version" value="$(arg version_car2)"/>
@@ -98,7 +110,8 @@
       <arg name="map_name" value="$(arg map_car2)"/>
       <arg name="racecar_version" value="$(arg version_car2)"/>
       <arg name="sim" value="$(arg sim)"/>
-  <arg name="rviz" value="False"/>
+      <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
+      <arg name="rviz" value="False"/>
     </include>
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
@@ -110,11 +123,6 @@
     <!-- Bridge the prefixed robot model frames to the main TF tree -->
     <node pkg="tf" type="static_transform_publisher" name="car2_robot_model_bridge"
           args="0 0 0 0 0 0 car2_base_link car2_/base_link 10" />
-    <!-- Add missing front wheel transforms for robot model -->
-    <node pkg="tf" type="static_transform_publisher" name="car2_front_left_wheel_tf"
-          args="0 0 0 0 0 0 car2_/front_left_hinge car2_/front_left_wheel 10" />
-    <node pkg="tf" type="static_transform_publisher" name="car2_front_right_wheel_tf"
-          args="0 0 0 0 0 0 car2_/front_right_hinge car2_/front_right_wheel 10" />
   </group>
 
   <!-- Additional cars (3 & 4) can be enabled by setting car3 / car4 args -->
@@ -130,7 +138,8 @@
       <arg name="map_name" value="$(arg map_car3)"/>
       <arg name="racecar_version" value="$(arg version_car3)"/>
       <arg name="sim" value="$(arg sim)"/>
-  <arg name="rviz" value="False"/>
+      <arg name="frame_prefix" value="$(arg frame_prefix_car3)"/>
+      <arg name="rviz" value="False"/>
     </include>
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car3)"/>
@@ -153,6 +162,7 @@
       <arg name="map_name" value="$(arg map_car4)"/>
       <arg name="racecar_version" value="$(arg version_car4)"/>
       <arg name="sim" value="$(arg sim)"/>
+      <arg name="frame_prefix" value="$(arg frame_prefix_car4)"/>
       <arg name="rviz" value="False"/>
     </include>
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">

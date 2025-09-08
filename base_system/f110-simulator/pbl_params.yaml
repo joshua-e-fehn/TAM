@@ -119,6 +119,11 @@ collision_file: "collision_file"
 map_frame: "map"
 base_frame: "base_link"
 scan_frame: "laser"
+# Wheel frame names (for multi-car support)
+front_left_wheel_frame: "front_left_wheel"
+front_right_wheel_frame: "front_right_wheel"
+front_left_hinge_frame: "front_left_hinge"
+front_right_hinge_frame: "front_right_hinge"
 
 broadcast_transform: true
 publish_ground_truth_pose: true

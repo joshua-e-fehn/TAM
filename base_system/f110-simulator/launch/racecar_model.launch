@@ -1,10 +1,14 @@
 <?xml version="1.0"?>
 <launch>
+  <!-- Arguments must be declared at the top level -->
+  <arg name="racecar_xacro" default="$(find f1tenth_simulator)/racecar.xacro"/>
+  <!-- tf_prefix argument for multi-car support -->
+  <arg name="tf_prefix" default=""/>
+  
   <!-- group for racecar -->
   <group ns="racecar">
-  <!-- Open the model file -->
-  <arg name="racecar_xacro" default="$(find f1tenth_simulator)/racecar.xacro"/>
-  <!--<param name="tf_prefix" value="racecar"/>-->
+  <!-- Set tf_prefix parameter if provided -->
+  <param name="tf_prefix" value="$(arg tf_prefix)" if="$(eval arg('tf_prefix') != '')"/>
   <param name="robot_description" command="xacro --inorder '$(arg racecar_xacro)'"/>
   <!-- Add the transformations -->
   <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />

@@ -16,6 +16,8 @@
     doc="Whether to launch the scan-align node that calculates localization accuracy." />
   <arg name="rviz" default="True"
     doc="Whether to launch RViz inside simulator include (only used when sim:=True)." />
+  <arg name="frame_prefix" default=""
+    doc="Frame prefix for multi-car scenarios." />
 
   <!-- Namespaced parameters (avoid writing to global /sim) -->
   <param name="racecar_version" value="$(arg racecar_version)" />
@@ -39,7 +41,8 @@
       <arg name="map_name" value="$(arg map_name)" />
       <arg name="racecar_version" value="$(arg racecar_version)" />
       <arg name="tire_model" value="$(arg tire_model)" />
-  <arg name="rviz" value="$(arg rviz)" />
+      <arg name="frame_prefix" value="$(arg frame_prefix)" />
+      <arg name="rviz" value="$(arg rviz)" />
     </include>
   </group>
 

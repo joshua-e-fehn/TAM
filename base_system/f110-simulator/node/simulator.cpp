@@ -43,6 +43,8 @@ private:
 
     // The transformation frames used
     std::string map_frame, base_frame, scan_frame;
+    std::string front_left_wheel_frame, front_right_wheel_frame;
+    std::string front_left_hinge_frame, front_right_hinge_frame;
 
     // obstacle states (1D index) and parameters
     std::vector<int> added_obs;
@@ -180,6 +182,12 @@ public:
         n.getParam("map_frame", map_frame);
         n.getParam("base_frame", base_frame);
         n.getParam("scan_frame", scan_frame);
+        
+        // Get wheel frame names (with defaults for backward compatibility)
+        n.param("front_left_wheel_frame", front_left_wheel_frame, std::string("front_left_wheel"));
+        n.param("front_right_wheel_frame", front_right_wheel_frame, std::string("front_right_wheel"));
+        n.param("front_left_hinge_frame", front_left_hinge_frame, std::string("front_left_hinge"));
+        n.param("front_right_hinge_frame", front_right_hinge_frame, std::string("front_right_hinge"));
 
         // Fetch the car parameters
         int scan_beams;
@@ -747,11 +755,11 @@ public:
             ts_wheel.transform.rotation.z = quat_wheel.z();
             ts_wheel.transform.rotation.w = quat_wheel.w();
             ts_wheel.header.stamp = timestamp;
-            ts_wheel.header.frame_id = "front_left_hinge";
-            ts_wheel.child_frame_id = "front_left_wheel";
+            ts_wheel.header.frame_id = front_left_hinge_frame;
+            ts_wheel.child_frame_id = front_left_wheel_frame;
             br.sendTransform(ts_wheel);
-            ts_wheel.header.frame_id = "front_right_hinge";
-            ts_wheel.child_frame_id = "front_right_wheel";
+            ts_wheel.header.frame_id = front_right_hinge_frame;
+            ts_wheel.child_frame_id = front_right_wheel_frame;
             br.sendTransform(ts_wheel);
         }
 
