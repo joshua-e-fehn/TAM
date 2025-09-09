@@ -83,6 +83,7 @@
     <!-- Republish simulator car_state topics to expected namespaced locations -->
     <node pkg="topic_tools" type="relay" name="car_state_odom_relay" 
           args="f1tenth_simulator/car_state/odom car_state/odom" />
+    <!-- Note: pose relay re-enabled for state machine -->
     <node pkg="topic_tools" type="relay" name="car_state_pose_relay" 
           args="f1tenth_simulator/car_state/pose car_state/pose" />
     <node pkg="topic_tools" type="relay" name="car_state_pitch_relay" 
@@ -118,6 +119,10 @@
     <!-- Bridge car_state odom to global for frenet republisher -->
     <node pkg="topic_tools" type="relay" name="odom_to_global_relay" 
           args="car_state/odom /car_state/odom" />
+          
+    <!-- Set initial pose for car1 at origin -->
+    <node pkg="rostopic" type="rostopic" name="car1_initial_pose"
+          args="pub -1 /initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: map}, pose: {pose: {position: {x: -2.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
           
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
@@ -157,6 +162,7 @@
     <!-- Republish simulator car_state topics to expected namespaced locations -->
     <node pkg="topic_tools" type="relay" name="car_state_odom_relay" 
           args="f1tenth_simulator/car_state/odom car_state/odom" />
+    <!-- Note: pose relay re-enabled for state machine -->
     <node pkg="topic_tools" type="relay" name="car_state_pose_relay" 
           args="f1tenth_simulator/car_state/pose car_state/pose" />
     <node pkg="topic_tools" type="relay" name="car_state_pitch_relay" 
@@ -193,12 +199,16 @@
     <node pkg="topic_tools" type="relay" name="odom_to_global_relay_car2" 
           args="car_state/odom /car_state/odom" />
           
+    <!-- Set initial pose for car2 at 2 meters apart in x -->
+    <node pkg="rostopic" type="rostopic" name="car2_initial_pose"
+          args="pub -1 /initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: map}, pose: {pose: {position: {x: 2.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
+          
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
     </include>
     <group if="$(arg use_global_map)">
       <node pkg="tf" type="static_transform_publisher" name="car2_global_map_link"
-            args="2 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car2)map 10" />
+            args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car2)map 10" />
     </group>
     <!-- Bridge the prefixed robot model frames to the main TF tree -->
     <node pkg="tf" type="static_transform_publisher" name="car2_robot_model_bridge"
@@ -258,8 +268,7 @@
   <rosparam ns="map_params" command="load" file="$(find stack_master)/maps/$(arg global_map)/speed_scaling.yaml"/>
   <rosparam ns="ot_map_params" command="load" file="$(find stack_master)/maps/$(arg global_map)/ot_sectors.yaml"/>
   
-  <!-- Load state machine parameters globally -->
-  <rosparam ns="state_machine" command="load" file="$(find stack_master)/config/state_machine_params.yaml"/>
+  <!-- Note: State machine parameters are loaded per-car in headtohead.launch, not globally -->
   
   <!-- Load velocity scaler debug parameter globally -->
   <param name="/velocity_scaler/debug_plot" value="false"/>

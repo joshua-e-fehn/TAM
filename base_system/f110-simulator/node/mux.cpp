@@ -169,7 +169,6 @@ public:
             anything_on = anything_on || mux_controller[i];
         }
         if (changed) {
-            std::cout << "MUX:" << std::endl;
             for (int i = 0; i < mux_size; i++) {
                 std::cout << mux_controller[i] << std::endl;
                 prev_mux[i] = mux_controller[i];
