@@ -79,6 +79,46 @@
       <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
       <arg name="rviz" value="False"/>
     </include>
+    
+    <!-- Republish simulator car_state topics to expected namespaced locations -->
+    <node pkg="topic_tools" type="relay" name="car_state_odom_relay" 
+          args="f1tenth_simulator/car_state/odom car_state/odom" />
+    <node pkg="topic_tools" type="relay" name="car_state_pose_relay" 
+          args="f1tenth_simulator/car_state/pose car_state/pose" />
+    <node pkg="topic_tools" type="relay" name="car_state_pitch_relay" 
+          args="f1tenth_simulator/car_state/pitch car_state/pitch" />
+    <!-- Republish simulator scan topic to expected namespaced location -->
+    <node pkg="topic_tools" type="relay" name="scan_relay" 
+          args="f1tenth_simulator/scan scan" />
+    <!-- Republish frenet odom to namespaced location -->
+    <node pkg="topic_tools" type="relay" name="frenet_odom_relay" 
+          args="/car_state/odom_frenet car_state/odom_frenet" />
+    
+    <!-- Mux pipeline relays for proper topic routing -->
+    <!-- Controller -> Mux: nav_drive to mux_controller/nav_drive -->
+    <node pkg="topic_tools" type="relay" name="nav_drive_to_mux_relay" 
+          args="nav_drive mux_controller/nav_drive" />
+    <!-- Behavior Controller -> Mux: behavior_controller/mux to mux_controller/mux -->
+    <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
+          args="behavior_controller/mux mux_controller/mux" />
+    <!-- Mux -> Simulator: mux_controller/drive to f1tenth_simulator/drive -->
+    <node pkg="topic_tools" type="relay" name="mux_to_simulator_relay" 
+          args="mux_controller/vesc/high_level/ackermann_cmd_mux/input/nav_1 f1tenth_simulator/vesc/high_level/ackermann_cmd_mux/input/nav_1" />
+    
+    <!-- Behavior controller data inputs -->
+    <node pkg="topic_tools" type="relay" name="behavior_odom_relay" 
+          args="car_state/odom behavior_controller/car_state/odom" />
+    <node pkg="topic_tools" type="relay" name="behavior_scan_relay" 
+          args="scan behavior_controller/scan" />
+    
+    <!-- Auto-enable navigation mux for reliable autonomous operation -->
+    <node pkg="rostopic" type="rostopic" name="auto_enable_nav_mux"
+          args="pub -r 10 behavior_controller/mux std_msgs/Int32MultiArray 'data: [0, 1, 0, 0, 0]'" />
+
+    <!-- Bridge car_state odom to global for frenet republisher -->
+    <node pkg="topic_tools" type="relay" name="odom_to_global_relay" 
+          args="car_state/odom /car_state/odom" />
+          
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
     </include>
@@ -113,6 +153,46 @@
       <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
       <arg name="rviz" value="False"/>
     </include>
+    
+    <!-- Republish simulator car_state topics to expected namespaced locations -->
+    <node pkg="topic_tools" type="relay" name="car_state_odom_relay" 
+          args="f1tenth_simulator/car_state/odom car_state/odom" />
+    <node pkg="topic_tools" type="relay" name="car_state_pose_relay" 
+          args="f1tenth_simulator/car_state/pose car_state/pose" />
+    <node pkg="topic_tools" type="relay" name="car_state_pitch_relay" 
+          args="f1tenth_simulator/car_state/pitch car_state/pitch" />
+    <!-- Republish simulator scan topic to expected namespaced location -->
+    <node pkg="topic_tools" type="relay" name="scan_relay" 
+          args="f1tenth_simulator/scan scan" />
+    <!-- Republish frenet odom to namespaced location -->
+    <node pkg="topic_tools" type="relay" name="frenet_odom_relay" 
+          args="/car_state/odom_frenet car_state/odom_frenet" />
+    
+    <!-- Mux pipeline relays for proper topic routing -->
+    <!-- Controller -> Mux: nav_drive to mux_controller/nav_drive -->
+    <node pkg="topic_tools" type="relay" name="nav_drive_to_mux_relay" 
+          args="nav_drive mux_controller/nav_drive" />
+    <!-- Behavior Controller -> Mux: behavior_controller/mux to mux_controller/mux -->
+    <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
+          args="behavior_controller/mux mux_controller/mux" />
+    <!-- Mux -> Simulator: mux_controller/drive to f1tenth_simulator/drive -->
+    <node pkg="topic_tools" type="relay" name="mux_to_simulator_relay" 
+          args="mux_controller/vesc/high_level/ackermann_cmd_mux/input/nav_1 f1tenth_simulator/vesc/high_level/ackermann_cmd_mux/input/nav_1" />
+    
+    <!-- Behavior controller data inputs -->
+    <node pkg="topic_tools" type="relay" name="behavior_odom_relay" 
+          args="car_state/odom behavior_controller/car_state/odom" />
+    <node pkg="topic_tools" type="relay" name="behavior_scan_relay" 
+          args="scan behavior_controller/scan" />
+    
+    <!-- Auto-enable navigation mux for reliable autonomous operation -->
+    <node pkg="rostopic" type="rostopic" name="auto_enable_nav_mux_car2"
+          args="pub -r 10 behavior_controller/mux std_msgs/Int32MultiArray 'data: [0, 1, 0, 0, 0]'" />
+
+    <!-- Bridge car_state odom to global for frenet republisher -->
+    <node pkg="topic_tools" type="relay" name="odom_to_global_relay_car2" 
+          args="car_state/odom /car_state/odom" />
+          
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
     </include>
@@ -186,6 +266,10 @@
   
   <!-- Set global sim parameter -->
   <param name="/sim" value="$(arg sim)"/>
+  
+  <!-- Set ROS time parameters for proper timestamp handling -->
+  <param name="/use_sim_time" value="false"/>
+  <rosparam param="/clock">{now: true}</rosparam>
 
   <!-- Single consolidated RViz outside namespaces -->
   <group if="$(arg rviz)">

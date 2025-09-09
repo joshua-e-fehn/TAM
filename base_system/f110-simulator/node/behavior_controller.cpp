@@ -138,12 +138,9 @@ public:
         // ***Add key char for new planner here***
         // n.getParam("new_key_char", new_key_char);
 
-        // Initialize the mux controller 
-        n.getParam("mux_size", mux_size);
-        mux_controller.reserve(mux_size);
-        for (int i = 0; i < mux_size; i++) {
-            mux_controller[i] = false;
-        }
+    // Initialize the mux controller (use assign to set actual size; reserve alone is incorrect)
+    n.getParam("mux_size", mux_size);
+    mux_controller.assign(mux_size, false);
 
         // Start with ebrake off
         safety_on = false;
@@ -173,7 +170,13 @@ public:
         collision_file.open(ros::package::getPath("f1tenth_simulator") + "/logs/" + filename + ".txt");
         beginning_seconds = ros::Time::now().toSec();
         
-        //toggle_mux(nav_mux_idx, "Navigation");
+        // Optionally auto-enable navigation mux if configured
+        bool auto_nav=false;
+        n.param("auto_nav", auto_nav, false);
+        if (auto_nav) {
+            ROS_INFO("Auto-enabling Navigation mux channel");
+            change_controller(nav_mux_idx);
+        }
     }
 
     /// ---------------------- GENERAL HELPER FUNCTIONS ----------------------

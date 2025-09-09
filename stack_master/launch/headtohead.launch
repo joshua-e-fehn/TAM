@@ -17,6 +17,8 @@
         <param name="mode" value="$(arg MAP_mode)" />
         <param name="LU_table" value="$(arg LU_table)" />
         <param name="ctrl_algo" value="$(arg ctrl_algo)" />
+        <remap from="global_waypoints" to="/global_waypoints"/>
+        <remap from="global_waypoints_scaled" to="/global_waypoints_scaled"/>
     </node>
 
     <!-- launch dynamic reconfigure servers -->
@@ -50,6 +52,9 @@
             <param name="timetrials_only" value="False" />
             <!--  tell state machine which OT strategy we are using -->
             <param name="ot_planner" value="spliner" />
+            <remap from="global_waypoints" to="/global_waypoints"/>
+            <remap from="global_waypoints_scaled" to="/global_waypoints_scaled"/>
+            <remap from="global_waypoints/overtaking" to="/global_waypoints/overtaking"/>
         </node>
         <!-- launch dynamic reconfigure -->
         <node pkg="spliner" type="dynamic_spline_server.py" name="dynamic_spline_tuner_node"
@@ -67,6 +72,9 @@
                 <param name="timetrials_only" value="False"/>
                 <!--  tell state machine which OT strategy we are using -->
                 <param name="ot_planner" value="predictive_spliner"/>
+                <remap from="global_waypoints" to="/global_waypoints"/>
+                <remap from="global_waypoints_scaled" to="/global_waypoints_scaled"/>
+                <remap from="global_waypoints/overtaking" to="/global_waypoints/overtaking"/>
         </node>
 
         <!-- launch collision predictor and dynamic reconfigure -->

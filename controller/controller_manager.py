@@ -265,7 +265,7 @@ class Controller_manager:
             'mpc_controller/states', Float64MultiArray, queue_size=10)
 
         # Publisher for steering and speed command
-        self.publish_topic = 'vesc/high_level/ackermann_cmd_mux/input/nav_1'
+        self.publish_topic = 'nav_drive'
         self.drive_pub = rospy.Publisher(
             self.publish_topic, AckermannDriveStamped, queue_size=10)
         if self.measuring:

@@ -87,16 +87,12 @@ public:
         n.getParam("keyboard_speed", keyboard_speed);
         n.getParam("keyboard_steer_ang", keyboard_steer_ang);
 
-        // get size of mux
-        n.getParam("mux_size", mux_size);
+    // get size of mux
+    n.getParam("mux_size", mux_size);
 
-        // initialize mux controller
-        mux_controller.reserve(mux_size);
-        prev_mux.reserve(mux_size);
-        for (int i = 0; i < mux_size; i++) {
-            mux_controller[i] = false;
-            prev_mux[i] = false;
-        }
+    // initialize mux controller (reserve only allocates capacity; we need actual size)
+    mux_controller.assign(mux_size, false);
+    prev_mux.assign(mux_size, false);
 
         // A channel contains a subscriber to the given drive topic and a publisher to the main drive topic
         channels = std::vector<Channel*>();
@@ -109,19 +105,21 @@ public:
         n.getParam("random_walker_mux_idx", random_walker_mux_idx);
         add_channel(rand_drive_topic, drive_topic, random_walker_mux_idx);
 
+        // Channel for navigation planner (nav)
+        int nav_mux_idx;
+        std::string nav_drive_topic;
+        if (n.getParam("nav_drive_topic", nav_drive_topic) && n.getParam("nav_mux_idx", nav_mux_idx)) {
+            add_channel(nav_drive_topic, drive_topic, nav_mux_idx);
+        } else {
+            ROS_WARN("Navigation drive channel parameters not fully specified: nav_drive_topic or nav_mux_idx missing");
+        }
+
         // Channel for emergency braking
         int brake_mux_idx;
         std::string brake_drive_topic;
         n.getParam("brake_drive_topic", brake_drive_topic);
         n.getParam("brake_mux_idx", brake_mux_idx);
-        add_channel(brake_drive_topic, drive_topic, brake_mux_idx);
-
-        // General navigation channel
-        int nav_mux_idx;
-        std::string nav_drive_topic;
-        n.getParam("nav_drive_topic", nav_drive_topic);
-        n.getParam("nav_mux_idx", nav_mux_idx);
-        add_channel(nav_drive_topic, drive_topic, nav_mux_idx);
+    add_channel(brake_drive_topic, drive_topic, brake_mux_idx);
 
         // ***Add a channel for a new planner here**
         // int new_mux_idx;
@@ -158,21 +156,20 @@ public:
     }
 
     void mux_callback(const std_msgs::Int32MultiArray & msg) {
-        // reset mux member variable every time it's published
-        for (int i = 0; i < mux_size; i++) {
+        // Update internal mux controller state based on message (bounded by mux_size)
+        for (int i = 0; i < mux_size && i < static_cast<int>(msg.data.size()); i++) {
             mux_controller[i] = bool(msg.data[i]);
         }
 
-        // Prints the mux whenever it is changed
+        // Determine if state changed and whether any channel is active
         bool changed = false;
-        // checks if nothing is on
         bool anything_on = false;
         for (int i = 0; i < mux_size; i++) {
             changed = changed || (mux_controller[i] != prev_mux[i]);
             anything_on = anything_on || mux_controller[i];
         }
         if (changed) {
-            std::cout << "MUX: " << std::endl;
+            std::cout << "MUX:" << std::endl;
             for (int i = 0; i < mux_size; i++) {
                 std::cout << mux_controller[i] << std::endl;
                 prev_mux[i] = mux_controller[i];
@@ -180,7 +177,7 @@ public:
             std::cout << std::endl;
         }
         if (!anything_on) {
-            // if no mux channel is active, halt the car
+            // If no mux channel is active, halt the car for safety
             publish_to_drive(0.0, 0.0);
         }
     }
