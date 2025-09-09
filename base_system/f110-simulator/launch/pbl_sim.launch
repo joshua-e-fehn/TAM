@@ -99,6 +99,8 @@
     <param name="base_frame" value="$(arg frame_prefix)base_link" if="$(eval arg('frame_prefix') != '')" />
     <param name="scan_frame" value="$(arg frame_prefix)laser" if="$(eval arg('frame_prefix') != '')" />
     <param name="map_frame" value="$(arg frame_prefix)map" if="$(eval arg('frame_prefix') != '')" />
+    <!-- Override pose_rviz_topic to use namespaced topic when frame_prefix is set -->
+    <param name="pose_rviz_topic" value="initialpose" if="$(eval arg('frame_prefix') != '')" />
     <!-- Override wheel frame parameters with prefixed versions if frame_prefix is set -->
     <param name="front_left_wheel_frame" value="$(arg frame_prefix)/front_left_wheel" if="$(eval arg('frame_prefix') != '')" />
     <param name="front_right_wheel_frame" value="$(arg frame_prefix)/front_right_wheel" if="$(eval arg('frame_prefix') != '')" />
