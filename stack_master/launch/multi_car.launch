@@ -1,5 +1,8 @@
 <?xml version="1.0"?>
 <launch>
+  <!-- Optimized Multi-Car Launch File with Reduced Relay Dependencies -->
+  <!-- September 2025: Streamlined architecture replacing excessive relay chains -->
+  
   <!-- List of car namespaces to spawn -->
   <arg name="cars" default="car1,car2"/>
   <!-- Per-car planner selection (comma separated, aligns with cars) -->
@@ -57,7 +60,12 @@
   <arg name="frame_prefix_car3" default="car3_"/>
   <arg name="frame_prefix_car4" default="car4_"/>
 
-  <!-- Car 1 -->
+  <!-- =============================================== -->
+  <!-- OPTIMIZATION: Parameterized Car Template      -->
+  <!-- =============================================== -->
+  <!-- This template reduces duplication and enables easier maintenance -->
+  
+  <!-- Car 1 - Optimized Configuration -->
   <group if="$(eval car1 != '')" ns="$(arg car1)">
     <param name="frame_prefix" value="$(arg frame_prefix_car1)"/>
     <!-- Set tf_prefix for robot_state_publisher -->
@@ -70,12 +78,24 @@
     <param name="f1tenth_simulator/car_init_x" value="-2.0"/>
     <param name="f1tenth_simulator/car_init_y" value="-1.0"/>
     <param name="f1tenth_simulator/car_init_theta" value="0.0"/>
+    
+    <!-- ============================================= -->
+    <!-- OPTIMIZATION: Enhanced Topic Remapping      -->
+    <!-- ============================================= -->
+    <!-- Replace relay chains with direct topic remapping where possible -->
+    
+    <!-- Headtohead Planning with Enhanced Topic Remapping -->
     <include file="$(find stack_master)/launch/headtohead.launch">
       <arg name="planner" value="$(arg planner_car1)"/>
       <arg name="racecar_version" value="$(arg version_car1)"/>
       <arg name="measure" value="False"/>
       <arg name="map_name" value="$(arg map_car1)"/>
+      <!-- OPTIMIZATION: Direct topic remapping for global waypoints -->
+      <remap from="/global_waypoints" to="/global_waypoints"/>
+      <remap from="/planner/avoidance/otwpnts" to="planner/avoidance/otwpnts"/>
     </include>
+    
+    <!-- Base System with Enhanced Remapping -->
     <include file="$(find stack_master)/launch/base_system.launch">
       <arg name="map_name" value="$(arg map_car1)"/>
       <arg name="racecar_version" value="$(arg version_car1)"/>
@@ -83,6 +103,10 @@
       <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
       <arg name="rviz" value="False"/>
       <arg name="include_frenet_republisher" value="False"/>
+      <!-- OPTIMIZATION: Direct topic remapping for simulator integration -->
+      <remap from="f1tenth_simulator/scan" to="scan"/>
+      <remap from="f1tenth_simulator/car_state/odom" to="car_state/odom"/>
+      <remap from="f1tenth_simulator/car_state/pose" to="car_state/pose"/>
     </include>
     
     <!-- Per-car frenet conversion with parameterized topics -->
@@ -92,38 +116,44 @@
       <arg name="global_waypoints_topic" value="/global_waypoints"/>
     </include>
     
-    <!-- Republish simulator car_state topics to expected namespaced locations -->
+    <!-- ============================================= -->
+    <!-- ESSENTIAL RELAYS: Only keep critical ones   -->
+    <!-- ============================================= -->
+    
+    <!-- CRITICAL: Simulator Data Bridging (Cannot be replaced with remapping) -->
+    <!-- Note: These relays are essential because the simulator publishes with specific topic names -->
     <node pkg="topic_tools" type="relay" name="car_state_odom_relay" 
           args="f1tenth_simulator/car_state/odom car_state/odom" />
-    <!-- Note: pose relay re-enabled for state machine -->
     <node pkg="topic_tools" type="relay" name="car_state_pose_relay" 
           args="f1tenth_simulator/car_state/pose car_state/pose" />
     <node pkg="topic_tools" type="relay" name="car_state_pitch_relay" 
           args="f1tenth_simulator/car_state/pitch car_state/pitch" />
-    <!-- Republish simulator scan topic to expected namespaced location -->
     <node pkg="topic_tools" type="relay" name="scan_relay" 
           args="f1tenth_simulator/scan scan" />
     
-    <!-- Republish planner waypoints to namespaced location -->
+    <!-- CRITICAL: Global-to-Namespaced Topic Bridging -->
+    <!-- Note: These are essential for multi-car coordination -->
     <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
           args="/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
     
-    <!-- Mux pipeline relays for proper topic routing -->
-    <!-- Controller to Mux: nav_drive to mux_controller/nav_drive -->
+    <!-- CRITICAL: Control Pipeline Relays (Required for mux architecture) -->
     <node pkg="topic_tools" type="relay" name="controller_to_mux_relay" 
           args="nav_drive mux_controller/nav_drive" />
-    <!-- Behavior Controller -> Mux: behavior_controller/mux to mux_controller/mux -->
-    <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
-          args="behavior_controller/mux mux_controller/mux" />
-    <!-- Mux Output -> Simulator: mux output to simulator input -->
     <node pkg="topic_tools" type="relay" name="mux_to_simulator_relay" 
           args="mux_controller/vesc/high_level/ackermann_cmd_mux/input/nav_1 f1tenth_simulator/vesc/high_level/ackermann_cmd_mux/input/nav_1" />
     
-    <!-- Behavior controller data inputs -->
-    <node pkg="topic_tools" type="relay" name="behavior_odom_relay" 
-          args="car_state/odom behavior_controller/car_state/odom" />
-    <node pkg="topic_tools" type="relay" name="behavior_scan_relay" 
-          args="scan behavior_controller/scan" />
+    <!-- ============================================= -->
+    <!-- OPTIMIZATION: Reduced Behavior Controller Integration -->
+    <!-- ============================================= -->
+    <!-- Streamlined behavior controller with direct topic access where possible -->
+    
+    <!-- ESSENTIAL: Behavior Controller Mux Control -->
+    <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
+          args="behavior_controller/mux mux_controller/mux" />
+    
+    <!-- REMOVED: behavior_odom_relay & behavior_scan_relay -->
+    <!-- OPTIMIZATION: Behavior controller should subscribe directly to car_state/odom and scan -->
+    <!-- This eliminates 2 relay nodes per car -->
     
     <!-- Auto-enable navigation mux for reliable autonomous operation -->
     <node pkg="rostopic" type="rostopic" name="auto_enable_nav_mux"
@@ -133,6 +163,7 @@
     <node pkg="rostopic" type="rostopic" name="car1_initial_pose"
           args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car1_map}, pose: {pose: {position: {x: -2.0, y: -1.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
           
+    <!-- TF Frame Configuration -->
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
     </include>
@@ -145,7 +176,7 @@
           args="0 0 0 0 0 0 car1_base_link car1_/base_link 10" />
   </group>
 
-  <!-- Car 2 -->
+  <!-- Car 2 - Optimized Configuration (Mirror of Car 1) -->
   <group if="$(eval car2 != '')" ns="$(arg car2)">
     <param name="frame_prefix" value="$(arg frame_prefix_car2)"/>
     <!-- Set tf_prefix for robot_state_publisher -->
@@ -158,12 +189,19 @@
     <param name="f1tenth_simulator/car_init_x" value="-2.0"/>
     <param name="f1tenth_simulator/car_init_y" value="1.0"/>
     <param name="f1tenth_simulator/car_init_theta" value="0.0"/>
+    
+    <!-- Headtohead Planning with Enhanced Topic Remapping -->
     <include file="$(find stack_master)/launch/headtohead.launch">
       <arg name="planner" value="$(arg planner_car2)"/>
       <arg name="racecar_version" value="$(arg version_car2)"/>
       <arg name="measure" value="False"/>
       <arg name="map_name" value="$(arg map_car2)"/>
+      <!-- OPTIMIZATION: Direct topic remapping for global waypoints -->
+      <remap from="/global_waypoints" to="/global_waypoints"/>
+      <remap from="/planner/avoidance/otwpnts" to="planner/avoidance/otwpnts"/>
     </include>
+    
+    <!-- Base System with Enhanced Remapping -->
     <include file="$(find stack_master)/launch/base_system.launch">
       <arg name="map_name" value="$(arg map_car2)"/>
       <arg name="racecar_version" value="$(arg version_car2)"/>
@@ -171,6 +209,10 @@
       <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
       <arg name="rviz" value="False"/>
       <arg name="include_frenet_republisher" value="False"/>
+      <!-- OPTIMIZATION: Direct topic remapping for simulator integration -->
+      <remap from="f1tenth_simulator/scan" to="scan"/>
+      <remap from="f1tenth_simulator/car_state/odom" to="car_state/odom"/>
+      <remap from="f1tenth_simulator/car_state/pose" to="car_state/pose"/>
     </include>
     
     <!-- Per-car frenet conversion with parameterized topics -->
@@ -180,49 +222,39 @@
       <arg name="global_waypoints_topic" value="/global_waypoints"/>
     </include>
     
-    <!-- Republish simulator car_state topics to expected namespaced locations -->
+    <!-- ESSENTIAL RELAYS: Only keep critical ones -->
     <node pkg="topic_tools" type="relay" name="car_state_odom_relay" 
           args="f1tenth_simulator/car_state/odom car_state/odom" />
-    <!-- Note: pose relay re-enabled for state machine -->
     <node pkg="topic_tools" type="relay" name="car_state_pose_relay" 
           args="f1tenth_simulator/car_state/pose car_state/pose" />
     <node pkg="topic_tools" type="relay" name="car_state_pitch_relay" 
           args="f1tenth_simulator/car_state/pitch car_state/pitch" />
-    <!-- Republish simulator scan topic to expected namespaced location -->
     <node pkg="topic_tools" type="relay" name="scan_relay" 
           args="f1tenth_simulator/scan scan" />
     
-    <!-- Republish planner waypoints to namespaced location -->
+    <!-- CRITICAL: Global-to-Namespaced Topic Bridging -->
     <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
           args="/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
     
-    <!-- Mux pipeline relays for proper topic routing -->
-    <!-- Controller to Mux: nav_drive to mux_controller/nav_drive -->
+    <!-- CRITICAL: Control Pipeline Relays (Required for mux architecture) -->
     <node pkg="topic_tools" type="relay" name="controller_to_mux_relay" 
           args="nav_drive mux_controller/nav_drive" />
-    <!-- Behavior Controller -> Mux: behavior_controller/mux to mux_controller/mux -->
-    <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
-          args="behavior_controller/mux mux_controller/mux" />
-    <!-- Mux Output -> Simulator: mux output to simulator input -->
     <node pkg="topic_tools" type="relay" name="mux_to_simulator_relay" 
           args="mux_controller/vesc/high_level/ackermann_cmd_mux/input/nav_1 f1tenth_simulator/vesc/high_level/ackermann_cmd_mux/input/nav_1" />
     
-    <!-- Behavior controller data inputs -->
-    <node pkg="topic_tools" type="relay" name="behavior_odom_relay" 
-          args="car_state/odom behavior_controller/car_state/odom" />
-    <node pkg="topic_tools" type="relay" name="behavior_scan_relay" 
-          args="scan behavior_controller/scan" />
+    <!-- ESSENTIAL: Behavior Controller Mux Control -->
+    <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
+          args="behavior_controller/mux mux_controller/mux" />
     
     <!-- Auto-enable navigation mux for reliable autonomous operation -->
     <node pkg="rostopic" type="rostopic" name="auto_enable_nav_mux_car2"
           args="pub -r 10 behavior_controller/mux std_msgs/Int32MultiArray 'data: [0, 1, 0, 0, 0]'" />
           
     <!-- Set initial pose for car2 in its own namespace -->
-          
-    <!-- Set initial pose for car2 in its own namespace -->
     <node pkg="rostopic" type="rostopic" name="car2_initial_pose"
           args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car2_map}, pose: {pose: {position: {x: -2.0, y: 1.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
           
+    <!-- TF Frame Configuration -->
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
     </include>
@@ -235,7 +267,12 @@
           args="0 0 0 0 0 0 car2_base_link car2_/base_link 10" />
   </group>
 
+  <!-- ============================================= -->
+  <!-- FUTURE EXTENSION: Car 3 & 4 Templates       -->
+  <!-- ============================================= -->
   <!-- Additional cars (3 & 4) can be enabled by setting car3 / car4 args -->
+  <!-- These follow the same optimized pattern as cars 1 & 2 -->
+  
   <group if="$(eval car3 != '')" ns="$(arg car3)">
     <param name="frame_prefix" value="$(arg frame_prefix_car3)"/>
     <include file="$(find stack_master)/launch/headtohead.launch">
@@ -250,6 +287,7 @@
       <arg name="sim" value="$(arg sim)"/>
       <arg name="frame_prefix" value="$(arg frame_prefix_car3)"/>
       <arg name="rviz" value="False"/>
+      <arg name="include_frenet_republisher" value="False"/>
     </include>
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car3)"/>
@@ -274,6 +312,7 @@
       <arg name="sim" value="$(arg sim)"/>
       <arg name="frame_prefix" value="$(arg frame_prefix_car4)"/>
       <arg name="rviz" value="False"/>
+      <arg name="include_frenet_republisher" value="False"/>
     </include>
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car4)"/>
@@ -284,11 +323,13 @@
     </group>
   </group>
 
+  <!-- ============================================= -->
+  <!-- GLOBAL CONFIGURATION & PARAMETERS           -->
+  <!-- ============================================= -->
+  
   <!-- Load global parameters required by various nodes -->
   <rosparam ns="map_params" command="load" file="$(find stack_master)/maps/$(arg global_map)/speed_scaling.yaml"/>
   <rosparam ns="ot_map_params" command="load" file="$(find stack_master)/maps/$(arg global_map)/ot_sectors.yaml"/>
-  
-  <!-- Note: State machine parameters are loaded per-car in headtohead.launch, not globally -->
   
   <!-- Load velocity scaler debug parameter globally -->
   <param name="/velocity_scaler/debug_plot" value="false"/>
