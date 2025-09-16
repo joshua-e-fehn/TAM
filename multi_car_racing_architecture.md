@@ -538,6 +538,44 @@ global_map (map) → car2_map → car2_base_link
 ### 3️⃣ Robot Model Visualization Bridges
 **🎨 Purpose:** Additional bridges ensure proper visualization in RViz
 
+#### **🔧 Recent Robot Model Fixes (2025-09-16)**
+The robot model display system was completely overhauled to resolve TF conflicts and visualization issues:
+
+**📁 File Updates:**
+- `racecar.xacro`: Added frame_prefix parameterization for all links/joints
+- `racecar_model.launch`: Restructured TF publishing and bridge transforms  
+- `multi_car.rviz`: Updated TF prefix configuration
+
+**🏗️ Architecture Changes:**
+1. **XACRO Parameterization**: All robot model frames use `${frame_prefix}` parameter
+   - Links: `car1_model_base_link`, `car1_model_front_left_wheel`, etc.
+   - Eliminates hard-coded frame names, enables dynamic prefixing
+
+2. **TF Publishing Strategy**: 
+   - robot_state_publisher runs without tf_prefix to avoid "/" slash issues
+   - Bridge transforms connect simulator frames → robot model frames
+   - Prevents duplicate frame publishing conflicts
+
+3. **Bridge Transform Network**:
+   ```
+   car1_base_link → car1_model_base_link (main connection)
+   car1_base_link → car1_front_left_hinge (wheel connection)  
+   car1_base_link → car1_front_right_hinge (wheel connection)
+   ```
+
+4. **Joint Type Fix**: Changed front wheel joints from `continuous` → `fixed`
+   - Eliminates dependency on joint state messages
+   - Ensures all robot model frames publish correctly
+
+**✅ Issues Resolved:**
+- TF_REPEATED_DATA warnings eliminated
+- Invisible cars now display with complete robot models
+- Origin glitching (duplicate cars at 0,0,0) removed
+- All TF transform errors resolved
+- Front wheel frames properly connected to map
+
+**🎯 Result**: Clean robot model visualization with proper TF tree connectivity
+
 ### 4️⃣ Shared Global Map Server
 **📡 Function:** Single map server provides shared track to all cars
 **📤 Publishes:** `/map` topic, accessible by all cars

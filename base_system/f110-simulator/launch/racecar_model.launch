@@ -5,13 +5,35 @@
   <!-- tf_prefix argument for multi-car support -->
   <arg name="tf_prefix" default=""/>
   
-  <!-- group for racecar -->
-  <group ns="racecar">
-  <!-- Set tf_prefix parameter if provided -->
-  <param name="tf_prefix" value="$(arg tf_prefix)" if="$(eval arg('tf_prefix') != '')"/>
-  <param name="robot_description" command="xacro --inorder '$(arg racecar_xacro)'"/>
-  <!-- Add the transformations -->
-  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+  <!-- Robot state publisher without tf_prefix parameter and without namespace -->
+  <!-- Frames will be published as car1_model_base_link, car1_model_front_left_wheel, etc. -->
+  <group>
+    <param name="robot_description" command="xacro --inorder '$(arg racecar_xacro)' frame_prefix:=$(arg tf_prefix)model_"/>
+    <node name="$(arg tf_prefix)robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher">
+      <param name="use_tf_static" value="true"/>
+      <param name="publish_frequency" value="30"/>
+      <!-- No tf_prefix parameter to avoid / slash issue -->
+    </node>
   </group>
+  
+  <!-- Set robot_description parameter in multiple namespaces for RViz -->
+  <param name="/car1/racecar/robot_description" command="xacro --inorder '$(arg racecar_xacro)' frame_prefix:=car1_model_" if="$(eval arg('tf_prefix') == 'car1_')"/>
+  <param name="/car2/racecar/robot_description" command="xacro --inorder '$(arg racecar_xacro)' frame_prefix:=car2_model_" if="$(eval arg('tf_prefix') == 'car2_')"/>
+  <!-- Also set in the dynamic namespace as backup -->
+  <param name="/$(arg tf_prefix)racecar/robot_description" command="xacro --inorder '$(arg racecar_xacro)' frame_prefix:=$(arg tf_prefix)model_"/>
+  
+  <!-- Create static transform to connect robot model to simulator -->
+  <node pkg="tf" type="static_transform_publisher" name="$(arg tf_prefix)model_to_sim_bridge" 
+        args="0 0 0 0 0 0 $(arg tf_prefix)base_link $(arg tf_prefix)model_base_link 10" 
+        if="$(eval arg('tf_prefix') != '')"/>
+        
+  <!-- Bridge transforms for front hinges (simulator doesn't publish these connections) -->
+  <node pkg="tf" type="static_transform_publisher" name="$(arg tf_prefix)front_left_hinge_bridge" 
+        args="0.3302 0.12065 0.0508 0 0 0 $(arg tf_prefix)base_link $(arg tf_prefix)front_left_hinge 10" 
+        if="$(eval arg('tf_prefix') != '')"/>
+        
+  <node pkg="tf" type="static_transform_publisher" name="$(arg tf_prefix)front_right_hinge_bridge" 
+        args="0.3302 -0.12065 0.0508 0 0 0 $(arg tf_prefix)base_link $(arg tf_prefix)front_right_hinge 10" 
+        if="$(eval arg('tf_prefix') != '')"/>
 
 </launch>

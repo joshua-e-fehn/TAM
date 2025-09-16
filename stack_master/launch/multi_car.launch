@@ -68,8 +68,6 @@
   <!-- Car 1 - Optimized Configuration -->
   <group if="$(eval car1 != '')" ns="$(arg car1)">
     <param name="frame_prefix" value="$(arg frame_prefix_car1)"/>
-    <!-- Set tf_prefix for robot_state_publisher -->
-    <param name="racecar/robot_state_publisher/tf_prefix" value="$(arg frame_prefix_car1)"/>
     <!-- Set frame parameters for f1tenth_simulator to use prefixed frames -->
     <param name="f1tenth_simulator/base_frame" value="$(arg frame_prefix_car1)base_link"/>
     <param name="f1tenth_simulator/scan_frame" value="$(arg frame_prefix_car1)laser"/>
@@ -177,23 +175,24 @@
           args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car1_map}, pose: {pose: {position: {x: -2.0, y: -1.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
           
     <!-- TF Frame Configuration -->
+        <!-- TF Frame Configuration -->
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
+      <!-- Pass scan distance parameter if available, otherwise use default -->
+      <arg name="scan_distance_to_base_link" value="0.275"/>
+      <arg name="scan_height" value="0.19"/>
+      <!-- Disable odom->base_link since simulator handles this -->
+      <arg name="publish_odom_base" value="False"/>
     </include>
-    <group if="$(arg use_global_map)">
+        <group if="$(arg use_global_map)">
       <node pkg="tf" type="static_transform_publisher" name="car1_global_map_link"
             args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car1)map 10" />
     </group>
-    <!-- Bridge the prefixed robot model frames to the main TF tree -->
-    <node pkg="tf" type="static_transform_publisher" name="car1_robot_model_bridge"
-          args="0 0 0 0 0 0 car1_base_link car1_/base_link 10" />
   </group>
 
   <!-- Car 2 - Optimized Configuration (Mirror of Car 1) -->
   <group if="$(eval car2 != '')" ns="$(arg car2)">
     <param name="frame_prefix" value="$(arg frame_prefix_car2)"/>
-    <!-- Set tf_prefix for robot_state_publisher -->
-    <param name="racecar/robot_state_publisher/tf_prefix" value="$(arg frame_prefix_car2)"/>
     <!-- Set frame parameters for f1tenth_simulator to use prefixed frames -->
     <param name="f1tenth_simulator/base_frame" value="$(arg frame_prefix_car2)base_link"/>
     <param name="f1tenth_simulator/scan_frame" value="$(arg frame_prefix_car2)laser"/>
@@ -283,14 +282,16 @@
     <!-- TF Frame Configuration -->
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
+      <!-- Pass scan distance parameter if available, otherwise use default -->
+      <arg name="scan_distance_to_base_link" value="0.275"/>
+      <arg name="scan_height" value="0.19"/>
+      <!-- Disable odom->base_link since simulator handles this -->
+      <arg name="publish_odom_base" value="False"/>
     </include>
-    <group if="$(arg use_global_map)">
+        <group if="$(arg use_global_map)">
       <node pkg="tf" type="static_transform_publisher" name="car2_global_map_link"
             args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car2)map 10" />
     </group>
-    <!-- Bridge the prefixed robot model frames to the main TF tree -->
-    <node pkg="tf" type="static_transform_publisher" name="car2_robot_model_bridge"
-          args="0 0 0 0 0 0 car2_base_link car2_/base_link 10" />
   </group>
 
   <!-- ============================================= -->

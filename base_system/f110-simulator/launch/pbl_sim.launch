@@ -23,7 +23,7 @@
   <arg name="map_name" default="hangar"/>
   <!-- Note: Map server now launched globally in multi_car.launch -->
 
-  <!-- Launch the racecar model -->
+  <!-- Launch the racecar model with modified frame names -->
   <include file="$(find f1tenth_simulator)/launch/racecar_model.launch">
     <arg name="tf_prefix" value="$(arg frame_prefix)"/>
   </include>
@@ -102,10 +102,10 @@
     <!-- Override pose_rviz_topic to use namespaced topic when frame_prefix is set -->
     <param name="pose_rviz_topic" value="initialpose" if="$(eval arg('frame_prefix') != '')" />
     <!-- Override wheel frame parameters with prefixed versions if frame_prefix is set -->
-    <param name="front_left_wheel_frame" value="$(arg frame_prefix)/front_left_wheel" if="$(eval arg('frame_prefix') != '')" />
-    <param name="front_right_wheel_frame" value="$(arg frame_prefix)/front_right_wheel" if="$(eval arg('frame_prefix') != '')" />
-    <param name="front_left_hinge_frame" value="$(arg frame_prefix)/front_left_hinge" if="$(eval arg('frame_prefix') != '')" />
-    <param name="front_right_hinge_frame" value="$(arg frame_prefix)/front_right_hinge" if="$(eval arg('frame_prefix') != '')" />
+    <param name="front_left_wheel_frame" value="$(arg frame_prefix)front_left_wheel" if="$(eval arg('frame_prefix') != '')" />
+    <param name="front_right_wheel_frame" value="$(arg frame_prefix)front_right_wheel" if="$(eval arg('frame_prefix') != '')" />
+    <param name="front_left_hinge_frame" value="$(arg frame_prefix)front_left_hinge" if="$(eval arg('frame_prefix') != '')" />
+    <param name="front_right_hinge_frame" value="$(arg frame_prefix)front_right_hinge" if="$(eval arg('frame_prefix') != '')" />
   </node>
 
   <!-- Launch RVIZ -->

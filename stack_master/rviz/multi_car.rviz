@@ -63,7 +63,7 @@ Visualization Manager:
       Enabled: true
       Name: car1_model
       Robot Description: car1/racecar/robot_description
-      TF Prefix: car1_
+      TF Prefix: ""
       Update Interval: 0
       Value: true
       Alpha: 1.0
@@ -73,7 +73,7 @@ Visualization Manager:
       Enabled: true
       Name: car2_model
       Robot Description: car2/racecar/robot_description
-      TF Prefix: car2_
+      TF Prefix: ""
       Update Interval: 0
       Value: true
       Alpha: 0.7
@@ -114,6 +114,20 @@ Visualization Manager:
       Enabled: true
       Marker Topic: /global_waypoints/shortest_path/markers
       Name: global_shortest_path
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /car1/state_marker
+      Name: car1_state_marker
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /car2/state_marker
+      Name: car2_state_marker
       Namespaces: {}
       Queue Size: 100
       Value: true

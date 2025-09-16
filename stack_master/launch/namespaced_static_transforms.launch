@@ -3,10 +3,14 @@
   <arg name="frame_prefix" default=""/>
   <arg name="publish_map_odom" default="True"/>
   <arg name="publish_odom_base" default="True"/>
+  <!-- Configurable laser parameters with defaults from simulator -->
+  <arg name="scan_distance_to_base_link" default="0.275"/>
+  <arg name="scan_height" default="0.19"/>
 
-  <!-- laser relative to base_link -->
+  <!-- laser relative to base_link with configurable parameters -->
+  <!-- Note: Only publish this if robot model is not being used -->
   <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_laser"
-        args="0.285 0.0 0.127 0 0 0 1 $(arg frame_prefix)base_link $(arg frame_prefix)laser_model" />
+        args="$(arg scan_distance_to_base_link) 0.0 $(arg scan_height) 0 0 0 1 $(arg frame_prefix)base_link $(arg frame_prefix)laser" />
 
   <!-- map -> odom (identity) -->
   <group if="$(arg publish_map_odom)">
