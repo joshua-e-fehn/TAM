@@ -28,6 +28,9 @@
   <arg name="enable_collision_detection" default="True"/>
   <arg name="collision_warning_distance" default="1.5"/>
   <arg name="collision_critical_distance" default="0.8"/>
+  
+  <!-- Car Model Configuration for Multi-Car Interaction -->
+  <arg name="car_model" default="NUC2"/>  <!-- Car model for dimensions (NUC2, TAM, etc.) -->
 
   <!-- Global Map Server - shared by all cars -->
   <node pkg="map_server" name="global_map_server" type="map_server" 
@@ -392,12 +395,13 @@
   <group if="$(arg enable_car_interaction)">
     <include file="$(find multi_car_interaction)/launch/multi_car_interaction.launch">
       <arg name="car_names" value="car1, car2"/>
+      <arg name="car_model" value="$(arg car_model)"/>
       <arg name="enable_collision_detection" value="$(arg enable_collision_detection)"/>
       <arg name="enable_obstacle_publishing" value="True"/>
       <arg name="warning_distance" value="$(arg collision_warning_distance)"/>
       <arg name="critical_distance" value="$(arg collision_critical_distance)"/>
       <arg name="collision_distance" value="0.5"/>
-      <arg name="publish_rate" value="20.0"/>
+      <arg name="publish_rate" value="50.0"/>
       <arg name="check_rate" value="50.0"/>
     </include>
   </group>

@@ -1,8 +1,10 @@
 # Multi-Car Interaction Configuration
 
-# Car physical parameters (F1TENTH dimensions)
-car_length: 0.58      # meters (including wheelbase + front/rear overhangs)
-car_width: 0.31       # meters
+# Car physical parameters 
+# NOTE: These are default fallback values. Actual dimensions are calculated from car model.
+# For NUC2: wheelbase=0.307m -> car_length≈0.58m, car_width=0.31m (F1TENTH standard)
+car_length: 0.58      # meters (calculated from wheelbase + overhangs, or use this default)
+car_width: 0.31       # meters (F1TENTH standard width)
 safety_margin: 0.2    # additional margin around car for obstacle detection
 
 # Obstacle publishing settings

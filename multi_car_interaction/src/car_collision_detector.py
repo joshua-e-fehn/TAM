@@ -41,9 +41,12 @@ class CarCollisionDetector:
         self.collision_distance = rospy.get_param(
             '~collision_distance', 0.5)  # meters
 
-        # Car physical parameters
-        self.car_length = rospy.get_param('~car_length', 0.58)  # meters
-        self.car_width = rospy.get_param('~car_width', 0.31)   # meters
+        # Car model and dimensions
+        self.car_model = rospy.get_param('~car_model', 'NUC2')
+
+        # Try to get dimensions from car model, fallback to launch file params, then defaults
+        self.car_length = self.get_car_dimension('car_length', 0.58)  # meters
+        self.car_width = self.get_car_dimension('car_width', 0.31)    # meters
 
         # Storage for car positions
         self.car_positions = {}
@@ -66,6 +69,42 @@ class CarCollisionDetector:
 
         rospy.loginfo(
             f"Car Collision Detector initialized for cars: {self.car_names}")
+
+    def get_car_dimension(self, dimension_name, default_value):
+        """Get car dimension from model parameters with fallback hierarchy"""
+        # 1. Try to get from launch file parameters (highest priority)
+        launch_param = rospy.get_param(f'~{dimension_name}', None)
+        if launch_param is not None:
+            rospy.loginfo(
+                f"[Multi-Car Collision] Using {dimension_name}={launch_param} from launch file")
+            return launch_param
+
+        # 2. Try to calculate from car model parameters
+        try:
+            if dimension_name == 'car_length':
+                # Calculate car length from wheelbase (wheelbase + front/rear overhangs ≈ 1.9x wheelbase)
+                wheelbase = rospy.get_param(
+                    '/car_model_params/wheelbase', None)
+                if wheelbase is not None:
+                    # Based on F1TENTH proportions (0.307 -> 0.58)
+                    calculated_length = wheelbase * 1.89
+                    rospy.loginfo(
+                        f"[Multi-Car Collision] Calculated car_length={calculated_length:.3f} from wheelbase={wheelbase} ({self.car_model})")
+                    return calculated_length
+            elif dimension_name == 'car_width':
+                # Use standard F1TENTH width (fairly constant across models)
+                standard_width = 0.31  # F1TENTH standard width
+                rospy.loginfo(
+                    f"[Multi-Car Collision] Using standard F1TENTH car_width={standard_width} ({self.car_model})")
+                return standard_width
+        except Exception as e:
+            rospy.logwarn(
+                f"[Multi-Car Collision] Could not calculate {dimension_name} from car model {self.car_model}: {e}")
+
+        # 3. Fallback to default value
+        rospy.loginfo(
+            f"[Multi-Car Collision] Using default {dimension_name}={default_value}")
+        return default_value
 
     def setup_car_topics(self):
         """Setup subscribers and publishers for each car"""
