@@ -23,7 +23,7 @@ class ObstacleSpliner:
         - `/car_state/odom_frenet`: Subscribes to the car state in Frenet coordinates.
         - `/global_waypoints`: Subscribes to global waypoints.
         - `/global_waypoints_scaled`: Subscribes to the scaled global waypoints.
-    
+
     The node publishes the following topics:
         - `/planner/avoidance/markers`: Publishes spline markers.
         - `/planner/avoidance/otwpnts`: Publishes splined waypoints.
@@ -56,11 +56,12 @@ class ObstacleSpliner:
         self.from_bag = rospy.get_param("/from_bag", False)
         self.measuring = rospy.get_param("/measure", False)
 
-        # Subscribe to the topics
-        rospy.Subscriber("/perception/obstacles", ObstacleArray, self.obs_cb)
-        rospy.Subscriber("/car_state/odom_frenet", Odometry, self.state_cb)
-        rospy.Subscriber("/global_waypoints", WpntArray, self.gb_cb)
-        rospy.Subscriber("/global_waypoints_scaled", WpntArray, self.gb_scaled_cb)
+        # Subscribe to the topics (use relative topic names for namespace-aware operation)
+        rospy.Subscriber("perception/obstacles", ObstacleArray, self.obs_cb)
+        rospy.Subscriber("car_state/odom_frenet", Odometry, self.state_cb)
+        rospy.Subscriber("global_waypoints", WpntArray, self.gb_cb)
+        rospy.Subscriber("global_waypoints_scaled",
+                         WpntArray, self.gb_scaled_cb)
         # dyn params sub
         self.pre_apex_0 = -4
         self.pre_apex_1 = -3
@@ -72,15 +73,21 @@ class ObstacleSpliner:
         self.obs_traj_tresh = 0.3
         self.spline_bound_mindist = 0.2
         if not self.from_bag:
-            rospy.Subscriber("/dynamic_spline_tuner_node/parameter_updates", Config, self.dyn_param_cb)
+            rospy.Subscriber(
+                "dynamic_spline_tuner_node/parameter_updates", Config, self.dyn_param_cb)
 
-        self.mrks_pub = rospy.Publisher("/planner/avoidance/markers", MarkerArray, queue_size=10)
-        self.evasion_pub = rospy.Publisher("/planner/avoidance/otwpnts", OTWpntArray, queue_size=10)
-        self.closest_obs_pub = rospy.Publisher("/planner/avoidance/considered_OBS", Marker, queue_size=10)
-        self.pub_propagated = rospy.Publisher("/planner/avoidance/propagated_obs", Marker, queue_size=10)
+        # Publishers (use relative topic names for namespace-aware operation)
+        self.mrks_pub = rospy.Publisher(
+            "planner/avoidance/markers", MarkerArray, queue_size=10)
+        self.evasion_pub = rospy.Publisher(
+            "planner/avoidance/otwpnts", OTWpntArray, queue_size=10)
+        self.closest_obs_pub = rospy.Publisher(
+            "planner/avoidance/considered_OBS", Marker, queue_size=10)
+        self.pub_propagated = rospy.Publisher(
+            "planner/avoidance/propagated_obs", Marker, queue_size=10)
         if self.measuring:
-            self.latency_pub = rospy.Publisher("/planner/avoidance/latency", Float32, queue_size=10)
-
+            self.latency_pub = rospy.Publisher(
+                "planner/avoidance/latency", Float32, queue_size=10)
 
         self.converter = self.initialize_converter()
 
@@ -101,10 +108,12 @@ class ObstacleSpliner:
 
     # Callback for global waypoint topic
     def gb_cb(self, data: WpntArray):
-        self.waypoints = np.array([[wpnt.x_m, wpnt.y_m] for wpnt in data.wpnts])
+        self.waypoints = np.array([[wpnt.x_m, wpnt.y_m]
+                                  for wpnt in data.wpnts])
         self.gb_wpnts = data
         if self.gb_vmax is None:
-            self.gb_vmax = np.max(np.array([wpnt.vx_mps for wpnt in data.wpnts]))
+            self.gb_vmax = np.max(
+                np.array([wpnt.vx_mps for wpnt in data.wpnts]))
             self.gb_max_idx = data.wpnts[-1].id
             self.gb_max_s = data.wpnts[-1].s_m
 
@@ -117,19 +126,31 @@ class ObstacleSpliner:
         """
         Notices the change in the parameters and changes spline params
         """
-        self.pre_apex_0 = -1 * rospy.get_param("dynamic_spline_tuner_node/pre_apex_dist0", -4)
-        self.pre_apex_1 = -1 * rospy.get_param("dynamic_spline_tuner_node/pre_apex_dist1", -3)
-        self.pre_apex_2 = -1 * rospy.get_param("dynamic_spline_tuner_node/pre_apex_dist2", -1.5) + 0.1
-        self.post_apex_0 = rospy.get_param("dynamic_spline_tuner_node/post_apex_dist0", 2)
-        self.post_apex_1 = rospy.get_param("dynamic_spline_tuner_node/post_apex_dist1", 3)
-        self.post_apex_2 = rospy.get_param("dynamic_spline_tuner_node/post_apex_dist2", 4)
+        self.pre_apex_0 = -1 * \
+            rospy.get_param("dynamic_spline_tuner_node/pre_apex_dist0", -4)
+        self.pre_apex_1 = -1 * \
+            rospy.get_param("dynamic_spline_tuner_node/pre_apex_dist1", -3)
+        self.pre_apex_2 = -1 * \
+            rospy.get_param(
+                "dynamic_spline_tuner_node/pre_apex_dist2", -1.5) + 0.1
+        self.post_apex_0 = rospy.get_param(
+            "dynamic_spline_tuner_node/post_apex_dist0", 2)
+        self.post_apex_1 = rospy.get_param(
+            "dynamic_spline_tuner_node/post_apex_dist1", 3)
+        self.post_apex_2 = rospy.get_param(
+            "dynamic_spline_tuner_node/post_apex_dist2", 4)
 
-        self.evasion_dist = rospy.get_param("dynamic_spline_tuner_node/evasion_dist", 0.65)
-        self.obs_traj_tresh = rospy.get_param("dynamic_spline_tuner_node/obs_traj_tresh", 0.3)
-        self.spline_bound_mindist = rospy.get_param("dynamic_spline_tuner_node/spline_bound_mindist", 0.2)
+        self.evasion_dist = rospy.get_param(
+            "dynamic_spline_tuner_node/evasion_dist", 0.65)
+        self.obs_traj_tresh = rospy.get_param(
+            "dynamic_spline_tuner_node/obs_traj_tresh", 0.3)
+        self.spline_bound_mindist = rospy.get_param(
+            "dynamic_spline_tuner_node/spline_bound_mindist", 0.2)
 
-        self.kd_obs_pred = rospy.get_param("dynamic_spline_tuner_node/kd_obs_pred")
-        self.fixed_pred_time = rospy.get_param("dynamic_spline_tuner_node/fixed_pred_time")
+        self.kd_obs_pred = rospy.get_param(
+            "dynamic_spline_tuner_node/kd_obs_pred")
+        self.fixed_pred_time = rospy.get_param(
+            "dynamic_spline_tuner_node/fixed_pred_time")
 
         spline_params = [
             self.pre_apex_0,
@@ -151,12 +172,13 @@ class ObstacleSpliner:
     # MAIN LOOP #
     #############
     def loop(self):
-        # Wait for critical Messages and services
+        # Wait for critical Messages and services (use relative topic names)
         rospy.loginfo(f"[{self.name}] Waiting for messages and services...")
-        rospy.wait_for_message("/global_waypoints", WpntArray)
-        rospy.wait_for_message("/global_waypoints_scaled", WpntArray)
-        rospy.wait_for_message("/car_state/odom", Odometry)
-        rospy.wait_for_message("/dynamic_spline_tuner_node/parameter_updates", Config)
+        rospy.wait_for_message("global_waypoints", WpntArray)
+        rospy.wait_for_message("global_waypoints_scaled", WpntArray)
+        rospy.wait_for_message("car_state/odom", Odometry)
+        rospy.wait_for_message(
+            "dynamic_spline_tuner_node/parameter_updates", Config)
         rospy.loginfo(f"[{self.name}] Ready!")
 
         while not rospy.is_shutdown():
@@ -168,10 +190,10 @@ class ObstacleSpliner:
             wpnts = OTWpntArray()
             mrks = MarkerArray()
 
-
             # If obs then do splining around it
             if len(obs.obstacles) > 0:
-                wpnts, mrks = self.do_spline(obstacles=obs, gb_wpnts=gb_scaled_wpnts)
+                wpnts, mrks = self.do_spline(
+                    obstacles=obs, gb_wpnts=gb_scaled_wpnts)
             # Else delete spline markers
             else:
                 del_mrk = Marker()
@@ -186,14 +208,14 @@ class ObstacleSpliner:
             self.evasion_pub.publish(wpnts)
             self.mrks_pub.publish(mrks)
             self.rate.sleep()
-    
+
     #########
     # UTILS #
     #########
     def initialize_converter(self) -> FrenetConverter:
         """
         Initialize the FrenetConverter object"""
-        rospy.wait_for_message("/global_waypoints", WpntArray)
+        rospy.wait_for_message("global_waypoints", WpntArray)
 
         # Initialize the FrenetConverter object
         converter = FrenetConverter(self.waypoints[:, 0], self.waypoints[:, 1])
@@ -269,23 +291,29 @@ class ObstacleSpliner:
         if len(close_obs) > 0:
             # Get the closest obstacle handling wraparound
             closest_obs = min(
-                close_obs, key=lambda obs: (obs.s_center - self.cur_s) % self.gb_max_s
+                close_obs, key=lambda obs: (
+                    obs.s_center - self.cur_s) % self.gb_max_s
             )
 
             # Get Apex for evasion that is further away from the trackbounds
             if closest_obs.s_end < closest_obs.s_start:
-                s_apex = (closest_obs.s_end + self.gb_max_s + closest_obs.s_start) / 2
+                s_apex = (closest_obs.s_end + self.gb_max_s +
+                          closest_obs.s_start) / 2
             else:
                 s_apex = (closest_obs.s_end + closest_obs.s_start) / 2
             # Approximate next 20 indexes of global wpnts with wrapping => 2m and compute which side is the outside of the raceline
-            gb_idxs = [int(s_apex / wpnt_dist + i) % self.gb_max_idx for i in range(20)]
-            kappas = np.array([gb_wpnts[gb_idx].kappa_radpm for gb_idx in gb_idxs])
+            gb_idxs = [int(s_apex / wpnt_dist + i) %
+                       self.gb_max_idx for i in range(20)]
+            kappas = np.array(
+                [gb_wpnts[gb_idx].kappa_radpm for gb_idx in gb_idxs])
             outside = "left" if np.sum(kappas) < 0 else "right"
             # Choose the correct side and compute the distance to the apex based on left of right of the obstacle
-            more_space, d_apex = self._more_space(closest_obs, gb_wpnts, gb_idxs)
+            more_space, d_apex = self._more_space(
+                closest_obs, gb_wpnts, gb_idxs)
 
             # Publish the point around which we are splining
-            mrk = self.xy_to_point(x=gb_wpnts[gb_idxs[0]].x_m, y=gb_wpnts[gb_idxs[0]].y_m, opponent=False)
+            mrk = self.xy_to_point(
+                x=gb_wpnts[gb_idxs[0]].x_m, y=gb_wpnts[gb_idxs[0]].y_m, opponent=False)
             self.closest_obs_pub.publish(mrk)
 
             # Choose wpnts from global trajectory for splining with velocity
@@ -304,7 +332,7 @@ class ObstacleSpliner:
                 dst = dst * np.clip(1.0 + self.cur_vs / self.gb_vmax, 1, 1.5)
                 # If we overtake on the outside, we smoothen the spline
                 if outside == more_space:
-                    si = s_apex + dst * 1.75 #TODO make parameter
+                    si = s_apex + dst * 1.75  # TODO make parameter
                 else:
                     si = s_apex + dst
                 di = d_apex if dst == 0 else 0
@@ -313,9 +341,12 @@ class ObstacleSpliner:
             evasion_points = np.array(evasion_points)
 
             # Spline spatialy for d with s as base
-            spline_resolution = 0.1 # TODO read from ros params to make consistent in case it changes
-            spatial_spline = Spline(x=evasion_points[:, 0], y=evasion_points[:, 1])
-            evasion_s = np.arange(evasion_points[0, 0], evasion_points[-1, 0], spline_resolution)
+            # TODO read from ros params to make consistent in case it changes
+            spline_resolution = 0.1
+            spatial_spline = Spline(
+                x=evasion_points[:, 0], y=evasion_points[:, 1])
+            evasion_s = np.arange(
+                evasion_points[0, 0], evasion_points[-1, 0], spline_resolution)
             # Clipe the d to the apex distance
             if d_apex < 0:
                 evasion_d = np.clip(spatial_spline(evasion_s), d_apex, 0)
@@ -332,7 +363,7 @@ class ObstacleSpliner:
             # Check if a side switch is possible
             if not self._check_ot_side_possible(more_space):
                 danger_flag = True
-            
+
             for i in range(evasion_s.shape[0]):
                 gb_wpnt_i = int((evasion_s[i] / wpnt_dist) % self.gb_max_idx)
                 # Check if wpnt is too close to the trackbounds but only if spline is actually off the raceline
@@ -345,11 +376,14 @@ class ObstacleSpliner:
                         danger_flag = True
                         break
                 # Get V from gb wpnts and go slower if we are going through the inside
-                vi = gb_wpnts[gb_wpnt_i].vx_mps if outside == more_space else gb_wpnts[gb_wpnt_i].vx_mps * 0.9 # TODO make speed scaling ros param
+                # TODO make speed scaling ros param
+                vi = gb_wpnts[gb_wpnt_i].vx_mps if outside == more_space else gb_wpnts[gb_wpnt_i].vx_mps * 0.9
                 wpnts.wpnts.append(
-                    self.xyv_to_wpnts(x=resp[0, i], y=resp[1, i], s=evasion_s[i], d=evasion_d[i], v=vi, wpnts=wpnts)
+                    self.xyv_to_wpnts(
+                        x=resp[0, i], y=resp[1, i], s=evasion_s[i], d=evasion_d[i], v=vi, wpnts=wpnts)
                 )
-                mrks.markers.append(self.xyv_to_markers(x=resp[0, i], y=resp[1, i], v=vi, mrks=mrks))
+                mrks.markers.append(self.xyv_to_markers(
+                    x=resp[0, i], y=resp[1, i], v=vi, mrks=mrks))
 
             # Fill the rest of OTWpnts
             wpnts.header.stamp = rospy.Time.now()
@@ -374,7 +408,8 @@ class ObstacleSpliner:
 
     def _obs_filtering(self, obstacles: ObstacleArray) -> List[Obstacle]:
         # Only use obstacles that are within a threshold of the raceline, else we don't care about them
-        obs_on_traj = [obs for obs in obstacles.obstacles if abs(obs.d_center) < self.obs_traj_tresh]
+        obs_on_traj = [obs for obs in obstacles.obstacles if abs(
+            obs.d_center) < self.obs_traj_tresh]
 
         # Only use obstacles that within self.lookahead in front of the car
         close_obs = []
@@ -393,7 +428,7 @@ class ObstacleSpliner:
     def _predict_obs_movement(self, obs: Obstacle, mode: str = "constant") -> Obstacle:
         """
         Predicts the movement of an obstacle based on the current state and mode.
-        
+
         TODO: opponent prediction should be completely isolated for added modularity       
 
         Args:
@@ -409,12 +444,14 @@ class ObstacleSpliner:
                 # distance in s coordinate
                 cur_s = self.cur_s
                 ot_distance = (obs.s_center - cur_s) % self.gb_max_s
-                rel_speed = np.clip(self.gb_scaled_wpnts.wpnts[int(cur_s * 10)].vx_mps - obs.vs, 0.1, 10)
+                rel_speed = np.clip(self.gb_scaled_wpnts.wpnts[int(
+                    cur_s * 10)].vx_mps - obs.vs, 0.1, 10)
                 ot_time_distance = np.clip(ot_distance / rel_speed, 0, 5) * 0.5
 
                 delta_s = ot_time_distance * obs.vs
                 delta_d = ot_time_distance * obs.vd
-                delta_d = -(obs.d_center + delta_d) * np.exp(-np.abs(self.kd_obs_pred * obs.d_center))
+                delta_d = -(obs.d_center + delta_d) * \
+                    np.exp(-np.abs(self.kd_obs_pred * obs.d_center))
 
             elif mode == "adaptive_velheuristic":
                 opponent_scaler = 0.7
@@ -427,7 +464,8 @@ class ObstacleSpliner:
                 ot_time_distance = np.clip(ot_distance / rel_speed, 0, 5)
 
                 delta_s = ot_time_distance * opponent_scaler * ego_speed
-                delta_d = -(obs.d_center) * np.exp(-np.abs(self.kd_obs_pred * obs.d_center))
+                delta_d = -(obs.d_center) * \
+                    np.exp(-np.abs(self.kd_obs_pred * obs.d_center))
 
             # propagate opponent by constant time
             elif mode == "constant":
@@ -442,7 +480,8 @@ class ObstacleSpliner:
                 ot_time_distance = ot_distance / rel_speed
 
                 delta_d = ot_time_distance * obs.vd
-                delta_d = -(obs.d_center + delta_d) * np.exp(-np.abs(self.kd_obs_pred * obs.d_center))
+                delta_d = -(obs.d_center + delta_d) * \
+                    np.exp(-np.abs(self.kd_obs_pred * obs.d_center))
 
             # update
             obs.s_start += delta_s
@@ -462,17 +501,19 @@ class ObstacleSpliner:
             self.pub_propagated.publish(marker)
 
         return obs
-    
+
     def _check_ot_side_possible(self, more_space) -> bool:
-        if abs(self.cur_d) > 0.25 and more_space != self.last_ot_side: # TODO make rosparam for cur_d threshold
-            rospy.loginfo(f"[{self.name}]: Can't switch sides, because we are not on the raceline")
+        # TODO make rosparam for cur_d threshold
+        if abs(self.cur_d) > 0.25 and more_space != self.last_ot_side:
+            rospy.loginfo(
+                f"[{self.name}]: Can't switch sides, because we are not on the raceline")
             return False
         return True
 
     ######################
     # VIZ + MSG WRAPPING #
     ######################
-    def xyv_to_markers(self, x:float, y:float, v:float, mrks: MarkerArray) -> Marker:
+    def xyv_to_markers(self, x: float, y: float, v: float, mrks: MarkerArray) -> Marker:
         mrk = Marker()
         mrk.header.frame_id = "map"
         mrk.header.stamp = rospy.Time.now()
@@ -523,6 +564,7 @@ class ObstacleSpliner:
         wpnt.d_m = d
         wpnt.vx_mps = v
         return wpnt
+
 
 if __name__ == "__main__":
     spliner = ObstacleSpliner()

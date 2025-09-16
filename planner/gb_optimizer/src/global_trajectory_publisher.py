@@ -74,8 +74,8 @@ class GlobalRepublisher:
         self.lattice_pub = rospy.Publisher(
             '/lattice_viz', MarkerArray, queue_size=10)
         # Read info from json file if it is provided, so everything is always published
-        if rospy.has_param('/global_republisher/map_name'):
-            map_name = rospy.get_param('/global_republisher/map_name')
+        if rospy.has_param('~global_republisher/map_name'):
+            map_name = rospy.get_param('~global_republisher/map_name')
             loginfo(f"Reading parameters from {map_name}")
 
             try:

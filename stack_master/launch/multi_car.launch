@@ -29,7 +29,7 @@
   
   <!-- Global Waypoint Publisher - shared by all cars -->
   <node name="global_waypoint_publisher" pkg="gb_optimizer" type="global_trajectory_publisher.py" output="screen">
-    <param name="/global_republisher/map_name" value="$(arg global_map)"/>
+    <param name="global_republisher/map_name" value="$(arg global_map)"/>
   </node>
 
   <!-- Helper python expansion using eval is brittle; split CSV lists in bash style via subst args -->
@@ -84,15 +84,18 @@
     <!-- ============================================= -->
     <!-- Replace relay chains with direct topic remapping where possible -->
     
-    <!-- Headtohead Planning with Enhanced Topic Remapping -->
+    <!-- Headtohead Planning with Per-Car Topic Isolation -->
     <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="car_name" value="$(arg car1)"/>
       <arg name="planner" value="$(arg planner_car1)"/>
       <arg name="racecar_version" value="$(arg version_car1)"/>
       <arg name="measure" value="False"/>
       <arg name="map_name" value="$(arg map_car1)"/>
-      <!-- OPTIMIZATION: Direct topic remapping for global waypoints -->
-      <remap from="/global_waypoints" to="/global_waypoints"/>
-      <remap from="/planner/avoidance/otwpnts" to="planner/avoidance/otwpnts"/>
+      <!-- OPTIMIZATION: Parameterized topics for proper namespace isolation -->
+      <arg name="global_waypoints_topic" value="/global_waypoints"/>
+      <arg name="global_waypoints_scaled_topic" value="/global_waypoints_scaled"/>
+      <arg name="global_waypoints_overtaking_topic" value="/global_waypoints/overtaking"/>
+      <arg name="planner_output_topic" value="planner/avoidance/otwpnts"/>
     </include>
     
     <!-- Base System with Enhanced Remapping -->
@@ -135,6 +138,16 @@
     <!-- Note: These are essential for multi-car coordination -->
     <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
           args="/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
+    
+    <!-- CRITICAL: Global Waypoint Relays -->
+    <node pkg="topic_tools" type="relay" name="global_waypoints_relay" 
+          args="/global_waypoints global_waypoints" />
+    <node pkg="topic_tools" type="relay" name="global_waypoints_scaled_relay" 
+          args="/global_waypoints_scaled global_waypoints_scaled" />
+    
+    <!-- REMOVED: planner_to_controller_relay - this bypassed the state machine -->
+    <!-- The correct flow is: planner -> state_machine -> controller -->
+    <!-- State machine converts OTWpntArray to WpntArray as required by controller -->
     
     <!-- CRITICAL: Control Pipeline Relays (Required for mux architecture) -->
     <node pkg="topic_tools" type="relay" name="controller_to_mux_relay" 
@@ -190,15 +203,18 @@
     <param name="f1tenth_simulator/car_init_y" value="1.0"/>
     <param name="f1tenth_simulator/car_init_theta" value="0.0"/>
     
-    <!-- Headtohead Planning with Enhanced Topic Remapping -->
+    <!-- Headtohead Planning with Per-Car Topic Isolation -->
     <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="car_name" value="$(arg car2)"/>
       <arg name="planner" value="$(arg planner_car2)"/>
       <arg name="racecar_version" value="$(arg version_car2)"/>
       <arg name="measure" value="False"/>
       <arg name="map_name" value="$(arg map_car2)"/>
-      <!-- OPTIMIZATION: Direct topic remapping for global waypoints -->
-      <remap from="/global_waypoints" to="/global_waypoints"/>
-      <remap from="/planner/avoidance/otwpnts" to="planner/avoidance/otwpnts"/>
+      <!-- OPTIMIZATION: Parameterized topics for proper namespace isolation -->
+      <arg name="global_waypoints_topic" value="/global_waypoints"/>
+      <arg name="global_waypoints_scaled_topic" value="/global_waypoints_scaled"/>
+      <arg name="global_waypoints_overtaking_topic" value="/global_waypoints/overtaking"/>
+      <arg name="planner_output_topic" value="planner/avoidance/otwpnts"/>
     </include>
     
     <!-- Base System with Enhanced Remapping -->
@@ -235,6 +251,16 @@
     <!-- CRITICAL: Global-to-Namespaced Topic Bridging -->
     <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
           args="/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
+    
+    <!-- CRITICAL: Global Waypoint Relays -->
+    <node pkg="topic_tools" type="relay" name="global_waypoints_relay" 
+          args="/global_waypoints global_waypoints" />
+    <node pkg="topic_tools" type="relay" name="global_waypoints_scaled_relay" 
+          args="/global_waypoints_scaled global_waypoints_scaled" />
+    
+    <!-- REMOVED: planner_to_controller_relay - this bypassed the state machine -->
+    <!-- The correct flow is: planner -> state_machine -> controller -->
+    <!-- State machine converts OTWpntArray to WpntArray as required by controller -->
     
     <!-- CRITICAL: Control Pipeline Relays (Required for mux architecture) -->
     <node pkg="topic_tools" type="relay" name="controller_to_mux_relay" 
@@ -276,6 +302,7 @@
   <group if="$(eval car3 != '')" ns="$(arg car3)">
     <param name="frame_prefix" value="$(arg frame_prefix_car3)"/>
     <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="car_name" value="$(arg car3)"/>
       <arg name="planner" value="$(arg planner_car3)"/>
       <arg name="racecar_version" value="$(arg version_car3)"/>
       <arg name="measure" value="False"/>
@@ -301,6 +328,7 @@
   <group if="$(eval car4 != '')" ns="$(arg car4)">
     <param name="frame_prefix" value="$(arg frame_prefix_car4)"/>
     <include file="$(find stack_master)/launch/headtohead.launch">
+      <arg name="car_name" value="$(arg car4)"/>
       <arg name="planner" value="$(arg planner_car4)"/>
       <arg name="racecar_version" value="$(arg version_car4)"/>
       <arg name="measure" value="False"/>
@@ -330,6 +358,9 @@
   <!-- Load global parameters required by various nodes -->
   <rosparam ns="map_params" command="load" file="$(find stack_master)/maps/$(arg global_map)/speed_scaling.yaml"/>
   <rosparam ns="ot_map_params" command="load" file="$(find stack_master)/maps/$(arg global_map)/ot_sectors.yaml"/>
+  
+  <!-- Load state machine parameters globally for FTG access -->
+  <rosparam ns="state_machine" command="load" file="$(find stack_master)/config/state_machine_params.yaml"/>
   
   <!-- Load velocity scaler debug parameter globally -->
   <param name="/velocity_scaler/debug_plot" value="false"/>

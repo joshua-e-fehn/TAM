@@ -1,5 +1,6 @@
 <?xml version="1.0"?>
 <launch>
+    <arg name="car_name" default="car1" />
     <arg name="racecar_version" default="NUC2" /> <!--  JETx / NUCx ... -->
     <!-- Added to satisfy graph_based planner param passing in multi-car launches -->
     <arg name="map_name" default="" />
@@ -9,6 +10,12 @@
     <arg name="measure" default="False" />
     <arg name="perception" default="True" /> <!--  True / False. False to disable the perception module when using the dummy obstacle publisher -->
     <arg name="planner" default="spliner" /> <!--  spliner / predictive_spliner / graph_based / frenet -->
+    
+    <!-- OPTIMIZATION: Parameterized topic arguments for namespace-aware operation -->
+    <arg name="global_waypoints_topic" default="/global_waypoints" />
+    <arg name="global_waypoints_scaled_topic" default="/global_waypoints_scaled" />
+    <arg name="global_waypoints_overtaking_topic" default="/global_waypoints/overtaking" />
+    <arg name="planner_output_topic" default="planner/avoidance/otwpnts" />
     <!-- Namespaced measure flag (no leading slash) -->
     <param name="measure" value="$(arg measure)" />
 
@@ -17,8 +24,9 @@
         <param name="mode" value="$(arg MAP_mode)" />
         <param name="LU_table" value="$(arg LU_table)" />
         <param name="ctrl_algo" value="$(arg ctrl_algo)" />
-        <remap from="global_waypoints" to="/global_waypoints"/>
-        <remap from="global_waypoints_scaled" to="/global_waypoints_scaled"/>
+        <!-- OPTIMIZATION: Use parameterized topic names -->
+        <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
+        <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
     </node>
 
     <!-- launch dynamic reconfigure servers -->
@@ -54,14 +62,23 @@
             <param name="timetrials_only" value="False" />
             <!--  tell state machine which OT strategy we are using -->
             <param name="ot_planner" value="spliner" />
-            <remap from="global_waypoints" to="/global_waypoints"/>
-            <remap from="global_waypoints_scaled" to="/global_waypoints_scaled"/>
-            <remap from="global_waypoints/overtaking" to="/global_waypoints/overtaking"/>
+            <!-- OPTIMIZATION: Use parameterized topic names -->
+            <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <remap from="global_waypoints/overtaking" to="$(arg global_waypoints_overtaking_topic)"/>
         </node>
         <!-- launch dynamic reconfigure -->
         <node pkg="spliner" type="dynamic_spline_server.py" name="dynamic_spline_tuner_node"
             output="screen" />
-        <node pkg="spliner" type="spliner_node.py" name="planner_spline" output="screen" />
+        <!-- OPTIMIZATION: Parameterized planner_spline with proper topic remapping -->
+        <node pkg="spliner" type="spliner_node.py" name="planner_spline" output="screen">
+            <!-- CRITICAL: Remap hardcoded absolute topics to parameterized ones -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <remap from="/global_waypoints/overtaking" to="$(arg global_waypoints_overtaking_topic)"/>
+            <!-- CRITICAL: Remap output to namespaced topic -->
+            <remap from="/planner/avoidance/otwpnts" to="$(arg planner_output_topic)"/>
+        </node>
     </group>
 
     <!-- PLANNER PREDICTIVE SPLINER-->
@@ -76,9 +93,10 @@
                 <param name="timetrials_only" value="False"/>
                 <!--  tell state machine which OT strategy we are using -->
                 <param name="ot_planner" value="predictive_spliner"/>
-                <remap from="global_waypoints" to="/global_waypoints"/>
-                <remap from="global_waypoints_scaled" to="/global_waypoints_scaled"/>
-                <remap from="global_waypoints/overtaking" to="/global_waypoints/overtaking"/>
+                <!-- OPTIMIZATION: Use parameterized topic names -->
+                <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
+                <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+                <remap from="global_waypoints/overtaking" to="$(arg global_waypoints_overtaking_topic)"/>
         </node>
 
         <!-- launch collision predictor and dynamic reconfigure -->
@@ -150,10 +168,17 @@
     <!-- PERCEPTION -->
     <group if="$(arg perception)">
         <rosparam command="load" file="$(find stack_master)/config/opponent_tracker_params.yaml" />
-        <node pkg="perception" type="detect.py" name="detect" output="screen" />
+        <node pkg="perception" type="detect.py" name="detect" output="screen">
+            <param name="frame_prefix" value="$(arg car_name)_" />
+            <param name="map_frame" value="$(arg car_name)_map" />
+            <param name="laser_frame" value="$(arg car_name)_laser" />
+        </node>
         <arg name="var_vs" default="2" /> <!-- var_of vs-->
         <arg name="var_vd" default="8" /> <!-- var_of vs-->
-        <node pkg="perception" type="tracking.py" name="tracking" output="screen" />
+        <node pkg="perception" type="tracking.py" name="tracking" output="screen">
+            <param name="frame_prefix" value="$(arg car_name)_" />
+            <param name="map_frame" value="$(arg car_name)_map" />
+        </node>
         <node pkg="perception" type="dynamic_tracker_server.py" name="dynamic_tracker_server"
             output="screen" />
     </group>
