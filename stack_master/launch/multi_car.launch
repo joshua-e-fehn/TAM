@@ -66,11 +66,15 @@
     <param name="f1tenth_simulator/base_frame" value="$(arg frame_prefix_car1)base_link"/>
     <param name="f1tenth_simulator/scan_frame" value="$(arg frame_prefix_car1)laser"/>
     <param name="f1tenth_simulator/map_frame" value="$(arg frame_prefix_car1)map"/>
+    <!-- Set car1 initial position -->
+    <param name="f1tenth_simulator/car_init_x" value="-2.0"/>
+    <param name="f1tenth_simulator/car_init_y" value="-1.0"/>
+    <param name="f1tenth_simulator/car_init_theta" value="0.0"/>
     <include file="$(find stack_master)/launch/headtohead.launch">
       <arg name="planner" value="$(arg planner_car1)"/>
       <arg name="racecar_version" value="$(arg version_car1)"/>
       <arg name="measure" value="False"/>
-  <arg name="map_name" value="$(arg map_car1)"/>
+      <arg name="map_name" value="$(arg map_car1)"/>
     </include>
     <include file="$(find stack_master)/launch/base_system.launch">
       <arg name="map_name" value="$(arg map_car1)"/>
@@ -78,6 +82,14 @@
       <arg name="sim" value="$(arg sim)"/>
       <arg name="frame_prefix" value="$(arg frame_prefix_car1)"/>
       <arg name="rviz" value="False"/>
+      <arg name="include_frenet_republisher" value="False"/>
+    </include>
+    
+    <!-- Per-car frenet conversion with parameterized topics -->
+    <include file="$(find frenet_odom_republisher)/launch/frenet_odom_republisher.launch">
+      <arg name="input_odom_topic" value="car_state/odom"/>
+      <arg name="output_odom_topic" value="car_state/odom_frenet"/>
+      <arg name="global_waypoints_topic" value="/global_waypoints"/>
     </include>
     
     <!-- Republish simulator car_state topics to expected namespaced locations -->
@@ -91,18 +103,19 @@
     <!-- Republish simulator scan topic to expected namespaced location -->
     <node pkg="topic_tools" type="relay" name="scan_relay" 
           args="f1tenth_simulator/scan scan" />
-    <!-- Republish frenet odom to namespaced location -->
-    <node pkg="topic_tools" type="relay" name="frenet_odom_relay" 
-          args="/car_state/odom_frenet car_state/odom_frenet" />
+    
+    <!-- Republish planner waypoints to namespaced location -->
+    <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
+          args="/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
     
     <!-- Mux pipeline relays for proper topic routing -->
-    <!-- Controller -> Mux: nav_drive to mux_controller/nav_drive -->
-    <node pkg="topic_tools" type="relay" name="nav_drive_to_mux_relay" 
+    <!-- Controller to Mux: nav_drive to mux_controller/nav_drive -->
+    <node pkg="topic_tools" type="relay" name="controller_to_mux_relay" 
           args="nav_drive mux_controller/nav_drive" />
     <!-- Behavior Controller -> Mux: behavior_controller/mux to mux_controller/mux -->
     <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
           args="behavior_controller/mux mux_controller/mux" />
-    <!-- Mux -> Simulator: mux_controller/drive to f1tenth_simulator/drive -->
+    <!-- Mux Output -> Simulator: mux output to simulator input -->
     <node pkg="topic_tools" type="relay" name="mux_to_simulator_relay" 
           args="mux_controller/vesc/high_level/ackermann_cmd_mux/input/nav_1 f1tenth_simulator/vesc/high_level/ackermann_cmd_mux/input/nav_1" />
     
@@ -115,10 +128,6 @@
     <!-- Auto-enable navigation mux for reliable autonomous operation -->
     <node pkg="rostopic" type="rostopic" name="auto_enable_nav_mux"
           args="pub -r 10 behavior_controller/mux std_msgs/Int32MultiArray 'data: [0, 1, 0, 0, 0]'" />
-
-    <!-- Bridge car_state odom to global for frenet republisher -->
-    <node pkg="topic_tools" type="relay" name="odom_to_global_relay" 
-          args="car_state/odom /car_state/odom" />
           
     <!-- Set initial pose for car1 in its own namespace -->
     <node pkg="rostopic" type="rostopic" name="car1_initial_pose"
@@ -145,11 +154,15 @@
     <param name="f1tenth_simulator/base_frame" value="$(arg frame_prefix_car2)base_link"/>
     <param name="f1tenth_simulator/scan_frame" value="$(arg frame_prefix_car2)laser"/>
     <param name="f1tenth_simulator/map_frame" value="$(arg frame_prefix_car2)map"/>
+    <!-- Set car2 initial position -->
+    <param name="f1tenth_simulator/car_init_x" value="-2.0"/>
+    <param name="f1tenth_simulator/car_init_y" value="1.0"/>
+    <param name="f1tenth_simulator/car_init_theta" value="0.0"/>
     <include file="$(find stack_master)/launch/headtohead.launch">
       <arg name="planner" value="$(arg planner_car2)"/>
       <arg name="racecar_version" value="$(arg version_car2)"/>
       <arg name="measure" value="False"/>
-  <arg name="map_name" value="$(arg map_car2)"/>
+      <arg name="map_name" value="$(arg map_car2)"/>
     </include>
     <include file="$(find stack_master)/launch/base_system.launch">
       <arg name="map_name" value="$(arg map_car2)"/>
@@ -157,6 +170,14 @@
       <arg name="sim" value="$(arg sim)"/>
       <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
       <arg name="rviz" value="False"/>
+      <arg name="include_frenet_republisher" value="False"/>
+    </include>
+    
+    <!-- Per-car frenet conversion with parameterized topics -->
+    <include file="$(find frenet_odom_republisher)/launch/frenet_odom_republisher.launch">
+      <arg name="input_odom_topic" value="car_state/odom"/>
+      <arg name="output_odom_topic" value="car_state/odom_frenet"/>
+      <arg name="global_waypoints_topic" value="/global_waypoints"/>
     </include>
     
     <!-- Republish simulator car_state topics to expected namespaced locations -->
@@ -170,18 +191,19 @@
     <!-- Republish simulator scan topic to expected namespaced location -->
     <node pkg="topic_tools" type="relay" name="scan_relay" 
           args="f1tenth_simulator/scan scan" />
-    <!-- Republish frenet odom to namespaced location -->
-    <node pkg="topic_tools" type="relay" name="frenet_odom_relay" 
-          args="/car_state/odom_frenet car_state/odom_frenet" />
+    
+    <!-- Republish planner waypoints to namespaced location -->
+    <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
+          args="/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
     
     <!-- Mux pipeline relays for proper topic routing -->
-    <!-- Controller -> Mux: nav_drive to mux_controller/nav_drive -->
-    <node pkg="topic_tools" type="relay" name="nav_drive_to_mux_relay" 
+    <!-- Controller to Mux: nav_drive to mux_controller/nav_drive -->
+    <node pkg="topic_tools" type="relay" name="controller_to_mux_relay" 
           args="nav_drive mux_controller/nav_drive" />
     <!-- Behavior Controller -> Mux: behavior_controller/mux to mux_controller/mux -->
     <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
           args="behavior_controller/mux mux_controller/mux" />
-    <!-- Mux -> Simulator: mux_controller/drive to f1tenth_simulator/drive -->
+    <!-- Mux Output -> Simulator: mux output to simulator input -->
     <node pkg="topic_tools" type="relay" name="mux_to_simulator_relay" 
           args="mux_controller/vesc/high_level/ackermann_cmd_mux/input/nav_1 f1tenth_simulator/vesc/high_level/ackermann_cmd_mux/input/nav_1" />
     
@@ -194,14 +216,12 @@
     <!-- Auto-enable navigation mux for reliable autonomous operation -->
     <node pkg="rostopic" type="rostopic" name="auto_enable_nav_mux_car2"
           args="pub -r 10 behavior_controller/mux std_msgs/Int32MultiArray 'data: [0, 1, 0, 0, 0]'" />
-
-    <!-- Bridge car_state odom to global for frenet republisher -->
-    <node pkg="topic_tools" type="relay" name="odom_to_global_relay_car2" 
-          args="car_state/odom /car_state/odom" />
+          
+    <!-- Set initial pose for car2 in its own namespace -->
           
     <!-- Set initial pose for car2 in its own namespace -->
     <node pkg="rostopic" type="rostopic" name="car2_initial_pose"
-          args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car2_map}, pose: {pose: {position: {x: 2.0, y: 1.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
+          args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car2_map}, pose: {pose: {position: {x: -2.0, y: 1.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
           
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
       <arg name="frame_prefix" value="$(arg frame_prefix_car2)"/>
@@ -222,7 +242,7 @@
       <arg name="planner" value="$(arg planner_car3)"/>
       <arg name="racecar_version" value="$(arg version_car3)"/>
       <arg name="measure" value="False"/>
-  <arg name="map_name" value="$(arg map_car3)"/>
+      <arg name="map_name" value="$(arg map_car3)"/>
     </include>
     <include file="$(find stack_master)/launch/base_system.launch">
       <arg name="map_name" value="$(arg map_car3)"/>
@@ -246,7 +266,7 @@
       <arg name="planner" value="$(arg planner_car4)"/>
       <arg name="racecar_version" value="$(arg version_car4)"/>
       <arg name="measure" value="False"/>
-  <arg name="map_name" value="$(arg map_car4)"/>
+      <arg name="map_name" value="$(arg map_car4)"/>
     </include>
     <include file="$(find stack_master)/launch/base_system.launch">
       <arg name="map_name" value="$(arg map_car4)"/>

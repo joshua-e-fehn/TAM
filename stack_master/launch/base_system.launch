@@ -18,6 +18,8 @@
     doc="Whether to launch RViz inside simulator include (only used when sim:=True)." />
   <arg name="frame_prefix" default=""
     doc="Frame prefix for multi-car scenarios." />
+  <arg name="include_frenet_republisher" default="True"
+    doc="Whether to include frenet odom republisher (disable for multi-car to avoid conflicts)." />
 
   <!-- Namespaced parameters (avoid writing to global /sim) -->
   <param name="racecar_version" value="$(arg racecar_version)" />
@@ -47,7 +49,9 @@
   </group>
 
   <!-- republishes car state odom in frenet frame -->
-  <include file="$(find frenet_odom_republisher)/launch/frenet_odom_republisher.launch" />
+  <group if="$(arg include_frenet_republisher)">
+    <include file="$(find frenet_odom_republisher)/launch/frenet_odom_republisher.launch" />
+  </group>
 
   <!-- analyses and publishes lap times and lateral errors -->
   <node name="lap_analyser" pkg="lap_analyser" type="lap_analyser.py" output="screen">

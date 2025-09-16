@@ -1,10 +1,18 @@
 <launch>
+  <!-- Topic remapping arguments for flexible deployment -->
+  <arg name="input_odom_topic" default="/car_state/odom" 
+       doc="Input odometry topic to convert to frenet coordinates" />
+  <arg name="output_odom_topic" default="/car_state/odom_frenet" 
+       doc="Output odometry topic in frenet coordinates" />
+  <arg name="global_waypoints_topic" default="/global_waypoints" 
+       doc="Global waypoints topic for frenet conversion reference" />
 
-<node name="frenet_odom_republisher" pkg="frenet_odom_republisher" 
-      type="frenet_odom_republisher_node" 
-      output="screen">
-  <remap from="/odom" to="/car_state/odom"/>
-  <remap from="/odom_frenet" to="/car_state/odom_frenet"/>
-</node>
+  <node name="frenet_odom_republisher" pkg="frenet_odom_republisher" 
+        type="frenet_odom_republisher_node" 
+        output="screen">
+    <remap from="/odom" to="$(arg input_odom_topic)"/>
+    <remap from="/odom_frenet" to="$(arg output_odom_topic)"/>
+    <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+  </node>
 
 </launch>
