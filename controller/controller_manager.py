@@ -64,6 +64,14 @@ class Controller_manager:
     def __init__(self):
         self.name = "control_node"
         rospy.init_node(self.name, anonymous=True)
+
+        # Get car namespace for logging
+        self.car_namespace = rospy.get_namespace().strip('/')
+        if self.car_namespace:
+            self.log_name = f"[{self.car_namespace}_{self.name}]"
+        else:
+            self.log_name = f"[{self.name}]"
+
         self.lock = threading.Lock()
         self.loop_rate = 40  # rate in hertz
         self.ros_time = rospy.Time()
@@ -491,12 +499,12 @@ class Controller_manager:
         rospy.wait_for_message('global_waypoints', WpntArray)
         rospy.wait_for_message('car_state/odom', Odometry)
         rospy.wait_for_service("convert_glob2frenet_service")
-        rospy.loginfo(f"[{self.name}] Local Waypoints received")
-        rospy.loginfo(f"[{self.name}] Waiting for car_state/pose")
+        rospy.loginfo(f"{self.log_name} Local Waypoints received")
+        rospy.loginfo(f"{self.log_name} Waiting for car_state/pose")
         rospy.wait_for_message('car_state/pose', PoseStamped)
         self.track_length = rospy.get_param(
             '~global_republisher/track_length', rospy.get_param('/global_republisher/track_length'))
-        rospy.loginfo(f"[{self.name}] Ready!")
+        rospy.loginfo(f"{self.log_name} Ready!")
 
         while not rospy.is_shutdown():
             if self.measuring:

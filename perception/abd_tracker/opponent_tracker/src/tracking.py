@@ -20,6 +20,13 @@ class StaticDynamic:
         rospy.init_node('StaticDynamic', anonymous=True)
         rospy.on_shutdown(self.shutdown)
 
+        # Get car namespace for logging
+        self.car_namespace = rospy.get_namespace().strip('/')
+        if self.car_namespace:
+            self.log_name = f"[{self.car_namespace}_Perception_Tracking]"
+        else:
+            self.log_name = "[Perception_Tracking]"
+
         def _p(pv, gv, default=None):
             return rospy.get_param(pv, rospy.get_param(gv, default))
 
@@ -31,6 +38,7 @@ class StaticDynamic:
                             f"{self.frame_prefix}map")
 
         self.raw_obstacles = []
+        self.multi_car_obstacles = []  # Add multi-car obstacles storage
         self.current_stamp = rospy.Time.now()
         self.waypoints = None
         self.track_length = None
@@ -40,6 +48,8 @@ class StaticDynamic:
 
         rospy.Subscriber('perception/detection/raw_obstacles',
                          ObstacleArray, self.raw_obs_cb)
+        rospy.Subscriber('perception/multi_car_obstacles',
+                         ObstacleArray, self.multi_car_obs_cb)  # Add multi-car subscriber
         rospy.Subscriber('global_waypoints', WpntArray, self.wp_cb)
         rospy.Subscriber('car_state/odom_frenet',
                          Odometry, self.odom_frenet_cb)
@@ -67,6 +77,10 @@ class StaticDynamic:
         self.raw_obstacles = msg.obstacles
         self.current_stamp = msg.header.stamp
 
+    def multi_car_obs_cb(self, msg: ObstacleArray):
+        """Handle multi-car obstacles from other cars"""
+        self.multi_car_obstacles = msg.obstacles
+
     def wp_cb(self, msg: WpntArray):
         if self.waypoints is None:
             self.waypoints = msg.wpnts
@@ -92,18 +106,24 @@ class StaticDynamic:
         arr = ObstacleArray()
         arr.header.stamp = self.current_stamp
         arr.header.frame_id = self.map_frame
-        arr.obstacles = self.raw_obstacles
+
+        # Merge raw obstacles (from perception) and multi-car obstacles
+        all_obstacles = list(self.raw_obstacles)  # Copy raw obstacles
+        # Add multi-car obstacles
+        all_obstacles.extend(self.multi_car_obstacles)
+
+        arr.obstacles = all_obstacles
         self.pub_est.publish(arr)
         self.pub_raw.publish(arr)
         self.pub_markers.publish(MarkerArray())
 
     def main(self):
         rospy.loginfo(
-            '[Perception Tracking] Waiting for global waypoints & raw obstacles')
+            f'{self.log_name} Waiting for global waypoints & raw obstacles')
         rospy.wait_for_message('global_waypoints', WpntArray)
         rospy.wait_for_message(
             'perception/detection/raw_obstacles', ObstacleArray)
-        rospy.loginfo('[Perception Tracking] Ready (pass-through mode)')
+        rospy.loginfo(f'{self.log_name} Ready (pass-through mode)')
         rate = rospy.Rate(self.rate_hz)
         while not rospy.is_shutdown():
             start = time.perf_counter() if self.measuring else None

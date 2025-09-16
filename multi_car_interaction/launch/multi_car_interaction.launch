@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Multi-Car Interaction Launch File -->
+  <!-- Enables inter-car perception and collision detection -->
+  
+  <!-- Load parameters from config file -->
+  <rosparam file="$(find multi_car_interaction)/config/multi_car_params.yaml" command="load"/>
+  
+  <!-- Car configuration -->
+  <arg name="car_names" default="car1,car2"/>  <!-- Changed from list format to comma-separated -->
+  <arg name="enable_collision_detection" default="true"/>
+  <arg name="enable_obstacle_publishing" default="true"/>
+  
+  <!-- Override parameters if needed (otherwise uses values from YAML) -->
+  <arg name="publish_rate" default="50.0"/>  <!-- Now matches YAML default -->
+  <arg name="car_length" default="0.58"/>
+  <arg name="car_width" default="0.31"/>
+  <arg name="safety_margin" default="0.2"/>
+  
+  <!-- Collision detection parameters -->
+  <arg name="warning_distance" default="1.5"/>
+  <arg name="critical_distance" default="0.8"/>
+  <arg name="collision_distance" default="0.5"/>
+  <arg name="check_rate" default="50.0"/>
+
+  <!-- Multi-Car Obstacle Publisher -->
+  <group if="$(arg enable_obstacle_publishing)">
+    <node pkg="multi_car_interaction" type="multi_car_obstacle_publisher.py" 
+          name="multi_car_obstacle_publisher" output="screen">
+      <param name="car_names" value="$(arg car_names)"/>
+      <param name="publish_rate" value="$(arg publish_rate)"/>
+      <param name="car_length" value="$(arg car_length)"/>
+      <param name="car_width" value="$(arg car_width)"/>
+      <param name="safety_margin" value="$(arg safety_margin)"/>
+      <param name="max_detection_range" value="15.0"/>
+    </node>
+  </group>
+
+  <!-- Car Collision Detector -->
+  <group if="$(arg enable_collision_detection)">
+    <node pkg="multi_car_interaction" type="car_collision_detector.py" 
+          name="car_collision_detector" output="screen">
+      <param name="car_names" value="$(arg car_names)"/>
+      <param name="check_rate" value="$(arg check_rate)"/>
+      <param name="warning_distance" value="$(arg warning_distance)"/>
+      <param name="critical_distance" value="$(arg critical_distance)"/>
+      <param name="collision_distance" value="$(arg collision_distance)"/>
+      <param name="car_length" value="$(arg car_length)"/>
+      <param name="car_width" value="$(arg car_width)"/>
+    </node>
+  </group>
+
+</launch>

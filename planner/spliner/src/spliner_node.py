@@ -40,6 +40,13 @@ class ObstacleSpliner:
         self.name = "obs_spliner_node"
         rospy.init_node(self.name)
 
+        # Get car namespace for logging
+        self.car_namespace = rospy.get_namespace().strip('/')
+        if self.car_namespace:
+            self.log_name = f"[{self.car_namespace}_{self.name}]"
+        else:
+            self.log_name = f"[{self.name}]"
+
         # initialize the instance variable
         self.obs = ObstacleArray()
         self.gb_wpnts = WpntArray()
@@ -179,7 +186,7 @@ class ObstacleSpliner:
         rospy.wait_for_message("car_state/odom", Odometry)
         rospy.wait_for_message(
             "dynamic_spline_tuner_node/parameter_updates", Config)
-        rospy.loginfo(f"[{self.name}] Ready!")
+        rospy.loginfo(f"{self.log_name} Ready!")
 
         while not rospy.is_shutdown():
             if self.measuring:
@@ -371,7 +378,7 @@ class ObstacleSpliner:
                     tb_dist = gb_wpnts[gb_wpnt_i].d_left if more_space == "left" else gb_wpnts[gb_wpnt_i].d_right
                     if abs(evasion_d[i]) > abs(tb_dist) - self.spline_bound_mindist:
                         rospy.loginfo_throttle_identical(
-                            2, f"[{self.name}]: Evasion trajectory too close to TRACKBOUNDS, aborting evasion"
+                            2, f"{self.log_name}: Evasion trajectory too close to TRACKBOUNDS, aborting evasion"
                         )
                         danger_flag = True
                         break
@@ -506,7 +513,7 @@ class ObstacleSpliner:
         # TODO make rosparam for cur_d threshold
         if abs(self.cur_d) > 0.25 and more_space != self.last_ot_side:
             rospy.loginfo(
-                f"[{self.name}]: Can't switch sides, because we are not on the raceline")
+                f"{self.log_name}: Can't switch sides, because we are not on the raceline")
             return False
         return True
 

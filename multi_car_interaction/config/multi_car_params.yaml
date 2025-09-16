@@ -1,0 +1,30 @@
+# Multi-Car Interaction Configuration
+
+# Car physical parameters (F1TENTH dimensions)
+car_length: 0.58      # meters (including wheelbase + front/rear overhangs)
+car_width: 0.31       # meters
+safety_margin: 0.2    # additional margin around car for obstacle detection
+
+# Obstacle publishing settings
+publish_rate: 50.0    # Hz - rate for publishing dynamic obstacles (Changed from 20.0 to match dummy obstacles)
+max_detection_range: 10.0  # meters - maximum range to detect other cars
+
+# Collision detection thresholds
+warning_distance: 1.5    # meters - start warning
+critical_distance: 0.8  # meters - critical proximity
+collision_distance: 0.5 # meters - considered collision
+check_rate: 50.0        # Hz - collision detection frequency
+
+# Car interaction behavior
+enable_visualization: true
+enable_collision_avoidance: true
+emergency_stop_on_collision: false  # Set to true for automatic emergency stops
+
+# TF frame configuration
+global_frame: "map"
+car_frame_suffix: "_map"  # Results in car1_map, car2_map, etc.
+
+# Logging and debugging
+debug_mode: false
+log_distances: false
+log_collision_events: true

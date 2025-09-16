@@ -23,6 +23,13 @@ class OvertakingInterpolator:
         self.node_name = "ot_interpolator"
         rospy.init_node(self.node_name)
 
+        # Get car namespace for logging
+        self.car_namespace = rospy.get_namespace().strip('/')
+        if self.car_namespace:
+            self.log_name = f"[{self.car_namespace}_{self.node_name}]"
+        else:
+            self.log_name = f"[{self.node_name}]"
+
         # sectors params
         self.glb_wpnts_og = None
         self.glb_wpnts_scaled = None
@@ -385,9 +392,9 @@ class OvertakingInterpolator:
         rospy.loginfo(
             f"[{self.node_name}] Waiting for shortest path waypoints...")
         rospy.wait_for_message(self.glb_wpnts_name, WpntArray)
-        rospy.loginfo(f"[{self.node_name}] Global waypoints received!")
+        rospy.loginfo(f"{self.log_name} Global waypoints received!")
         rospy.wait_for_message(self.glb_wpnts_sp_name, WpntArray)
-        rospy.loginfo(f"[{self.node_name}] Shortest path waypoints received!")
+        rospy.loginfo(f"{self.log_name} Shortest path waypoints received!")
 
         # initialise scaled points
         self.interpolate_points()
