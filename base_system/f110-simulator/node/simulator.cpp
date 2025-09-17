@@ -67,6 +67,9 @@ private:
     CarParams params;
     double width;
 
+    // Performance scaling parameters for transparent multi-car scaling
+    double speed_multiplier, accel_multiplier;
+
     // define a pointer to a function that returns a CarState
     CarState (*dynamic)(const CarState, double, double, CarParams, double);
 
@@ -204,10 +207,21 @@ public:
         n.getParam("friction_coeff", params.friction_coeff);
         n.getParam("width", width);
 
+        // Performance scaling parameters for multi-car differentiation
+        n.param("speed_multiplier", speed_multiplier, 1.0);  // Default: no scaling
+        n.param("accel_multiplier", accel_multiplier, 1.0);  // Default: no scaling
+        
+        // Apply scaling to max limits
+        max_speed *= speed_multiplier;
+        
         // models from sysid
         n.getParam("/model_params/l_wb", params.wheelbase);
         n.getParam("/model_params/a_max", max_accel);
         n.getParam("/model_params/a_min", max_decel);
+        
+        // Apply scaling to acceleration limits
+        max_accel *= accel_multiplier;
+        max_decel *= accel_multiplier;
         max_decel = std::abs(max_decel); // since we have the min accel in the yaml
         n.getParam("/model_params/h_cg", params.h_cg);
         n.getParam("/model_params/l_r", params.l_r);
@@ -650,9 +664,12 @@ public:
     }
 
     void drive_callback(const ackermann_msgs::AckermannDriveStamped & msg) {
-        desired_speed = msg.drive.speed;
+        // Apply transparent scaling to incoming drive commands
+        // Scale down the commanded speed/accel so the car moves at the scaled rate
+        // but still reports the original unscaled velocities to maintain planner consistency
+        desired_speed = msg.drive.speed * speed_multiplier;
         desired_steer_ang = msg.drive.steering_angle;
-        desired_accel = msg.drive.acceleration;
+        desired_accel = msg.drive.acceleration * accel_multiplier;
     }
 
     // button callbacks
@@ -788,9 +805,12 @@ public:
             odom.pose.pose.orientation.y = quat.y();
             odom.pose.pose.orientation.z = quat.z();
             odom.pose.pose.orientation.w = quat.w();
-            odom.twist.twist.linear.x = state.v_x;
-            odom.twist.twist.linear.y = state.v_y; 
-            odom.twist.twist.angular.z = state.angular_velocity;
+            
+            // Apply reverse scaling to velocities for transparent scaling
+            // The planner should see the unscaled velocities to maintain consistency
+            odom.twist.twist.linear.x = state.v_x / speed_multiplier;
+            odom.twist.twist.linear.y = state.v_y / speed_multiplier; 
+            odom.twist.twist.angular.z = state.angular_velocity;  // No scaling for angular velocity
             odom_pub.publish(odom);
         }
 

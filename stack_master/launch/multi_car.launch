@@ -29,6 +29,12 @@
   <arg name="collision_warning_distance" default="1.5"/>
   <arg name="collision_critical_distance" default="0.8"/>
   
+  <!-- Performance Scaling Arguments for Multi-Car Differentiation -->
+  <!-- These multipliers scale each car's speed and acceleration independently -->
+  <!-- Range: ]0, 2] where 1.0 = no scaling, 0.5 = half performance, 2.0 = double performance -->
+  <arg name="speed_multipliers" default="1.0,0.8"/>  <!-- speed scaling per car (car1, car2, ...) -->
+  <arg name="accel_multipliers" default="1.0,0.8"/>  <!-- acceleration scaling per car (car1, car2, ...) -->
+  
   <!-- Car Model Configuration for Multi-Car Interaction -->
   <arg name="car_model" default="NUC2"/>  <!-- Car model for dimensions (NUC2, TAM, etc.) -->
 
@@ -68,6 +74,17 @@
   <arg name="frame_prefix_car2" default="car2_"/>
   <arg name="frame_prefix_car3" default="car3_"/>
   <arg name="frame_prefix_car4" default="car4_"/>
+  
+  <!-- Performance scaling parameters per car -->
+  <arg name="speed_multiplier_car1" default="1.0"/>
+  <arg name="speed_multiplier_car2" default="0.8"/>
+  <arg name="speed_multiplier_car3" default="1.0"/>
+  <arg name="speed_multiplier_car4" default="1.0"/>
+  
+  <arg name="accel_multiplier_car1" default="1.0"/>
+  <arg name="accel_multiplier_car2" default="0.8"/>
+  <arg name="accel_multiplier_car3" default="1.0"/>
+  <arg name="accel_multiplier_car4" default="1.0"/>
 
   <!-- =============================================== -->
   <!-- OPTIMIZATION: Parameterized Car Template      -->
@@ -85,6 +102,10 @@
     <param name="f1tenth_simulator/car_init_x" value="-2.0"/>
     <param name="f1tenth_simulator/car_init_y" value="-1.0"/>
     <param name="f1tenth_simulator/car_init_theta" value="0.0"/>
+    
+    <!-- Performance scaling parameters for transparent multi-car differentiation -->
+    <param name="f1tenth_simulator/speed_multiplier" value="$(arg speed_multiplier_car1)"/>
+    <param name="f1tenth_simulator/accel_multiplier" value="$(arg accel_multiplier_car1)"/>
     
     <!-- ============================================= -->
     <!-- OPTIMIZATION: Enhanced Topic Remapping      -->
@@ -210,6 +231,10 @@
     <param name="f1tenth_simulator/car_init_x" value="-2.0"/>
     <param name="f1tenth_simulator/car_init_y" value="1.0"/>
     <param name="f1tenth_simulator/car_init_theta" value="0.0"/>
+    
+    <!-- Performance scaling parameters for transparent multi-car differentiation -->
+    <param name="f1tenth_simulator/speed_multiplier" value="$(arg speed_multiplier_car2)"/>
+    <param name="f1tenth_simulator/accel_multiplier" value="$(arg accel_multiplier_car2)"/>
     
     <!-- Headtohead Planning with Per-Car Topic Isolation -->
     <include file="$(find stack_master)/launch/headtohead.launch">
