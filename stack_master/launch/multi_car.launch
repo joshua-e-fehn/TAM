@@ -397,6 +397,9 @@
   <!-- Load state machine parameters globally for FTG access -->
   <rosparam ns="state_machine" command="load" file="$(find stack_master)/config/state_machine_params.yaml"/>
   
+  <!-- Pass race start controller enable flag to state machines -->
+  <param name="enable_race_start_controller" value="$(arg enable_race_start_controller)"/>
+  
   <!-- Load velocity scaler debug parameter globally -->
   <param name="/velocity_scaler/debug_plot" value="false"/>
   
@@ -429,6 +432,17 @@
       <arg name="publish_rate" value="50.0"/>
       <arg name="check_rate" value="50.0"/>
     </include>
+  </group>
+
+  <!-- ============================================= -->
+  <!-- RACE START CONTROLLER                        -->
+  <!-- ============================================= -->
+  <!-- Manual start control for multi-car racing -->
+  <!-- NOTE: Use ROS services for control: rosservice call /race_control/{start_car1,start_car2,start_both,reset_cars,emergency_stop} -->
+  <arg name="enable_race_start_controller" default="True"/>
+  
+  <group if="$(arg enable_race_start_controller)">
+    <include file="$(find race_start_controller)/launch/race_start.launch"/>
   </group>
 
 </launch>

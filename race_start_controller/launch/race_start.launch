@@ -1,0 +1,14 @@
+<launch>
+    <!-- Race Start Controller for Multi-Car Racing -->
+    <node pkg="race_start_controller" 
+          type="service_race_control.py" 
+          name="race_start_controller" 
+          output="screen">
+        <param name="car1_namespace" value="car1"/>
+        <param name="car2_namespace" value="car2"/>
+    </node>
+    
+    <!-- Usage info -->
+    <param name="race_start_controller/usage" 
+           value="Use: rosservice call /race_control/{start_car1,start_car2,start_both,reset_cars,emergency_stop}"/>
+</launch>

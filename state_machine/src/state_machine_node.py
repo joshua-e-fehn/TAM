@@ -126,14 +126,28 @@ class StateMachine:
         self.x_viz = 0
         self.y_viz = 0
 
-        # Initial state
-        self.cur_state = StateType.GB_TRACK
+        # Initial state - conditional based on race start controller
+        # Check if race start controller is enabled via parameter
+        use_race_start_controller = rospy.get_param('~use_race_start_controller',
+                                                    rospy.get_param('/enable_race_start_controller', False))
+
+        if use_race_start_controller:
+            self.cur_state = StateType.READY
+            rospy.loginfo(
+                f"[{self.name}] Race start controller enabled - starting in READY state")
+        else:
+            self.cur_state = StateType.GB_TRACK
+            rospy.loginfo(
+                f"[{self.name}] Race start controller disabled - starting in GB_TRACK state")
+
+        self.race_start_received = False
         rospy.loginfo(
             f"[{self.name}] The default state for the state machine is {self.cur_state}")
 
         # State transition maps
         if self.ot_planner == "spliner":
             self.state_transitions = {
+                StateType.READY: state_transitions.ReadyTransition,
                 StateType.GB_TRACK: state_transitions.SpliniGlobalTrackingTransition,
                 StateType.TRAILING: state_transitions.SpliniTrailingTransition,
                 StateType.OVERTAKE: state_transitions.SpliniOvertakingTransition,
@@ -141,6 +155,7 @@ class StateMachine:
             }
         elif self.ot_planner == "predictive_spliner":
             self.state_transitions = {
+                StateType.READY: state_transitions.PSReadyTransition,
                 StateType.GB_TRACK: state_transitions.PSGlobalTrackingTransition,
                 StateType.TRAILING: state_transitions.PSTrailingTransition,
                 StateType.OVERTAKE: state_transitions.PSOvertakingTransition,
@@ -150,6 +165,7 @@ class StateMachine:
             rospy.logwarn(
                 "[State Machine] Graph Based Planner is deprecated! Some packages might be missing!")
             self.state_transitions = {
+                StateType.READY: state_transitions.GBReadyTransition,
                 StateType.GB_TRACK: state_transitions.GBGlobalTrackingTransition,
                 StateType.TRAILING: state_transitions.GBTrailingTransition,
                 StateType.OVERTAKE: state_transitions.GBOvertakingTransition,
@@ -157,6 +173,7 @@ class StateMachine:
             }
         elif self.ot_planner == "frenet":
             self.state_transitions = {
+                StateType.READY: state_transitions.FrenetReadyTransition,
                 StateType.GB_TRACK: state_transitions.FrenetGlobalTrackingTransition,
                 StateType.TRAILING: state_transitions.FrenetTrailingTransition,
                 StateType.OVERTAKE: state_transitions.FrenetOvertakingTransition,
@@ -167,6 +184,7 @@ class StateMachine:
                 f"Planner {self.ot_planner} not supported!")
 
         self.states = {
+            StateType.READY: states.Ready,
             StateType.GB_TRACK: states.GlobalTracking,
             StateType.TRAILING: states.Trailing,
             StateType.OVERTAKE: states.Overtaking,
@@ -186,6 +204,10 @@ class StateMachine:
                          Odometry, self.frenet_pose_cb)
         rospy.wait_for_message("car_state/odom_frenet", Odometry)
         rospy.Subscriber("global_waypoints", WpntArray, self.glb_wpnts_og_cb)
+
+        # Race start command subscriber
+        rospy.Subscriber("state_machine_cmd", String,
+                         self.state_command_callback)
 
         # dynamic parameters subscriber
         rospy.Subscriber(
@@ -245,6 +267,20 @@ class StateMachine:
     #############
     # CALLBACKS #
     #############
+    def state_command_callback(self, msg):
+        """Handle external state commands for race start"""
+        if msg.data == "GB_TRACK" and self.cur_state == StateType.READY:
+            rospy.loginfo(f"[{self.name}] Received RACE START command!")
+            self.race_start_received = True
+        elif msg.data == "READY":
+            rospy.loginfo(f"[{self.name}] Received RESET to READY command!")
+            self.cur_state = StateType.READY
+            self.race_start_received = False
+        elif msg.data == "EMERGENCY":
+            rospy.logwarn(f"[{self.name}] Received EMERGENCY STOP command!")
+            self.cur_state = StateType.READY
+            self.race_start_received = False
+
     def vesc_state_cb(self, data):
         """vesc state callback, reads the voltage"""
         self.cur_volt = data.state.voltage_input

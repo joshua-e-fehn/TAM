@@ -27,6 +27,19 @@ NOTE 3: transistions must not have side effects on the state machine!
 """
 
 
+###################
+# READY TRANSITION #
+###################
+def ReadyTransition(state_machine: StateMachine) -> StateType:
+    """Transitions for being in `StateType.READY` - waiting for race start"""
+    # Check if we received a start command
+    if hasattr(state_machine, 'race_start_received') and state_machine.race_start_received:
+        state_machine.race_start_received = False  # Reset the flag
+        return StateType.GB_TRACK
+    else:
+        return StateType.READY
+
+
 #######################
 # SPLINER TRANSITIONS #
 #######################
@@ -104,6 +117,17 @@ def SpliniFTGOnlyTransition(state_machine: StateMachine) -> StateType:
 #######################
 # PRREDICTIVE SPLINER TRANSITIONS #
 #######################
+
+
+def PSReadyTransition(state_machine: StateMachine) -> StateType:
+    """PS Ready transition - same as base ready transition"""
+    if hasattr(state_machine, 'race_start_received') and state_machine.race_start_received:
+        state_machine.race_start_received = False
+        return StateType.GB_TRACK
+    else:
+        return StateType.READY
+
+
 def PSGlobalTrackingTransition(state_machine: StateMachine) -> StateType:
     """Transitions for being in `StateType.GB_TRACK`"""
     valid_spline = state_machine._check_availability_splini_wpts()
@@ -150,11 +174,13 @@ def PSTrailingTransition(state_machine: StateMachine) -> StateType:
             return StateType.TRAILING
         elif valid_spline and not emergency_break and o_free and ot_sector and not on_merger:
             return StateType.OVERTAKE
-        elif not enemy_in_front and on_avoidance_spline and not on_merger: # Questionable if on_merger really helps in this case
+        # Questionable if on_merger really helps in this case
+        elif not enemy_in_front and on_avoidance_spline and not on_merger:
             return StateType.OVERTAKE
         elif not enemy_in_front:
             return StateType.GB_TRACK
-        elif  gb_free and gb_predict_free and ot_sector: #  enemy_in_front and and best_ot_sector:
+        # enemy_in_front and and best_ot_sector:
+        elif gb_free and gb_predict_free and ot_sector:
             return StateType.GB_TRACK
         else:
             return StateType.TRAILING
@@ -201,6 +227,17 @@ def PSFTGOnlyTransition(state_machine: StateMachine) -> StateType:
 ###########################
 # GRAPH BASED TRANSITIONS #
 ###########################
+
+
+def GBReadyTransition(state_machine: StateMachine) -> StateType:
+    """GB Ready transition - same as base ready transition"""
+    if hasattr(state_machine, 'race_start_received') and state_machine.race_start_received:
+        state_machine.race_start_received = False
+        return StateType.GB_TRACK
+    else:
+        return StateType.READY
+
+
 def GBGlobalTrackingTransition(state_machine: StateMachine) -> StateType:
     """Transitions for being in `StateType.GB_TRACK`"""
     if not state_machine._check_only_ftg_zone():
@@ -245,6 +282,7 @@ def GBOvertakingTransition(state_machine: StateMachine) -> StateType:
     else:
         return StateType.FTGONLY
 
+
 def GBFTGOnlyTransition(state_machine: StateMachine) -> StateType:
     if state_machine._check_only_ftg_zone():
         return StateType.FTGONLY
@@ -253,10 +291,21 @@ def GBFTGOnlyTransition(state_machine: StateMachine) -> StateType:
             return StateType.GB_TRACK
         else:
             return StateType.FTGONLY
-        
+
 ######################
 # FRENET TRANSITIONS #
 ######################
+
+
+def FrenetReadyTransition(state_machine: StateMachine) -> StateType:
+    """Frenet Ready transition - same as base ready transition"""
+    if hasattr(state_machine, 'race_start_received') and state_machine.race_start_received:
+        state_machine.race_start_received = False
+        return StateType.GB_TRACK
+    else:
+        return StateType.READY
+
+
 def FrenetGlobalTrackingTransition(state_machine: StateMachine) -> StateType:
     """Transitions for being in `StateType.GB_TRACK`"""
     if state_machine._check_gbfree() and not state_machine._check_only_ftg_zone():
@@ -277,7 +326,7 @@ def FrenetTrailingTransition(state_machine: StateMachine) -> StateType:
                 not state_machine._check_gbfree()
                 and state_machine._check_ot_sector()
                 and not state_machine._check_ofree()
-            )
+        )
             or (state_machine._check_gbfree() and not state_machine._check_close_to_raceline())
         ):
             return StateType.TRAILING
@@ -318,7 +367,7 @@ def FrenetFTGOnlyTransition(state_machine: StateMachine) -> StateType:
             return StateType.GB_TRACK
         else:
             return StateType.FTGONLY
-       
+
 
 ####################################
 # OTHER TRANSITIONS  could go here #
