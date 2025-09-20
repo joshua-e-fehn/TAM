@@ -23,6 +23,15 @@
   <arg name="use_global_map" default="True"/>
   <arg name="global_map_frame" default="map"/>
   
+  <!-- ============================================= -->
+  <!-- CENTRALIZED CAR INITIAL POSITIONS            -->
+  <!-- ============================================= -->
+  <!-- Configure car starting positions here. These values are used in both -->
+  <!-- simulator parameters and initial pose publishers for consistency.    -->
+  <!-- Override these arguments when launching to customize positions:      -->
+  <!-- roslaunch ... car1_init_x:=-3.0 car1_init_y:=1.0 car2_init_x:=3.0   -->
+  <!-- ============================================= -->
+  
   <!-- Multi-Car Interaction Arguments -->
   <arg name="enable_car_interaction" default="True"/>
   <arg name="enable_collision_detection" default="True"/>
@@ -86,6 +95,23 @@
   <arg name="accel_multiplier_car3" default="1.0"/>
   <arg name="accel_multiplier_car4" default="1.0"/>
 
+  <!-- Initial position parameters per car (centralized configuration) -->
+  <arg name="car1_init_x" default="-2.0"/>
+  <arg name="car1_init_y" default="0.0"/>
+  <arg name="car1_init_theta" default="0.0"/>
+  
+  <arg name="car2_init_x" default="2.0"/>
+  <arg name="car2_init_y" default="0.0"/>
+  <arg name="car2_init_theta" default="0.0"/>
+  
+  <arg name="car3_init_x" default="-1.0"/>
+  <arg name="car3_init_y" default="-1.5"/>
+  <arg name="car3_init_theta" default="0.0"/>
+  
+  <arg name="car4_init_x" default="1.0"/>
+  <arg name="car4_init_y" default="1.5"/>
+  <arg name="car4_init_theta" default="0.0"/>
+
   <!-- =============================================== -->
   <!-- OPTIMIZATION: Parameterized Car Template      -->
   <!-- =============================================== -->
@@ -99,9 +125,9 @@
     <param name="f1tenth_simulator/scan_frame" value="$(arg frame_prefix_car1)laser"/>
     <param name="f1tenth_simulator/map_frame" value="$(arg frame_prefix_car1)map"/>
     <!-- Set car1 initial position -->
-    <param name="f1tenth_simulator/car_init_x" value="-2.0"/>
-    <param name="f1tenth_simulator/car_init_y" value="-1.0"/>
-    <param name="f1tenth_simulator/car_init_theta" value="0.0"/>
+    <param name="f1tenth_simulator/car_init_x" value="$(arg car1_init_x)"/>
+    <param name="f1tenth_simulator/car_init_y" value="$(arg car1_init_y)"/>
+    <param name="f1tenth_simulator/car_init_theta" value="$(arg car1_init_theta)"/>
     
     <!-- Performance scaling parameters for transparent multi-car differentiation -->
     <param name="f1tenth_simulator/speed_multiplier" value="$(arg speed_multiplier_car1)"/>
@@ -202,7 +228,7 @@
           
     <!-- Set initial pose for car1 in its own namespace -->
     <node pkg="rostopic" type="rostopic" name="car1_initial_pose"
-          args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car1_map}, pose: {pose: {position: {x: -2.0, y: -1.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
+          args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car1_map}, pose: {pose: {position: {x: $(arg car1_init_x), y: $(arg car1_init_y), z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
           
     <!-- TF Frame Configuration -->
         <!-- TF Frame Configuration -->
@@ -228,9 +254,9 @@
     <param name="f1tenth_simulator/scan_frame" value="$(arg frame_prefix_car2)laser"/>
     <param name="f1tenth_simulator/map_frame" value="$(arg frame_prefix_car2)map"/>
     <!-- Set car2 initial position -->
-    <param name="f1tenth_simulator/car_init_x" value="-2.0"/>
-    <param name="f1tenth_simulator/car_init_y" value="1.0"/>
-    <param name="f1tenth_simulator/car_init_theta" value="0.0"/>
+    <param name="f1tenth_simulator/car_init_x" value="$(arg car2_init_x)"/>
+    <param name="f1tenth_simulator/car_init_y" value="$(arg car2_init_y)"/>
+    <param name="f1tenth_simulator/car_init_theta" value="$(arg car2_init_theta)"/>
     
     <!-- Performance scaling parameters for transparent multi-car differentiation -->
     <param name="f1tenth_simulator/speed_multiplier" value="$(arg speed_multiplier_car2)"/>
@@ -311,7 +337,7 @@
           
     <!-- Set initial pose for car2 in its own namespace -->
     <node pkg="rostopic" type="rostopic" name="car2_initial_pose"
-          args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car2_map}, pose: {pose: {position: {x: -2.0, y: 1.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
+          args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car2_map}, pose: {pose: {position: {x: $(arg car2_init_x), y: $(arg car2_init_y), z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
           
     <!-- TF Frame Configuration -->
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
