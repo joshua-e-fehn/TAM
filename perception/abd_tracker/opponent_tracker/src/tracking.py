@@ -17,7 +17,8 @@ from tf.transformations import euler_from_quaternion
 
 class StaticDynamic:
     def __init__(self):
-        rospy.init_node('StaticDynamic', anonymous=True)
+        # Use non-anonymous to ensure proper namespacing
+        rospy.init_node('tracking', anonymous=False)
         rospy.on_shutdown(self.shutdown)
 
         # Get car namespace for logging

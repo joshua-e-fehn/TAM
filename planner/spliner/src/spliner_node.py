@@ -512,8 +512,8 @@ class ObstacleSpliner:
     def _check_ot_side_possible(self, more_space) -> bool:
         # TODO make rosparam for cur_d threshold
         if abs(self.cur_d) > 0.25 and more_space != self.last_ot_side:
-            rospy.loginfo(
-                f"{self.log_name}: Can't switch sides, because we are not on the raceline")
+            # rospy.loginfo(
+            #     f"{self.log_name}: Can't switch sides, because we are not on the raceline")
             return False
         return True
 

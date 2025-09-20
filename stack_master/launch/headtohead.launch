@@ -101,19 +101,94 @@
 
         <!-- launch collision predictor and dynamic reconfigure -->
         <node pkg="predictive_spliner" type="dynamic_collision_server.py" name="dynamic_collision_tuner_node" output="screen"/>
-        <node pkg="predictive_spliner" type="collision_prediction.py" name="collision_predictor" output="screen"/>
+        <node pkg="predictive_spliner" type="collision_prediction.py" name="collision_predictor" output="screen">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <remap from="/global_waypoints_updated" to="/$(arg car_name)/global_waypoints_updated"/>
+            <!-- Remap Frenet conversion services to car-specific services -->
+            <remap from="convert_frenet2globarr_service" to="/$(arg car_name)/convert_frenet2globarr_service"/>
+            <remap from="convert_glob2frenetarr_service" to="/$(arg car_name)/convert_glob2frenetarr_service"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
+            <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
+            <!-- Remap input topics for multi-car obstacles and opponent trajectory -->
+            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+            <!-- Remap output to car-specific namespace -->
+            <remap from="/collision_prediction/obstacles" to="/$(arg car_name)/collision_prediction/obstacles"/>
+            <remap from="/collision_prediction/force_trailing" to="/$(arg car_name)/collision_prediction/force_trailing"/>
+            <!-- Remap collision prediction markers to car-specific namespace -->
+            <remap from="/collision_predict/beginn" to="/$(arg car_name)/collision_predict/beginn"/>
+            <remap from="/collision_predict/end" to="/$(arg car_name)/collision_predict/end"/>
+        </node>
 
         <!-- launch sqp node and dynamic sqp server -->
         <node pkg="predictive_spliner" type="dynamic_sqp_server.py" name="dynamic_sqp_tuner_node" output="screen"/>
-        <node pkg="predictive_spliner" type="sqp_avoidance_node.py" name="planner_sqp" output="screen"/>
+        <node pkg="predictive_spliner" type="sqp_avoidance_node.py" name="planner_sqp" output="screen">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <remap from="/global_waypoints_updated" to="/$(arg car_name)/global_waypoints_updated"/>
+            <remap from="/local_waypoints" to="/$(arg car_name)/local_waypoints"/>
+            <!-- Remap to use multi-car obstacles for multi-car racing -->
+            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap collision prediction and opponent trajectory to car-specific topics -->
+            <remap from="/collision_prediction/obstacles" to="/$(arg car_name)/collision_prediction/obstacles"/>
+            <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
+            <remap from="/car_state/odom" to="/$(arg car_name)/car_state/odom"/>
+            <!-- Remap section check to car-specific topic -->
+            <remap from="/ot_section_check" to="/$(arg car_name)/ot_section_check"/>
+            <!-- Namespace the planner output -->
+            <remap from="/planner/avoidance/otwpnts" to="/$(arg car_name)/planner/avoidance/otwpnts"/>
+            <remap from="/planner/avoidance/markers_sqp" to="/$(arg car_name)/planner/avoidance/markers_sqp"/>
+            <remap from="/planner/avoidance/merger" to="/$(arg car_name)/planner/avoidance/merger"/>
+        </node>
 
         <!-- launch waypoint updater -->
-        <node pkg="predictive_spliner" type="update_waypoints.py" name="waypoint_updater" output="screen"/>
+        <node pkg="predictive_spliner" type="update_waypoints.py" name="waypoint_updater" output="screen">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <remap from="/global_waypoints_updated" to="/$(arg car_name)/global_waypoints_updated"/>
+            <remap from="/local_waypoints" to="/$(arg car_name)/local_waypoints"/>
+            <!-- Remap Frenet conversion services to car-specific services -->
+            <remap from="convert_frenet2globarr_service" to="/$(arg car_name)/convert_frenet2globarr_service"/>
+            <remap from="convert_glob2frenetarr_service" to="/$(arg car_name)/convert_glob2frenetarr_service"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
+            <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
+        </node>
 
         <!-- launch GP_nodes if GP_trajectory is gp_predictive -->
-        <node pkg="predictive_spliner" type="opponent_trajectory.py" name="OpponentHalflap" output="screen"/>
-        <node pkg="predictive_spliner" type="gaussian_process_opp_traj.py" name="GP_trajectory" output="screen" launch-prefix="taskset -c 1"/>
-        <node pkg="predictive_spliner" type="predictor_opponent_trajectory.py" name="Predictor_Opp" output="screen"/>
+        <node pkg="predictive_spliner" type="opponent_trajectory.py" name="OpponentHalflap" output="screen">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <!-- Remap to use multi-car obstacles for multi-car racing -->
+            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
+            <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
+            <!-- Namespace the opponent trajectory output -->
+            <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+            <remap from="/proj_opponent_trajectory" to="/$(arg car_name)/proj_opponent_trajectory"/>
+            <remap from="/opponent_marker" to="/$(arg car_name)/opponent_marker"/>
+        </node>
+        <node pkg="predictive_spliner" type="gaussian_process_opp_traj.py" name="GP_trajectory" output="screen" launch-prefix="taskset -c 1">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="/proj_opponent_trajectory" to="/$(arg car_name)/proj_opponent_trajectory"/>
+            <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+        </node>
+        <node pkg="predictive_spliner" type="predictor_opponent_trajectory.py" name="Predictor_Opp" output="screen">
+            <!-- Remap to use car-specific topics -->
+            <remap from="/proj_opponent_trajectory" to="/$(arg car_name)/proj_opponent_trajectory"/>
+            <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+        </node>
     </group>
 
     <!-- PLANNER GRAPH BASED -->

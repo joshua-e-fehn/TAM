@@ -232,24 +232,22 @@ class CarCollisionDetector:
                     status_text = "COLLISION"
                     collision_triggered = True
                     warning_triggered = True
-                    rospy.logwarn(
-                        f"COLLISION between {car1_name} and {car2_name}: {distance:.2f}m")
+                    rospy.logwarn_throttle(2.0,
+                                           f"COLLISION between {car1_name} and {car2_name}: {distance:.2f}m")
 
                 elif distance <= self.critical_distance:
                     if collision_status != "COLLISION":
                         collision_status = "CRITICAL"
                     status_text = "CRITICAL"
                     warning_triggered = True
-                    rospy.logwarn(
-                        f"CRITICAL distance between {car1_name} and {car2_name}: {distance:.2f}m")
+                    # rospy.logwarn_throttle(2.0,
+                    #                        f"CRITICAL distance between {car1_name} and {car2_name}: {distance:.2f}m")
 
                 elif distance <= self.warning_distance:
                     if collision_status not in ["COLLISION", "CRITICAL"]:
                         collision_status = "WARNING"
                     status_text = "WARNING"
                     warning_triggered = True
-                    rospy.loginfo(
-                        f"Warning: {car1_name} and {car2_name} at {distance:.2f}m")
 
                 # Publish individual car warnings
                 self.collision_publishers[car1_name].publish(
@@ -291,8 +289,8 @@ class CarCollisionDetector:
         # Log periodic status (every 5 seconds)
         if hasattr(self, '_last_status_log'):
             if (current_time - self._last_status_log).to_sec() > 5.0:
-                rospy.loginfo(
-                    f"[Multi-Car] Collision Detection Status: {collision_status}, Active warnings: {len(warnings)} (monitoring {len(self.car_names)} cars)")
+                # rospy.loginfo(
+                #     f"[Multi-Car] Collision Detection Status: {collision_status}, Active warnings: {len(warnings)} (monitoring {len(self.car_names)} cars)")
                 self._last_status_log = current_time
         else:
             self._last_status_log = current_time

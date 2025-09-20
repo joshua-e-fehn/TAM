@@ -165,7 +165,7 @@
     <!-- CRITICAL: Global-to-Namespaced Topic Bridging -->
     <!-- Note: These are essential for multi-car coordination -->
     <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
-          args="/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
+          args="/$(arg car1)/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
     
     <!-- CRITICAL: Global Waypoint Relays -->
     <node pkg="topic_tools" type="relay" name="global_waypoints_relay" 
@@ -283,7 +283,7 @@
     
     <!-- CRITICAL: Global-to-Namespaced Topic Bridging -->
     <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
-          args="/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
+          args="/$(arg car2)/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
     
     <!-- CRITICAL: Global Waypoint Relays -->
     <node pkg="topic_tools" type="relay" name="global_waypoints_relay" 

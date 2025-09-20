@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
+import states
+import state_transitions
+from states_types import StateType
+from visualization_msgs.msg import Marker, MarkerArray
+from std_msgs.msg import String, Float32, Float32MultiArray, Bool
+from scipy.interpolate import InterpolatedUnivariateSpline as Spline
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped
+from f110_msgs.msg import ObstacleArray, OTWpntArray, WpntArray, Wpnt
+from dynamic_reconfigure.msg import Config
+import tf
+import rospy
+import numpy as np
 import threading
 import time
+import warnings
 
-import numpy as np
-import rospy
-import tf
-from dynamic_reconfigure.msg import Config
-from f110_msgs.msg import ObstacleArray, OTWpntArray, WpntArray, Wpnt
-from geometry_msgs.msg import PoseStamped
-from nav_msgs.msg import Odometry
-from scipy.interpolate import InterpolatedUnivariateSpline as Spline
-from std_msgs.msg import String, Float32, Float32MultiArray, Bool
-from visualization_msgs.msg import Marker, MarkerArray
+# Suppress sklearn convergence warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
-from states_types import StateType
-import state_transitions
-import states
 
 try:  # optional (car only)
     from vesc_msgs.msg import VescStateStamped
@@ -26,6 +29,8 @@ except ImportError:  # simulator environment without vesc package
 class StateMachine:
     def __init__(self, name) -> None:
         self.name = name
+        # Initialize car name for multi-car identification (will be set by main)
+        self.car_name = "unknown_car"
         # Core configuration
         self.rate_hz = rospy.get_param('state_machine/rate')
         self.n_loc_wpnts = rospy.get_param('state_machine/n_loc_wpnts')
@@ -689,12 +694,21 @@ class StateMachine:
                     # Horizon in front of cur_s [m]
                     horizon = self.emergency_break_horizon
 
+                    # Get car name for detailed logging
+                    car_name = getattr(self, 'car_name', 'unknown_car')
+
                     for obs in obstacles:
                         # Only use opponent for emergency break
                         # Wrapping madness to check if infront
                         dist_to_obj = (obs.s_start - self.cur_s) % self.max_s
                         # Check if opponent is closer than emegerncy
                         if dist_to_obj < horizon:
+
+                            # Safety check: ensure local waypoints exist
+                            if not self.local_wpnts.wpnts:
+                                rospy.logwarn_throttle(
+                                    5.0, f"[{car_name}] Emergency brake check skipped: no local waypoints available")
+                                continue
 
                             # Get estimated d from local waypoints
                             local_wpnt_idx = np.argmin(
@@ -703,10 +717,20 @@ class StateMachine:
                             )
                             ot_d = self.local_wpnts.wpnts[local_wpnt_idx].d_m
                             ot_obs_dist = ot_d - obs.d_center
+
+                            # Enhanced logging for emergency brake debugging
+                            rospy.loginfo(f"[{car_name}] State Machine - Obstacle check: "
+                                          f"obs_id={obs.id}, s_center={obs.s_center:.2f}m, d_center={obs.d_center:.2f}m, "
+                                          f"cur_s={self.cur_s:.2f}m, dist_to_obj={dist_to_obj:.2f}m, "
+                                          f"ot_d={ot_d:.2f}m, ot_obs_dist={ot_obs_dist:.2f}m, "
+                                          f"static={'YES' if obs.is_static else 'NO'}")
+
                             if abs(ot_obs_dist) < self.emergency_break_d:
                                 emergency_break = True
-                                rospy.logwarn(
-                                    "[State Machine] emergency break")
+                                obstacle_type = "STATIC" if obs.is_static else "DYNAMIC"
+                                rospy.logwarn_throttle(5.0, f"[{car_name}] STATE MACHINE EMERGENCY BRAKE TRIGGERED! "
+                                                       f"Obstacle {obs.id} ({obstacle_type}): lateral_distance={abs(ot_obs_dist):.3f}m < threshold={self.emergency_break_d:.3f}m, "
+                                                       f"longitudinal_distance={dist_to_obj:.2f}m < horizon={horizon:.2f}m")
             else:
                 emergency_break = False
             return emergency_break
@@ -1003,6 +1027,85 @@ class StateMachine:
 
         self.state_pub.publish(self.cur_state.value)
         self.visualize_state(state=self.cur_state.value)
+
+        rospy.loginfo_throttle(
+            5.0, f"[{self.name}] Current Planer: {self.ot_planner}")
+
+        # # Debug logging for Predictive Spliner Trailing Transition conditions
+        # if self.ot_planner == "predictive_spliner":
+        #     ot_sector = self._check_ot_sector()
+        #     valid_spline = self._check_availability_splini_wpts()
+        #     emergency_break = self._check_emergency_break()
+        #     enemy_in_front = self._check_enemy_in_front()
+        #     gb_free = self._check_gbfree()
+        #     gb_predict_free = self._check_prediction_gbfree()
+        #     o_free = self._check_ofree()
+        #     on_avoidance_spline = self._check_on_spline()
+        #     on_merger = self._check_on_merger()
+        #     force_trailing = self._check_force_trailing()
+
+        #     rospy.logwarn_throttle(
+        #         2.0, f"[{self.name}] Trailing Transition Check: ot_sector={ot_sector}, valid_spline={valid_spline}, emergency_break={emergency_break}, enemy_in_front={enemy_in_front}, gb_free={gb_free}, gb_predict_free={gb_predict_free}, o_free={o_free}, on_avoidance_spline={on_avoidance_spline}, on_merger={on_merger}, force_trailing={force_trailing}")
+        #     path1_conditions = valid_spline and not emergency_break and o_free and ot_sector and not on_merger
+        #     # path2_conditions = not enemy_in_front and on_avoidance_spline and not on_merger
+
+        #     if path1_conditions:
+        #         rospy.logwarn_throttle(
+        #             2.0, f"[{self.name}] OVERTAKE Path 1 READY: All conditions met for primary overtaking transition!")
+        #     # elif path2_conditions:
+        #     #     rospy.logwarn_throttle(
+        #     #         2.0, f"[{self.name}] OVERTAKE Path 2 READY: All conditions met for alternative overtaking transition!")
+        #     else:
+        #         # Analyze why transitions are failing
+        #         path1_failures = []
+        #         # path2_failures = []
+
+        #         # Path 1 analysis: valid_spline and not emergency_break and o_free and ot_sector and not on_merger
+        #         if not valid_spline:
+        #             path1_failures.append("valid_spline=False")
+        #         if emergency_break:
+        #             path1_failures.append("emergency_break=True")
+        #         if not o_free:
+        #             path1_failures.append("o_free=False")
+        #         if not ot_sector:
+        #             path1_failures.append("ot_sector=False")
+        #         if on_merger:
+        #             path1_failures.append("on_merger=True")
+
+        #         # # Path 2 analysis: not enemy_in_front and on_avoidance_spline and not on_merger
+        #         # if enemy_in_front:
+        #         #     path2_failures.append("enemy_in_front=True")
+        #         # if not on_avoidance_spline:
+        #         #     path2_failures.append("on_avoidance_spline=False")
+        #         # if on_merger:
+        #         #     path2_failures.append("on_merger=True")
+
+        #         # Report the blocking conditions
+        #         path1_reason = ", ".join(
+        #             path1_failures) if path1_failures else "ALL_CONDITIONS_MET"
+        #         # path2_reason = ", ".join(
+        #         #     path2_failures) if path2_failures else "ALL_CONDITIONS_MET"
+
+        #         rospy.logwarn_throttle(
+        #             2.0, f"[{self.name}] OVERTAKE BLOCKED - Path1 blocked by: [{path1_reason}]")
+
+        #         avoidance_status = "None" if self.avoidance_wpnts is None else f"{len(self.avoidance_wpnts.wpnts)} waypoints"
+        #         obstacles_count = len(self.obstacles)
+        #         obstacles_perception_count = len(self.obstacles_perception)
+        #         obstacles_prediction_count = len(self.obstacles_prediction)
+
+        #         rospy.logwarn_throttle(
+        #             2.0, f"[{self.name}] SQP Debug: avoidance_wpnts={avoidance_status}, "
+        #             f"obstacles_total={obstacles_count}, perception={obstacles_perception_count}, prediction={obstacles_prediction_count}, "
+        #             f"cur_s={self.cur_s:.2f}, cur_d={self.cur_d:.2f}")
+
+        #         # Check if SQP planner is receiving the right inputs
+        #         if hasattr(self, 'last_collision_prediction_time'):
+        #             time_since_collision = (
+        #                 rospy.Time.now() - self.last_collision_prediction_time).to_sec()
+        #             rospy.logwarn_throttle(
+        #                 2.0, f"[{self.name}] Time since last collision prediction: {time_since_collision:.2f}s")
+
         if self.timetrials_only:
             rospy.logdebug_throttle_identical(
                 1, f"[{self.name}] Switched to state {self.cur_state} in time trials only mode"
@@ -1046,8 +1149,20 @@ if __name__ == "__main__":
     name = "state_machine"
     rospy.init_node(name, anonymous=False, log_level=rospy.WARN)
 
+    # Get car name from namespace for multi-car identification
+    namespace = rospy.get_namespace()
+    if namespace != "/":
+        # Extract car name from namespace (e.g., "/car1/" -> "car1")
+        car_name = namespace.strip("/")
+        display_name = f"[{car_name}] State Machine"
+    else:
+        # Single car setup
+        car_name = "state_machine"
+        display_name = "State Machine"
+
     # init and run state machine
-    state_machine = StateMachine(name)
+    state_machine = StateMachine(display_name)
+    state_machine.car_name = car_name  # Store car name for emergency brake logging
     rospy.on_shutdown(state_machine.on_shutdown)
     loop_rate = rospy.Rate(state_machine.rate_hz)
     while not rospy.is_shutdown():

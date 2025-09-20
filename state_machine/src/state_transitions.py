@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+import rospy
 
 from states_types import StateType
 
@@ -165,6 +166,9 @@ def PSTrailingTransition(state_machine: StateMachine) -> StateType:
     on_avoidance_spline = state_machine._check_on_spline()
     on_merger = state_machine._check_on_merger()
     force_trailing = state_machine._check_force_trailing()
+
+    rospy.loginfo_throttle(
+        5.0, f"[StateMachine] Trailing Transition Check: ot_sector={ot_sector}, valid_spline={valid_spline}, emergency_break={emergency_break}, enemy_in_front={enemy_in_front}, gb_free={gb_free}, gb_predict_free={gb_predict_free}, o_free={o_free}, on_avoidance_spline={on_avoidance_spline}, on_merger={on_merger}, force_trailing={force_trailing}")
 
     if not state_machine._check_only_ftg_zone():
         # If we have been sitting around in TRAILING for a while then FTG

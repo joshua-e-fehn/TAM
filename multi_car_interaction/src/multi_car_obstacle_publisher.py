@@ -52,6 +52,19 @@ class MultiCarObstaclePublisher:
         self.max_detection_range = rospy.get_param(
             '~max_detection_range', 15.0)  # meters
 
+        # Track length for handling wraparound in relative coordinate calculation
+        # Try to get actual track length from global parameter, fallback to default
+        try:
+            self.track_length = rospy.get_param(
+                '/global_republisher/track_length')
+            rospy.loginfo(
+                f"[Multi-Car Publisher] Using actual track length: {self.track_length:.2f}m")
+        except Exception:
+            # meters - Fixed default to match actual track
+            self.track_length = rospy.get_param('~track_length', 76.48)
+            rospy.logwarn(
+                f"[Multi-Car Publisher] Using default track length: {self.track_length:.2f}m")
+
         # TF2 buffer and listener
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
@@ -59,6 +72,10 @@ class MultiCarObstaclePublisher:
         # Storage for car positions and velocities
         self.car_positions = {}
         self.car_subscribers = {}
+
+        # Lap tracking for each car
+        self.car_laps = {}  # Track current lap number for each car
+        self.car_previous_s = {}  # Track previous s-coordinate to detect lap completion
 
         # Publishers for obstacles (per car) - Using f110_msgs/ObstacleArray
         self.obstacle_publishers = {}
@@ -70,6 +87,11 @@ class MultiCarObstaclePublisher:
 
         # Initialize subscribers and publishers for each car
         self.setup_car_topics()
+
+        # Initialize lap tracking for all cars
+        for car_name in self.car_names:
+            self.car_laps[car_name] = 0
+            self.car_previous_s[car_name] = None
 
         # Main publishing timer
         self.timer = rospy.Timer(rospy.Duration(
@@ -165,6 +187,34 @@ class MultiCarObstaclePublisher:
             'frame_id': msg.header.frame_id
         }
 
+        # Initialize lap tracking for new cars
+        if car_name not in self.car_laps:
+            self.car_laps[car_name] = 0
+            self.car_previous_s[car_name] = None
+
+    def update_lap_tracking(self, car_name, current_s):
+        """Update lap tracking for a car based on s-coordinate"""
+        if car_name not in self.car_laps:
+            self.car_laps[car_name] = 0
+            self.car_previous_s[car_name] = current_s
+            return
+
+        previous_s = self.car_previous_s[car_name]
+        if previous_s is not None:
+            # Detect lap completion: large negative jump in s-coordinate
+            # (from near track_length back to near 0)
+            if previous_s > (self.track_length * 0.8) and current_s < (self.track_length * 0.2):
+                self.car_laps[car_name] += 1
+                rospy.loginfo(
+                    f"[Multi-Car Publisher] {car_name} completed lap {self.car_laps[car_name]}")
+
+        self.car_previous_s[car_name] = current_s
+
+    def get_car_lap_info(self, car_name, current_s):
+        """Get lap information for a car"""
+        self.update_lap_tracking(car_name, current_s)
+        return self.car_laps.get(car_name, 0)
+
     def create_visualization_marker(self, car_name, other_car_name, other_car_data, marker_id):
         """Create a visualization marker for RViz"""
         marker = Marker()
@@ -199,13 +249,18 @@ class MultiCarObstaclePublisher:
 
         return marker
 
-    def create_car_obstacle(self, car_name, other_car_name, other_car_data, obstacle_id):
-        """Create an f110_msgs/Obstacle representing another car"""
+    def create_car_obstacle(self, car_name, other_car_name, observing_car_data, other_car_data, obstacle_id):
+        """Create an f110_msgs/Obstacle representing another car with correct coordinates for both collision detection and predictive planning"""
 
-        # Get car position in global coordinates
+        # Get other car position in global coordinates
         car_pose = other_car_data['pose']
         car_x = car_pose.position.x
         car_y = car_pose.position.y
+
+        # Get observing car position for relative calculation
+        obs_pose = observing_car_data['pose']
+        obs_x = obs_pose.position.x
+        obs_y = obs_pose.position.y
 
         # Get car velocity
         car_twist = other_car_data['twist']
@@ -214,57 +269,98 @@ class MultiCarObstaclePublisher:
         frenet_converter = self.frenet_converters.get(car_name)
         if frenet_converter is not None:
             try:
-                # Call frenet conversion service for the observing car
-                resp = frenet_converter([car_x], [car_y])
-                if len(resp.s) > 0 and len(resp.d) > 0:
-                    s_center = resp.s[0]
-                    d_center = resp.d[0]
+                # Convert both car positions to Frenet coordinates
+                resp_other = frenet_converter([car_x], [car_y])
+                resp_obs = frenet_converter([obs_x], [obs_y])
+
+                if (len(resp_other.s) > 0 and len(resp_other.d) > 0 and
+                        len(resp_obs.s) > 0 and len(resp_obs.d) > 0):
+
+                    # Get absolute Frenet coordinates
+                    other_s = resp_other.s[0]
+                    other_d = resp_other.d[0]
+                    obs_s = resp_obs.s[0]
+
+                    # Update lap tracking for both cars
+                    other_car_lap = self.get_car_lap_info(
+                        other_car_name, other_s)
+                    observing_car_lap = self.get_car_lap_info(car_name, obs_s)
+
+                    # Calculate relative distance for predictive planning
+                    s_diff = other_s - obs_s
+
+                    # Handle track wraparound for relative distance calculation
+                    if s_diff > self.track_length / 2:
+                        s_diff -= self.track_length
+                    elif s_diff < -self.track_length / 2:
+                        s_diff += self.track_length
+
+                    # SOLUTION: Use ABSOLUTE coordinates for collision detection (like V1)
+                    # Store RELATIVE distance for predictive planning (like V2)
+                    s_center = other_s  # Absolute position for emergency braking
+                    d_center = other_d  # Absolute lateral position
+
+                    # Store relative distance in s_start for predictive planning
+                    # The opponent_trajectory.py looks for relative distance in s_start calculation
+                    relative_s_start = obs_s + s_diff - \
+                        (self.car_length + self.safety_margin) / 2.0
+
+                    # rospy.loginfo_throttle(2.0,
+                    #                        f"[{car_name}] {other_car_name}: abs_s={s_center:.2f}m, rel_s={s_diff:.2f}m, d={d_center:.2f}m")
+
                 else:
                     rospy.logwarn(
                         f"Frenet conversion failed for {other_car_name} observed by {car_name}")
                     return None
+
             except rospy.ServiceException as e:
                 rospy.logwarn(
                     f"Frenet conversion service call failed for {car_name}: {e}")
                 return None
         else:
-            # Fallback: use global coordinates directly (not ideal)
+            # Fallback: use global coordinates directly
             rospy.logwarn(
-                f"Using global coordinates as fallback for {car_name} - Frenet conversion unavailable")
+                f"Using global coordinates as fallback for {car_name}")
             s_center = car_x
             d_center = car_y
+            relative_s_start = car_x  # Unknown relative distance
 
         # Create obstacle message
         obstacle = Obstacle()
         obstacle.id = obstacle_id
 
-        # Position in Frenet coordinates
-        obstacle.s_center = s_center
-        obstacle.d_center = d_center
+        # CRITICAL: Use ABSOLUTE Frenet coordinates for collision detection
+        obstacle.s_center = s_center  # Absolute s-coordinate for emergency braking
+        obstacle.d_center = d_center  # Absolute d-coordinate
 
         # Obstacle bounds (car dimensions + safety margin)
         half_length = (self.car_length + self.safety_margin) / 2.0
         half_width = (self.car_width + self.safety_margin) / 2.0
 
-        obstacle.s_start = s_center - half_length
-        obstacle.s_end = s_center + half_length
+        # FIXED: Use ABSOLUTE coordinates for obstacle bounds (not relative)
+        obstacle.s_start = s_center - half_length  # Absolute start position
+        obstacle.s_end = s_center + half_length    # Absolute end position
         obstacle.d_left = d_center + half_width
         obstacle.d_right = d_center - half_width
 
-        # Velocity in Frenet frame (approximation)
-        # TODO: Proper velocity transformation would require orientation
+        # Velocity in Frenet frame
         obstacle.vs = car_twist.linear.x  # Forward velocity
         obstacle.vd = car_twist.linear.y  # Lateral velocity
 
-        # Obstacle properties
+        # ENHANCEMENT: Store relative distance information for predictive planning
+        # Store relative distance magnitude and direction in variance fields
+        obstacle.s_var = abs(s_diff) if 's_diff' in locals(
+        ) else 0.1  # Relative distance magnitude
+        obstacle.d_var = 1.0 if s_diff > 0 else - \
+            1.0 if 's_diff' in locals() and s_diff < 0 else 0.0  # Direction (ahead/behind)
+
+        # Standard obstacle properties
         obstacle.size = max(self.car_length, self.car_width)
         obstacle.is_static = False  # Cars are dynamic
         obstacle.is_visible = True  # Assume cars are always visible
         obstacle.is_actually_a_gap = False  # This is a solid obstacle
 
-        # Variance/uncertainty (set to reasonable defaults)
-        obstacle.s_var = 0.1  # 10cm uncertainty in s
-        obstacle.d_var = 0.1  # 10cm uncertainty in d
+        # Velocity uncertainty
         obstacle.vs_var = 0.2  # 0.2 m/s velocity uncertainty
         obstacle.vd_var = 0.2  # 0.2 m/s velocity uncertainty
 
@@ -322,7 +418,7 @@ class MultiCarObstaclePublisher:
 
                 # Create obstacle message (f110_msgs/Obstacle)
                 obstacle = self.create_car_obstacle(
-                    car_name, other_car_name, other_car_data, obstacle_id)
+                    car_name, other_car_name, self.car_positions[car_name], other_car_data, obstacle_id)
                 if obstacle is not None:
                     obstacle_array.obstacles.append(obstacle)
                     obstacle_id += 1
