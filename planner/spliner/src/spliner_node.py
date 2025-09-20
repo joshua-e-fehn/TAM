@@ -377,9 +377,9 @@ class ObstacleSpliner:
                 if abs(evasion_d[i]) > spline_resolution:
                     tb_dist = gb_wpnts[gb_wpnt_i].d_left if more_space == "left" else gb_wpnts[gb_wpnt_i].d_right
                     if abs(evasion_d[i]) > abs(tb_dist) - self.spline_bound_mindist:
-                        rospy.loginfo_throttle_identical(
-                            2, f"{self.log_name}: Evasion trajectory too close to TRACKBOUNDS, aborting evasion"
-                        )
+                        # rospy.loginfo_throttle_identical(
+                        #     2, f"{self.log_name}: Evasion trajectory too close to TRACKBOUNDS, aborting evasion"
+                        # )
                         danger_flag = True
                         break
                 # Get V from gb wpnts and go slower if we are going through the inside

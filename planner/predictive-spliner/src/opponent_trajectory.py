@@ -34,20 +34,20 @@ class Opponent_Trajectory:
         self.ros_time = rospy.Time()
 
         # Publisher
-        self.proj_opponent_trajectory_pub = rospy.Publisher('/proj_opponent_trajectory', ProjOppTraj, queue_size=10)
-        self.marker_pub = rospy.Publisher('/opponent_marker', MarkerArray, queue_size=10)
+        self.proj_opponent_trajectory_pub = rospy.Publisher('proj_opponent_trajectory', ProjOppTraj, queue_size=10)
+        self.marker_pub = rospy.Publisher('opponent_marker', MarkerArray, queue_size=10)
         # Subscriber
-        rospy.Subscriber("/perception/obstacles", ObstacleArray, self.obstacle_cb)
-        rospy.Subscriber('/car_state/odom_frenet', Odometry, self.car_state_frenet_cb) # car frenet coordinates
-        rospy.Subscriber('/global_waypoints', WpntArray, self.glb_wpnts_cb) # global waypoints
-        rospy.Subscriber('/opponent_trajectory', OpponentTrajectory, self.opp_traj_cb) # global waypoints
+        rospy.Subscriber("perception/obstacles", ObstacleArray, self.obstacle_cb)
+        rospy.Subscriber('car_state/odom_frenet', Odometry, self.car_state_frenet_cb) # car frenet coordinates
+        rospy.Subscriber('global_waypoints', WpntArray, self.glb_wpnts_cb) # global waypoints
+        rospy.Subscriber('opponent_trajectory', OpponentTrajectory, self.opp_traj_cb) # global waypoints
         #subscribe to state machine
-        rospy.Subscriber('/state_machine', String, self.state_machine_cb)
+        rospy.Subscriber('state_machine', String, self.state_machine_cb)
 
         # Retrieve ROS parameters
         self.loop_rate = rospy.get_param('~loop_rate', 25)
 
-        rospy.wait_for_message("/global_waypoints", WpntArray)
+        rospy.wait_for_message("global_waypoints", WpntArray)
         self.converter = self.initialize_converter()
 
     #callbacks
@@ -80,7 +80,7 @@ class Opponent_Trajectory:
     def initialize_converter(self) -> bool:
         """
         Initialize the FrenetConverter object"""
-        rospy.wait_for_message("/global_waypoints", WpntArray)
+        rospy.wait_for_message("global_waypoints", WpntArray)
 
         # Initialize the FrenetConverter object
         converter = FrenetConverter(self.waypoints[:, 0], self.waypoints[:, 1])
@@ -98,7 +98,7 @@ class Opponent_Trajectory:
         rate = rospy.Rate(self.loop_rate)
         self.lap_count = 0
         first_point = True
-        self.global_wpnts = rospy.wait_for_message("/global_waypoints", WpntArray)
+        self.global_wpnts = rospy.wait_for_message("global_waypoints", WpntArray)
         ego_s_sorted = [wnpt.s_m for wnpt in self.global_wpnts.wpnts]
         bound_right = [wnpt.d_right for wnpt in self.global_wpnts.wpnts]#all positive
         bound_left = [wnpt.d_left for wnpt in self.global_wpnts.wpnts]#all positive
@@ -117,7 +117,7 @@ class Opponent_Trajectory:
         initial_lap = True
         consecutive_points_off_opptraj = 0
 
-        rospy.wait_for_message("/perception/obstacles", ObstacleArray)
+        rospy.wait_for_message("perception/obstacles", ObstacleArray)
         while not rospy.is_shutdown(): 
             #sample data
             skip = False

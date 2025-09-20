@@ -23,19 +23,19 @@ class CollisionPredictor:
         rospy.init_node('collision_predictor', anonymous=True)
 
         # ROS Parameters
-        self.opponent_traj_topic = '/opponent_trajectory'
+        self.opponent_traj_topic = 'opponent_trajectory'
 
         # Subscriber
-        rospy.Subscriber("/perception/obstacles",
+        rospy.Subscriber("perception/obstacles",
                          ObstacleArray, self.opponent_state_cb)
-        rospy.Subscriber("/car_state/odom_frenet", Odometry, self.odom_cb)
+        rospy.Subscriber("car_state/odom_frenet", Odometry, self.odom_cb)
         rospy.Subscriber(self.opponent_traj_topic,
                          OpponentTrajectory, self.opponent_trajectory_cb)
-        rospy.Subscriber('/global_waypoints_updated',
+        rospy.Subscriber('global_waypoints_updated',
                          WpntArray, self.wpnts_updated_cb)
-        rospy.Subscriber("/state_machine", String, self.state_cb)
+        rospy.Subscriber("state_machine", String, self.state_cb)
         rospy.Subscriber(
-            "/dynamic_collision_tuner_node/parameter_updates", Config, self.dyn_param_cb)
+            "dynamic_collision_tuner_node/parameter_updates", Config, self.dyn_param_cb)
 
         self.frenet2glob = rospy.ServiceProxy(
             "convert_frenet2globarr_service", Frenet2GlobArr)
@@ -75,11 +75,11 @@ class CollisionPredictor:
 
         # Publisher
         self.marker_pub_beginn = rospy.Publisher(
-            "/collision_predict/beginn", Marker, queue_size=10)
+            "collision_predict/beginn", Marker, queue_size=10)
         self.marker_pub_end = rospy.Publisher(
-            "/collision_predict/end", Marker, queue_size=10)
+            "collision_predict/end", Marker, queue_size=10)
         self.collision_obs_pub = rospy.Publisher(
-            "/collision_prediction/obstacles", ObstacleArray, queue_size=10)
+            "collision_prediction/obstacles", ObstacleArray, queue_size=10)
         self.force_trailing_pub = rospy.Publisher(
             "collision_prediction/force_trailing", Bool, queue_size=10)
 
@@ -182,13 +182,13 @@ class CollisionPredictor:
         """
         rate = rospy.Rate(self.loop_rate)
         rospy.loginfo("[Coll. Pred.] Collision Predictor wating...")
-        rospy.wait_for_message("/global_waypoints", WpntArray)
-        rospy.wait_for_message("/global_waypoints_scaled", WpntArray)
-        rospy.wait_for_message("/global_waypoints_updated", WpntArray)
+        rospy.wait_for_message("global_waypoints", WpntArray)
+        rospy.wait_for_message("global_waypoints_scaled", WpntArray)
+        rospy.wait_for_message("global_waypoints_updated", WpntArray)
         rospy.loginfo("[Coll. Pred.] Updated waypoints recived!")
         rospy.wait_for_message(self.opponent_traj_topic, OpponentTrajectory)
         rospy.loginfo("[Coll. Pred.] Opponent waypoints recived!")
-        rospy.wait_for_message("/perception/obstacles", ObstacleArray)
+        rospy.wait_for_message("perception/obstacles", ObstacleArray)
         rospy.loginfo("[Coll. Pred.] Obstacles reveived!")
         rospy.loginfo("[Coll. Pred.] Collision Predictor ready!")
 

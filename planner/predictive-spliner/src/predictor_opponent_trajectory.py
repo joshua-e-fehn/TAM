@@ -31,18 +31,18 @@ class GaussianProcessOppTraj(object):
 
 
         #Subscribers
-        rospy.Subscriber('/proj_opponent_trajectory', ProjOppTraj, self.proj_opp_traj_cb)
-        rospy.Subscriber('/global_waypoints', WpntArray, self.glb_wpnts_cb) # global waypoints
+        rospy.Subscriber('proj_opponent_trajectory', ProjOppTraj, self.proj_opp_traj_cb)
+        rospy.Subscriber('global_waypoints', WpntArray, self.glb_wpnts_cb) # global waypoints
 
         # rospy.Subscriber('/opp/car_state/odom_frenet', Odometry, self.opp_car_state_frenet_cb) #testing with Rosbag
-        rospy.Subscriber('/opponent_trajectory', OpponentTrajectory, self.opp_traj_cb) #testing with Rosbag
+        rospy.Subscriber('opponent_trajectory', OpponentTrajectory, self.opp_traj_cb) #testing with Rosbag
 
         #Publishers
-        self.opp_traj_gp_pub = rospy.Publisher('/opponent_trajectory', OpponentTrajectory, queue_size=10)
-        self.opp_traj_marker_pub = rospy.Publisher('/opponent_traj_markerarray', MarkerArray, queue_size=10)
+        self.opp_traj_gp_pub = rospy.Publisher('opponent_trajectory', OpponentTrajectory, queue_size=10)
+        self.opp_traj_marker_pub = rospy.Publisher('opponent_traj_markerarray', MarkerArray, queue_size=10)
 
         #Frenet Converter
-        rospy.wait_for_message("/global_waypoints", WpntArray)
+        rospy.wait_for_message("global_waypoints", WpntArray)
         self.converter = self.initialize_converter()
 
 
@@ -66,7 +66,7 @@ class GaussianProcessOppTraj(object):
         
         """Initialize the FrenetConverter object"""
 
-        rospy.wait_for_message("/global_waypoints", WpntArray)
+        rospy.wait_for_message("global_waypoints", WpntArray)
 
         # Initialize the FrenetConverter object
         converter = FrenetConverter(self.waypoints[:, 0], self.waypoints[:, 1])
@@ -86,18 +86,18 @@ class GaussianProcessOppTraj(object):
         
         self.kernel_d = constant_kernel1_d * Matern(length_scale=1.0, nu=3/2) + constant_kernel2_d * WhiteKernel(noise_level=1)
 
-        self.global_wpnts = rospy.wait_for_message("/global_waypoints", WpntArray)
+        self.global_wpnts = rospy.wait_for_message("global_waypoints", WpntArray)
         self.max_velocity = max([wnpt.vx_mps for wnpt in self.global_wpnts.wpnts])
         ego_s_original = [wnpt.s_m for wnpt in self.global_wpnts.wpnts]
         ego_s_original.pop()#pop last point of original ego_s since it is double
         ego_s_doublelap = ego_s_original.copy()
         for i in range(len(ego_s_original)):
             ego_s_doublelap.append(ego_s_original[i]+self.track_length)
-        self.opponent_trajectory = rospy.wait_for_message("/opponent_trajectory", OpponentTrajectory)
+        self.opponent_trajectory = rospy.wait_for_message("opponent_trajectory", OpponentTrajectory)
         proj_opp_traj = ProjOppTraj()
 
         while not rospy.is_shutdown():
-            proj_opp_traj = rospy.wait_for_message('/proj_opponent_trajectory', ProjOppTraj)
+            proj_opp_traj = rospy.wait_for_message('proj_opponent_trajectory', ProjOppTraj)
             oppwpnts_list = self.opponent_trajectory.oppwpnts
             self.lap_count = proj_opp_traj.lapcount
             opp_on_traj = proj_opp_traj.opp_is_on_trajectory

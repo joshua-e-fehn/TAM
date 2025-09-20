@@ -187,6 +187,34 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/predictive_spliner/sqp_markers
+      Name: Predictive_Spliner_Overtaking_Trajectories
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/predictive_spliner/opponent_traj
+      Name: Predictive_Spliner_Opponent_Line_Predictions
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/predictive_spliner/collision_predict
+      Name: Predictive_Spliner_RegionOfCollision_Predictions
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/predictive_spliner/overtaking_reference
+      Name: Predictive_Spliner_Overtaking_Reference_Line
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0

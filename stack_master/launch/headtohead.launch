@@ -183,11 +183,17 @@
             <!-- Remap to use car-specific topics -->
             <remap from="/proj_opponent_trajectory" to="/$(arg car_name)/proj_opponent_trajectory"/>
             <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+            <remap from="/opponent_traj_markerarray" to="/$(arg car_name)/opponent_traj_markerarray"/>
         </node>
         <node pkg="predictive_spliner" type="predictor_opponent_trajectory.py" name="Predictor_Opp" output="screen">
             <!-- Remap to use car-specific topics -->
             <remap from="/proj_opponent_trajectory" to="/$(arg car_name)/proj_opponent_trajectory"/>
             <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+        </node>
+
+        <!-- launch marker color modifier for global visualization -->
+        <node pkg="predictive_spliner" type="marker_color_modifier.py" name="marker_color_modifier" output="screen">
+            <param name="car_name" value="$(arg car_name)" />
         </node>
     </group>
 
