@@ -1,0 +1,142 @@
+# Complete TAM Sampling Planner Configuration
+# Based on original TAM parameters for optimal racing performance
+
+# ========================================
+# Core Sampling Parameters
+# ========================================
+lateral_samples: 15              # Number of lateral trajectory samples
+longitudinal_samples: 8          # Number of longitudinal velocity profiles  
+n_dense_samples: 5               # Dense samples around raceline
+n_dense_min: -0.5               # Minimum lateral offset for dense sampling (m)
+n_dense_max: 0.5                # Maximum lateral offset for dense sampling (m)
+planning_horizon: 4.0           # Planning time horizon (seconds)
+dt: 0.1                         # Time discretization step (seconds)
+
+# ========================================
+# Vehicle Constraints (F1TENTH defaults)
+# ========================================
+max_speed: 20.0                 # Maximum vehicle speed (m/s)
+max_accel: 8.0                  # Maximum longitudinal acceleration (m/s²)
+max_lateral_accel: 12.0         # Maximum lateral acceleration (m/s²)
+track_width: 3.0                # Effective track width for sampling (m)
+
+# ========================================
+# Longitudinal Sampling Parameters
+# ========================================
+s_dot_end_min: 1.0              # Minimum end velocity (m/s)
+s_dot_discretization: 2.0       # Velocity discretization step (m/s)
+s_dot_max_positive_delta: 20.0  # Max positive velocity change (m/s)
+v_sampling_scale: 1.1           # Velocity sampling scale factor
+relative_s_dot_min_percentage: 0.5  # Relative minimum velocity percentage
+
+# ========================================
+# Cost Function Weights (TAM Defaults)
+# ========================================
+# Primary cost weights
+raceline_cost_weight: 3.5       # Raceline following cost weight
+velocity_cost_weight: 3.0       # Velocity optimization cost weight
+friction_cost_weight: 5000.0    # Friction constraint cost weight
+curvature_cost_weight: 500000.0 # Curvature penalty cost weight
+lateral_jerk_cost_weight: 0.5   # Lateral jerk comfort cost weight
+
+# Obstacle avoidance costs
+prediction_cost_weight: 100000.0     # Obstacle prediction cost weight
+collision_cost_weight: 100000000.0   # Collision avoidance cost weight
+
+# Overtaking behavior weights (for multi-car scenarios)
+raceline_cost_weight_overtaking: 2.0      # Raceline cost during overtaking
+velocity_cost_weight_overtaking: 8.0      # Velocity cost during overtaking
+lateral_jerk_cost_weight_overtaking: 0.0  # Lateral jerk cost during overtaking
+
+# ========================================
+# Safety Parameters
+# ========================================
+# Track boundary safety distances
+safety_distance_track_left: 0.5    # Safety distance to left track boundary (m)
+safety_distance_track_right: 0.5   # Safety distance to right track boundary (m)
+
+# Obstacle safety margins
+safety_margin_static: 0.5          # Safety margin for static obstacles (m)
+safety_margin_dynamic: 1.0         # Safety margin for dynamic obstacles (m)
+safety_distance_vehicles: 0.0      # Additional inter-vehicle safety distance (m)
+
+# Tube and lane parameters
+tube_width: 1.0                     # Trajectory tube width (m)
+
+# Emergency safety distances
+add_emergency_safety_distance_left: 0.0   # Extra emergency safety left (m)
+add_emergency_safety_distance_right: 0.0  # Extra emergency safety right (m)
+
+# ========================================
+# Trajectory Validation Parameters
+# ========================================
+kappa_thr: 0.1                     # Maximum allowed curvature (1/m)
+curvature_cost_threshold: 30.0     # Curvature threshold for cost penalty
+tire_util_max_check: 1.1           # Maximum tire utilization check
+
+# ========================================
+# Cost Behavior Parameters
+# ========================================
+increasing_rl_cost: true           # Enable increasing raceline cost over time
+velocity_excess_cost_multiplier: 2.0   # Velocity excess cost multiplier
+V_diff_max_costs: 15.0             # Maximum velocity difference for costs
+
+# ========================================
+# Collision and Prediction Parameters
+# ========================================
+collision_check_horizon_s: 1.5     # Collision check horizon (s-coordinate)
+
+# Prediction scaling factors
+prediction_s_factor_min_size: 0.03      # Prediction s factor minimum size
+prediction_s_factor_max_size: 0.012     # Prediction s factor maximum size
+prediction_s_asym_scaling: 1.5          # Prediction s asymmetric scaling
+prediction_n_factor: 0.2                # Prediction n factor
+prediction_uncertainty_weight: 4.0      # Prediction uncertainty weight
+
+# Prediction factors for different object types
+prediction_s_factor_defender: 0.03      # Prediction s factor for defender
+prediction_n_factor_defender: 0.2       # Prediction n factor for defender
+prediction_s_factor_static: 0.05        # Prediction s factor for static objects
+prediction_n_factor_static: 0.35        # Prediction n factor for static objects
+
+# ========================================
+# Trajectory Generation Parameters
+# ========================================
+num_samples: 51                         # Number of trajectory points
+min_trajectory_length: 10.0             # Minimum trajectory length (m)
+const_trajectory_time: 0.3              # Constant trajectory time (s)
+
+# Extension parameters for emergency trajectories
+extension_emergency_time_offset: 1.0    # Extension emergency time offset (s)
+extension_n_samples: 10                 # Extension number of samples
+extension_point_distance: 2.0           # Extension point distance (m)
+extension_min_resolution: 10            # Extension minimum resolution
+extension_max_s_sample: 300             # Extension maximum s sample
+additional_const_time_emergency: 0.5    # Additional constant time emergency (s)
+
+# ========================================
+# Behavior and Performance Parameters
+# ========================================
+max_deceleration_on_target_change: 5.0  # Max deceleration on target change (m/s²)
+forward_backward_velocities: true       # Add forward/backward velocity profiles
+samples_forward_backward: 3             # Number of forward/backward samples
+forward_backward_min_scale: 0.85        # Min acceleration scale for forward/backward
+forward_backward_max_scale: 0.95        # Max acceleration scale for forward/backward
+
+# ========================================
+# Interface Parameters
+# ========================================
+trajectory_len_controller: 50          # Trajectory length for controller
+send_trajectory_in_3d: true            # Send trajectory in 3D coordinates
+
+# ========================================
+# Debug and Logging Parameters
+# ========================================
+logging_sp: false                       # Enable sampling planner logging
+log_console_level: "INFO"               # Console log level
+log_file_level: "DEBUG"                 # File log level
+
+# Planning behavior
+lookahead: 15.0              # Lookahead distance for planning (m)
+enable_obstacle_avoidance: true  # Enable dynamic obstacle avoidance
+enable_overtaking: true      # Enable overtaking maneuvers

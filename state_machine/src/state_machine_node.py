@@ -166,6 +166,14 @@ class StateMachine:
                 StateType.OVERTAKE: state_transitions.PSOvertakingTransition,
                 StateType.FTGONLY: state_transitions.PSFTGOnlyTransition,
             }
+        elif self.ot_planner == "tam_sampling":
+            self.state_transitions = {
+                StateType.READY: state_transitions.PSReadyTransition,
+                StateType.GB_TRACK: state_transitions.PSGlobalTrackingTransition,
+                StateType.TRAILING: state_transitions.PSTrailingTransition,
+                StateType.OVERTAKE: state_transitions.PSOvertakingTransition,
+                StateType.FTGONLY: state_transitions.PSFTGOnlyTransition,
+            }
         elif self.ot_planner == "graph_based":
             rospy.logwarn(
                 "[State Machine] Graph Based Planner is deprecated! Some packages might be missing!")
@@ -225,7 +233,7 @@ class StateMachine:
                          self.obstacle_perception_cb)
         rospy.Subscriber("collision_prediction/obstacles",
                          ObstacleArray, self.obstacle_prediction_cb)
-        if self.ot_planner in ("spliner", "predictive_spliner"):
+        if self.ot_planner in ("spliner", "predictive_spliner", "tam_sampling"):
             rospy.Subscriber("planner/avoidance/otwpnts",
                              OTWpntArray, self.avoidance_cb)
         if self.ot_planner == "predictive_spliner":

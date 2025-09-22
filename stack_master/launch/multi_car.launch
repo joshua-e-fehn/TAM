@@ -6,6 +6,7 @@
   <!-- List of car namespaces to spawn -->
   <arg name="cars" default="car1,car2"/>
   <!-- Per-car planner selection (comma separated, aligns with cars) -->
+  <!-- Available planners: spliner, predictive_spliner, graph_based, frenet, tam_sampling -->
   <arg name="planners" default="spliner,spliner"/>
   <!-- Per-car map names (comma separated) -->
   <arg name="maps" default="M1,M1"/>

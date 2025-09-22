@@ -9,7 +9,7 @@
     <arg name="ctrl_algo" default="MAP" /> <!--  MAP / PP / STMPC / KMPC-->
     <arg name="measure" default="False" />
     <arg name="perception" default="True" /> <!--  True / False. False to disable the perception module when using the dummy obstacle publisher -->
-    <arg name="planner" default="spliner" /> <!--  spliner / predictive_spliner / graph_based / frenet -->
+    <arg name="planner" default="spliner" /> <!--  spliner / predictive_spliner / tam_sampling / graph_based / frenet -->
     
     <!-- OPTIMIZATION: Parameterized topic arguments for namespace-aware operation -->
     <arg name="global_waypoints_topic" default="/global_waypoints" />
@@ -197,6 +197,42 @@
         </node>
     </group>
 
+    <!-- PLANNER TAM SAMPLING -->
+    <group if="$(eval planner == 'tam_sampling')">
+        <!-- launch dynamic reconfigure for tuning State Machine and State Machine itself -->
+        <node pkg="state_machine" type="dynamic_statemachine_server.py" name="dynamic_statemachine_server" output="screen"/>
+        <!-- Ensure force_GBTRACK is always initialized to False -->
+        <param name="dynamic_statemachine_server/force_GBTRACK" value="false" />
+        <node pkg="state_machine" type="state_machine_node.py" name="state_machine" output="screen">
+                <rosparam file="$(find stack_master)/config/state_machine_params.yaml" />
+                <!--  tell state machine to pass entire logic -->
+                <param name="timetrials_only" value="False"/>
+                <!--  tell state machine which OT strategy we are using -->
+                <param name="ot_planner" value="tam_sampling"/>
+                <!-- OPTIMIZATION: Use parameterized topic names -->
+                <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
+                <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+                <remap from="global_waypoints/overtaking" to="$(arg global_waypoints_overtaking_topic)"/>
+        </node>
+
+        <!-- launch TAM sampling planner and dynamic reconfigure -->
+        <node pkg="tam_sampling_planner" type="dynamic_tam_sampling_server.py" name="dynamic_tam_sampling_tuner_node" output="screen"/>
+        <node pkg="tam_sampling_planner" type="tam_sampling_node.py" name="planner_tam_sampling" output="screen">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <remap from="local_waypoints" to="/$(arg car_name)/local_waypoints"/>
+            <!-- Remap to use multi-car obstacles for multi-car racing -->
+            <remap from="perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
+            <remap from="car_state/odom" to="/$(arg car_name)/car_state/odom"/>
+            <!-- Namespace the planner output -->
+            <remap from="planner/avoidance/otwpnts" to="/$(arg car_name)/planner/avoidance/otwpnts"/>
+            <remap from="planner/avoidance/markers" to="/$(arg car_name)/planner/avoidance/markers"/>
+        </node>
+    </group>
+
     <!-- PLANNER GRAPH BASED -->
     <group if="$(eval planner == 'graph_based')">
         <!-- launch dynamic reconfigure for tuning State Machine and State Machine itself -->
@@ -244,6 +280,7 @@
         <arg name="measure" value="$(arg measure)"/>
         </include>
     </group>
+
     <!-- ######################################################PLANNERS###################################################### -->
 
     <!-- PERCEPTION -->

@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- TAM Sampling Planner Launch File -->
+  <!-- Follows the same pattern as spliner and predictive_spliner -->
+  
+  <arg name="car_name" default="car1"/>
+  <arg name="config_file" default="tam_sampling_params.yaml"/>
+  
+  <!-- Load TAM sampling planner parameters -->
+  <rosparam file="$(find tam_sampling_planner)/config/$(arg config_file)" command="load" ns="tam_sampling_planner"/>
+  
+  <!-- Launch dynamic reconfigure server for parameter tuning -->
+  <node pkg="tam_sampling_planner" type="dynamic_tam_sampling_server.py" 
+        name="dynamic_tam_sampling_tuner_node" output="screen"/>
+  
+  <!-- Launch TAM sampling planner node -->
+  <node pkg="tam_sampling_planner" type="tam_sampling_node.py" 
+        name="tam_sampling_planner" output="screen">
+    
+    <!-- Load parameters from config file -->
+    <rosparam file="$(find tam_sampling_planner)/config/$(arg config_file)" command="load"/>
+    
+    <!-- Set car-specific parameters -->
+    <param name="car_name" value="$(arg car_name)"/>
+    
+    <!-- Topics will be automatically namespaced by the namespace in headtohead.launch -->
+    
+  </node>
+  
+</launch>
