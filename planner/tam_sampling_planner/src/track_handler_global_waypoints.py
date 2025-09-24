@@ -403,6 +403,39 @@ class GlobalWaypointsTrackHandler:
         """
         return self._frenet_converter is not None
 
+    def calc_apparent_acceleration(self, s: float, n: float, chi: float, ax_hat: float,
+                                   ay_hat: float, V: float) -> Tuple[float, float, float]:
+        """
+        Calculate apparent acceleration components for vehicle dynamics.
+
+        This is a simplified implementation that provides the basic functionality
+        needed for longitudinal sampling. For more advanced dynamics, a full
+        implementation would be needed.
+
+        Args:
+            s: Arc length position [m]
+            n: Lateral offset [m]
+            chi: Vehicle heading angle relative to track [rad]
+            ax_hat: Longitudinal acceleration in vehicle frame [m/s²]
+            ay_hat: Lateral acceleration in vehicle frame [m/s²]
+            V: Vehicle velocity [m/s]
+
+        Returns:
+            Tuple[float, float, float]: (ax_tilde, ay_tilde, g_tilde)
+                ax_tilde: Transformed longitudinal acceleration
+                ay_tilde: Transformed lateral acceleration  
+                g_tilde: Apparent gravitational acceleration
+        """
+        # Simplified implementation - in a full implementation this would
+        # account for track banking, elevation changes, and coordinate transformations
+
+        # For flat track assumption, the transformations are minimal
+        ax_tilde = ax_hat  # No transformation needed for flat track
+        ay_tilde = ay_hat  # No transformation needed for flat track
+        g_tilde = 9.81     # Standard gravity for flat track
+
+        return ax_tilde, ay_tilde, g_tilde
+
 
 # Compatibility alias for easy replacement
 Track = GlobalWaypointsTrackHandler
