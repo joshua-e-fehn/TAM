@@ -11,7 +11,7 @@ to ensure consistency with other components in the system.
 """
 
 import numpy as np
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 import warnings
 
 # Import the existing FrenetConverter
@@ -165,33 +165,45 @@ class GlobalWaypointsTrackHandler:
             raise RuntimeError("Track handler not initialized with waypoints")
         return self._s_coords
 
-    def trackwidth_left(self, s: float) -> float:
+    def trackwidth_left(self, s: float = None) -> Union[float, np.ndarray]:
         """
-        Get left track width at given arc length position.
+        Get left track width at given arc length position, or entire array if s is None.
 
         Args:
-            s: Arc length position [m]
+            s: Arc length position [m]. If None, returns entire array.
 
         Returns:
-            float: Left track width [m] (positive = available width to the left)
+            float or np.ndarray: Left track width [m] (positive = available width to the left)
         """
         if self._d_left_coords is None:
+            if s is None:
+                return np.full(len(self._s_coords) if self._s_coords is not None else 1,
+                               self._default_track_width / 2)
             return self._default_track_width / 2
+
+        if s is None:
+            return self._d_left_coords.copy()
 
         return float(np.interp(s, self._s_coords, self._d_left_coords, period=self._track_length))
 
-    def trackwidth_right(self, s: float) -> float:
+    def trackwidth_right(self, s: float = None) -> Union[float, np.ndarray]:
         """
-        Get right track width at given arc length position.
+        Get right track width at given arc length position, or entire array if s is None.
 
         Args:
-            s: Arc length position [m]
+            s: Arc length position [m]. If None, returns entire array.
 
         Returns:
-            float: Right track width [m] (positive = available width to the right)
+            float or np.ndarray: Right track width [m] (positive = available width to the right)
         """
         if self._d_right_coords is None:
+            if s is None:
+                return np.full(len(self._s_coords) if self._s_coords is not None else 1,
+                               self._default_track_width / 2)
             return self._default_track_width / 2
+
+        if s is None:
+            return self._d_right_coords.copy()
 
         return float(np.interp(s, self._s_coords, self._d_right_coords, period=self._track_length))
 
