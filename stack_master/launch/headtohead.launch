@@ -231,6 +231,36 @@
             <remap from="planner/avoidance/otwpnts" to="/$(arg car_name)/planner/avoidance/otwpnts"/>
             <remap from="planner/avoidance/markers" to="/$(arg car_name)/planner/avoidance/markers"/>
         </node>
+        
+        <!-- TAM Custom Predictor for opponent vehicle prediction -->
+        <node pkg="tam_sampling_planner" type="tam_prediction_node.py" name="tam_custom_predictor" output="screen">
+            <!-- Prediction parameters -->
+            <param name="prediction_horizon" value="50.0"/>
+            <param name="prediction_dt" value="0.1"/>
+            <param name="safety_margin" value="0.3"/>
+            <param name="smoothing_factor" value="0.8"/>
+            <!-- Smooth prediction parameters -->
+            <param name="prediction_buffer_age" value="1.0"/>  <!-- Keep predictions for 1 second -->
+            <param name="marker_lifetime" value="0.8"/>  <!-- Marker lifetime in seconds -->
+            <!-- Remap to use multi-car obstacles for prediction -->
+            <remap from="perception/multi_car_obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
+            <!-- Remap prediction outputs to car-specific namespace -->
+            <remap from="prediction/opponent_waypoints" to="/$(arg car_name)/prediction/opponent_waypoints"/>
+            <remap from="prediction/opponent_markerarray" to="/$(arg car_name)/prediction/opponent_markerarray"/>
+        </node>
+        
+        <!-- TAM Visualization for multi-car prediction markers -->
+        <node pkg="tam_sampling_planner" type="visualization.py" name="tam_visualization" output="screen">
+            <!-- Car name parameter for color coding -->
+            <param name="car_name" value="$(arg car_name)"/>
+            <!-- Smooth visualization parameters -->
+            <param name="visualization_rate" value="20.0"/>  <!-- 20 Hz for smooth display -->
+            <param name="marker_timeout" value="1.0"/>  <!-- Cache timeout in seconds -->
+            <!-- Remap input topics from car-specific namespaces -->
+            <remap from="prediction/opponent_markerarray" to="/$(arg car_name)/prediction/opponent_markerarray"/>
+        </node>
     </group>
 
     <!-- PLANNER GRAPH BASED -->

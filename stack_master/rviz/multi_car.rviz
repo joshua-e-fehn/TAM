@@ -215,6 +215,13 @@ Visualization Manager:
       Namespaces: {}
       Queue Size: 100
       Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/tam_sampling_planner/opponent_traj
+      Name: TAM_Sampling_Planner_Opponent_Line_Predictions
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
