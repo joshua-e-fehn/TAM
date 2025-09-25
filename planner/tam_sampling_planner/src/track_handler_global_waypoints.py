@@ -292,20 +292,25 @@ class GlobalWaypointsTrackHandler:
 
         return float(chi)
 
-    def omega_z(self, s: float) -> float:
+    def omega_z(self, s: float = None) -> Union[float, np.ndarray]:
         """
-        Get angular velocity (curvature * velocity) at given arc length position.
+        Get angular velocity (curvature * velocity) at given arc length position, or entire array if s is None.
 
         For planning purposes, this approximates the yaw rate contribution from track curvature.
 
         Args:
-            s: Arc length position [m]
+            s: Arc length position [m]. If None, returns entire array.
 
         Returns:
-            float: Angular velocity contribution [rad/s per m/s]
+            float or np.ndarray: Angular velocity contribution [rad/s per m/s]
         """
         if self._kappa_coords is None:
+            if s is None:
+                return np.zeros(len(self._s_coords) if self._s_coords is not None else 1)
             return 0.0
+
+        if s is None:
+            return self._kappa_coords.copy()
 
         # Return curvature at position s
         # Note: omega_z = kappa * s_dot, but since we don't have s_dot here,
