@@ -1,0 +1,553 @@
+from track_handler_global_waypoints import GlobalWaypointsTrackHandler as Track
+from pacejka_tire_model import PacejkaTireModel
+import numpy as np
+from dataclasses import dataclass
+import copy
+import rospy
+
+
+@dataclass
+class TrajectoryParams():
+    tube_width: float
+    num_samples: int
+    min_trajectory_length: float
+    extension_emergency_time_offset: float
+    extension_n_samples: int
+    extension_point_distance: float
+    extension_min_resolution: int
+    extension_max_s_sample: int
+    additional_const_time_emergency: float
+    const_trajectory_time: float
+    add_emergency_safety_distance_left: float
+    add_emergency_safety_distance_right: float
+    # Fallback tire limits (used when GGGV data is unavailable)
+    max_braking_deceleration_g: float  # Maximum braking in multiples of g
+    # Maximum lateral acceleration in multiples of g
+    max_lateral_acceleration_g: float
+
+
+class Trajectory():
+    def __init__(self, debugging):
+        self.params = TrajectoryParams()
+        self.load_parameters()
+        self.debugging = debugging
+
+        # Initialize Pacejka tire model for accurate force limits
+        try:
+            self.pacejka_model = PacejkaTireModel()
+            self.use_pacejka = True
+            rospy.loginfo(
+                "Trajectory: Using Pacejka tire model for force limits")
+        except Exception as e:
+            rospy.logwarn(
+                f"Trajectory: Failed to initialize Pacejka model ({e}), using fallback")
+            self.pacejka_model = None
+            self.use_pacejka = False
+
+    def load_parameters(self):
+        """Load parameters from ROS parameter server (relative namespace)."""
+        self.params.tube_width = rospy.get_param('~behavior/tube_width', 1.0)
+        self.params.num_samples = rospy.get_param(
+            'discretization/num_samples', 51)
+        self.params.min_trajectory_length = rospy.get_param(
+            'behavior/min_trajectory_length', 10.0)
+        self.params.extension_emergency_time_offset = rospy.get_param(
+            'behavior/extension_emergency_time_offset', 1.0)
+        self.params.extension_n_samples = rospy.get_param(
+            'behavior/extension_n_samples', 10)
+        self.params.extension_point_distance = rospy.get_param(
+            'behavior/extension_point_distance', 2.0)
+        self.params.extension_min_resolution = rospy.get_param(
+            'behavior/extension_min_resolution', 10)
+        self.params.extension_max_s_sample = rospy.get_param(
+            'behavior/extension_max_s_sample', 300)
+        self.params.add_emergency_safety_distance_left = rospy.get_param(
+            'safety_distances/add_emergency_safety_distance_left', 0.0)
+        self.params.add_emergency_safety_distance_right = rospy.get_param(
+            'safety_distances/add_emergency_safety_distance_right', 0.0)
+        self.params.additional_const_time_emergency = rospy.get_param(
+            'behavior/additional_const_time_emergency', 0.5)
+        self.params.const_trajectory_time = rospy.get_param(
+            'behavior/const_trajectory_time', 0.3)
+
+        # Fallback tire limits for emergency braking (when GGGV data unavailable)
+        # These should be tuned based on your Pacejka tire model parameters
+        # Conservative defaults: racing tires typically 1.2-1.5g braking, 1.5-2.0g lateral
+        self.params.max_braking_deceleration_g = rospy.get_param(
+            'behavior/max_braking_deceleration_g', 1.0)  # Conservative: 1.0g
+        self.params.max_lateral_acceleration_g = rospy.get_param(
+            'behavior/max_lateral_acceleration_g', 1.2)  # Conservative: 1.2g
+
+    def __calc_ax_avail(self, s, n, chi, V, Omega_z, track_handler, gggv_handler, pitlane_mode):
+        """
+        Calculate available braking acceleration.
+
+        NOTE: GGGV diagram functionality is commented out as Pacejka tire model is used instead.
+        Uses simplified physics-based braking limits as fallback.
+        """
+        ay_hat = V**2 * Omega_z
+        _, ay_tilde, g_tilde = track_handler.calc_apparent_acceleration(
+            s,
+            n,
+            chi,
+            0.0,  # ax_hat not required for ay_tilde and g_tilde
+            ay_hat,
+            V,
+        )
+
+        # ============================================================================
+        # GGGV DIAGRAM USAGE - COMMENTED OUT (No GGGV data available)
+        # ============================================================================
+        # Original GGGV-based code:
+        # _, ax_min_tilde, _, ay_max_tilde, ym_max = gggv_handler.acc_interpolator(
+        #     np.array(V), np.array(g_tilde), np.array(
+        #         s), np.array(n), not pitlane_mode, self.debugging
+        # )
+        # ax_avail_tilde = -np.abs(ax_min_tilde) * np.power(
+        #     max((1.0 - np.power(min(np.abs(ay_tilde) / (ay_max_tilde), 1.0),
+        #         gggv_handler.gg_exponent_ax_neg)), 1e-4), 1.0 / gggv_handler.gg_exponent_ax_neg
+        # )
+        # ============================================================================
+
+        # ============================================================================
+        # TIRE LIMIT CALCULATION - Two implementations available:
+        # 1. Pacejka tire model (accurate, physics-based)
+        # 2. Simplified fallback (configurable parameters)
+        # ============================================================================
+
+        if self.use_pacejka and self.pacejka_model is not None:
+            # PACEJKA MODEL: Accurate tire force calculation
+            # Considers:
+            # - Load-dependent tire forces (normal load from weight transfer)
+            # - Combined slip (friction ellipse with proper exponent)
+            # - Front/rear axle force distribution
+            # - Magic Formula coefficients from vehicle parameters
+
+            # Calculate available braking considering current lateral acceleration
+            # The Pacejka model internally handles:
+            # - Fx_max(Fz) from longitudinal magic formula
+            # - Fy_max(Fz) from lateral magic formula
+            # - Combined slip: sqrt((Fx/Fx_max)^n + (Fy/Fy_max)^n) <= 1
+            ax_avail_tilde = self.pacejka_model.calc_max_braking_acceleration(
+                ay_current=ay_tilde,
+                ax_current=0.0  # Conservative: assume no current longitudinal acceleration
+            )
+
+            # Scale by local gravity (track banking/elevation effects)
+            # g_tilde accounts for apparent gravity due to track geometry
+            ax_avail_tilde = ax_avail_tilde * (g_tilde / 9.81)
+
+        else:
+            # FALLBACK: Simplified physics-based braking limits
+            # Uses configurable parameters from ROS parameter server
+            # This is used if Pacejka model fails to initialize
+
+            rospy.logwarn_throttle(
+                10.0, "Using simplified tire model fallback")
+
+            # Maximum braking acceleration (from ROS parameters)
+            ax_max_available = -self.params.max_braking_deceleration_g * g_tilde
+
+            # Maximum lateral acceleration (from ROS parameters)
+            ay_max_available = self.params.max_lateral_acceleration_g * g_tilde
+
+            # Friction circle: reduce available braking when cornering
+            # sqrt(ax^2 + ay^2) <= mu*g
+            lateral_usage = min(abs(ay_tilde) / ay_max_available, 1.0)
+            longitudinal_capacity = np.sqrt(max(1.0 - lateral_usage**2, 0.0))
+
+            ax_avail_tilde = ax_max_available * longitudinal_capacity
+
+        return ax_avail_tilde, ay_tilde, g_tilde
+
+    def __extend_emergency_trajectory(
+        self,
+        trajectory: dict,
+        track_handler: Track,
+        s_range: np.ndarray,
+        vehicle_params,
+        msgs_logger
+
+    ):
+        points_to_reach_min_traj_points = self.params.num_samples - \
+            len(trajectory)
+        ds = self.params.extension_point_distance
+
+        # End values of current emergency trajectory
+        V = trajectory["V"][-1]
+        n = trajectory["n"][-1]
+        s = trajectory["s"][-1]
+        s_dot = trajectory["s_dot"][-1]
+        chi = trajectory["chi"][-1]
+        omega_z_vf = trajectory["Omega_z"][-1]
+        omega_z_reference_frame_start = track_handler.omega_z(s)
+        d_omega_z_reference_frame_start = track_handler.d_omega_z(s)
+
+        # Boundary conditions of lateral extension sample (sampled regarding to s not to t) for the start
+        n_prime_start = trajectory["n_dot"][-1] / trajectory["s_dot"][-1]
+
+        n_pprime_start = -(
+            d_omega_z_reference_frame_start * n +
+            omega_z_reference_frame_start * n_prime_start
+        ) * np.tan(chi) + (1 - omega_z_reference_frame_start * n) / np.cos(chi) ** 2 * (
+            omega_z_vf * (1 - omega_z_reference_frame_start * n) /
+            np.cos(chi) - omega_z_reference_frame_start
+        )
+
+        for length_emergency in s_range:
+            num_samples = max(int(length_emergency / ds), max(
+                self.params.extension_min_resolution, points_to_reach_min_traj_points))
+            ds = length_emergency / num_samples
+            # Calculate the extention of time, velocity, s_global and s_local
+            trajectory_extension = {}
+            trajectory_extension["t"] = trajectory["t"][-1] + \
+                np.cumsum(ds / V * np.ones(num_samples))
+            trajectory_extension["V"] = V * np.ones(num_samples)
+            trajectory_extension["s_dot"] = s_dot * np.ones(num_samples)
+            trajectory_extension["s"] = (
+                s + np.cumsum(ds * np.ones(num_samples))) % track_handler.s_coord()[-1]
+            trajectory_extension["s_loc"] = trajectory["s_loc"][-1] + \
+                np.cumsum(ds * np.ones(num_samples))
+
+            # Linaer euqation systems for calculating extention polynomial
+            s_loc_loc = trajectory_extension["s_loc"] - \
+                trajectory_extension["s_loc"][0] + ds
+            s_end = s_loc_loc[-1]
+            a = np.array(
+                [
+                    [1, 0, 0, 0, 0, 0],
+                    [0, 1, 0, 0, 0, 0],
+                    [0, 0, 1, 0, 0, 0],
+                    [1, s_end, s_end**2, s_end**3, s_end**4, s_end**5],
+                    [0, 1, 2 * s_end, 3 * s_end**2, 4 * s_end**3, 5 * s_end**4],
+                    [0, 0, 2, 6 * s_end, 12 * s_end**2, 20 * s_end**3],
+                ]
+            )
+
+            # Boundary conditions of lateral extension sample (sampled regarding to s not to t) for the end
+            n_rl_end = 0.0
+            n_prime_end = 0.0
+            n_pprime_end = 0.0
+
+            b = np.array([n, n_prime_start, n_pprime_start,
+                         n_rl_end, n_prime_end, n_pprime_end])
+
+            # Calculating coefficients of sample
+            c = np.linalg.solve(a=a, b=b)
+
+            # Calculate n and derivatives regarding to s
+            s_quad = s_loc_loc * s_loc_loc
+            s_cubi = s_loc_loc * s_quad
+            s_quar = s_loc_loc * s_cubi
+            s_quin = s_loc_loc * s_quar
+
+            s_matrix = np.column_stack(
+                (np.ones_like(s_loc_loc), s_loc_loc, s_quad, s_cubi, s_quar, s_quin))
+
+            trajectory_extension["n"] = s_matrix @ c
+            dn_ds = (s_matrix[:, :-1] * np.array([1, 2, 3, 4, 5])) @ c[1:]
+            dn_ds2 = (s_matrix[:, :-2] * np.array([2, 6, 12, 20])) @ c[2:]
+
+            # Interpolate the angle velocity of the road frame (reference frame)
+            omega_z_reference_frame = track_handler.omega_z(
+                trajectory_extension["s"]).squeeze()
+
+            # Calculate the angle acceleration of the road frame (reference frame)
+            d_omega_z_reference_frame = track_handler.d_omega_z(
+                trajectory_extension["s"]).squeeze()
+
+            # Calculate heading and s_dot
+            trajectory_extension["chi"] = np.arctan(
+                dn_ds / (1 - omega_z_reference_frame * trajectory_extension["n"]))
+
+            # Calculate angular velocity regarding to velocity frame
+            trajectory_extension["Omega_z"] = (
+                (
+                    (
+                        dn_ds2
+                        + (d_omega_z_reference_frame *
+                           trajectory_extension["n"] + omega_z_reference_frame * dn_ds)
+                        * np.tan(trajectory_extension["chi"])
+                    )
+                    * np.cos(trajectory_extension["chi"]) ** 2
+                    / (1 - omega_z_reference_frame * trajectory_extension["n"])
+                    + omega_z_reference_frame
+                )
+                * np.cos(trajectory_extension["chi"])
+                / (1 - omega_z_reference_frame * trajectory_extension["n"])
+            )
+
+            # Calculate accelerations (vertical velocity w of reference frame is not considered regrading a_y)
+            trajectory_extension["ay"] = (
+                trajectory_extension["V"] ** 2) * trajectory_extension["Omega_z"]
+            trajectory_extension["ax"] = np.zeros(num_samples)
+            trajectory_extension["ax_tilde"], trajectory_extension["ay_tilde"], trajectory_extension["g_tilde"] = (
+                track_handler.calc_apparent_acceleration(
+                    trajectory_extension["s"],
+                    trajectory_extension["n"],
+                    trajectory_extension["chi"],
+                    trajectory_extension["ax"],
+                    trajectory_extension["ay"],
+                    trajectory_extension["V"],
+                )
+            )
+            trajectory_extension["ax_tilde"] = np.squeeze(
+                trajectory_extension["ax_tilde"])
+            trajectory_extension["ay_tilde"] = np.squeeze(
+                trajectory_extension["ay_tilde"])
+            trajectory_extension["g_tilde"] = np.squeeze(
+                trajectory_extension["g_tilde"])
+            trajectory_extension["tire_util"] = np.zeros(num_samples)
+
+            # Check if trajectory extension is within track:
+            left_bound = (
+                track_handler.trackwidth_left(
+                    trajectory_extension["s"]).squeeze()
+                - vehicle_params["total_width"] / 2.0
+                - (self.params.tube_width)
+                - self.params.add_emergency_safety_distance_left
+            )
+            right_bound = (
+                track_handler.trackwidth_right(
+                    trajectory_extension["s"]).squeeze()
+                + vehicle_params["total_width"] / 2.0
+                + (self.params.tube_width)
+                + self.params.add_emergency_safety_distance_right
+            )
+
+            if not np.all((trajectory_extension["n"] < (left_bound)) & (trajectory_extension["n"] > (right_bound))):
+                continue
+            else:
+                # Add trajectory extention to original trajectory
+                for key in trajectory_extension:
+                    if isinstance(trajectory[key], np.ndarray):
+                        trajectory[key] = np.concatenate(
+                            (trajectory[key], trajectory_extension[key]))
+                return True
+        msgs_logger.warning(
+            "No trajectory extension passed the checks. Trajectory is not extended!")
+        return False
+
+    def calc_emergency_trajectory(
+        self,
+        track_handler: Track,
+        performance_trajectory,
+        # NOTE: Not used in current implementation (GGGV data unavailable)
+        gggv_handler,
+        pitlane_mode,
+        vehicle_params,
+        msgs_logger
+    ):
+        """
+        NOTE: gggv_handler parameter is kept for compatibility but not actively used.
+        Braking limits are calculated using simplified physics-based fallback in __calc_ax_avail().
+        """
+
+        emergency_trajectory = copy.deepcopy(performance_trajectory)
+        emergency_trajectory["emergency"] = True
+
+        start_idx = 0
+        extension_count = 0
+        while not (emergency_trajectory["V"][-1] <= 1e-3 and emergency_trajectory["V"][-2] <= 1e-3):
+            # Forward solver
+            for i, (s, n, chi, Omega_z) in enumerate(
+                zip(
+                    emergency_trajectory["s"][start_idx:-1],
+                    emergency_trajectory["n"][start_idx:-1],
+                    emergency_trajectory["chi"][start_idx:-1],
+                    emergency_trajectory["Omega_z"][start_idx:-1],
+                ),
+                start_idx,
+            ):
+                if emergency_trajectory["t"][i] < (self.params.const_trajectory_time + self.params.additional_const_time_emergency):
+                    continue
+
+                V = emergency_trajectory["V"][i]
+                ax_avail_tilde, ay_tilde, g_tilde = self.__calc_ax_avail(
+                    s=s, n=n, chi=chi, Omega_z=Omega_z, V=V, track_handler=track_handler, gggv_handler=gggv_handler, pitlane_mode=pitlane_mode)
+                ax_avail_hat, ay_hat = track_handler.calc_acceleration(
+                    s, chi, ax_avail_tilde, ay_tilde)
+                # TODO: acc in tilde frame probably correct, both left here for now
+                emergency_trajectory["ax"][i] = ax_avail_hat
+                emergency_trajectory["ay"][i] = ay_hat
+                emergency_trajectory["ax_tilde"][i] = ax_avail_tilde
+                emergency_trajectory["ay_tilde"][i] = ay_tilde
+                emergency_trajectory["g_tilde"][i] = g_tilde
+
+                ds = (emergency_trajectory["s"][i + 1] -
+                      s) % track_handler.s_coord()[-1]
+                emergency_trajectory["V"][i + 1] = (
+                    np.sqrt(V**2 + 2 * ax_avail_tilde * ds) if V ** 2 +
+                    2 * ax_avail_tilde * ds > 0.0 else 1e-4
+                )
+                emergency_trajectory["t"][i + 1] = emergency_trajectory["t"][i] + 2 * ds / (
+                    V + emergency_trajectory["V"][i + 1]
+                )
+
+                if emergency_trajectory["V"][i + 1] < 1e-3:
+                    dt = emergency_trajectory["t"][i +
+                                                   1] - emergency_trajectory["t"][i]
+                    emergency_trajectory["ax_tilde"][i] = 2 * \
+                        (ds - V * dt) / dt**2
+
+            # set accelerations for last point that is not inside the for loop:
+            ax_avail_tilde, ay_tilde, g_tilde = self.__calc_ax_avail(
+                s=emergency_trajectory["s"][i + 1],
+                n=emergency_trajectory["n"][i + 1],
+                chi=emergency_trajectory["chi"][i + 1],
+                Omega_z=emergency_trajectory["Omega_z"][i + 1],
+                V=emergency_trajectory["V"][i + 1],
+                track_handler=track_handler,
+                gggv_handler=gggv_handler,
+                pitlane_mode=pitlane_mode
+            )
+            ax_avail_hat, ay_hat = track_handler.calc_acceleration(
+                emergency_trajectory["s"][i +
+                                          1], emergency_trajectory["chi"][i + 1], ax_avail_tilde, ay_tilde
+            )
+            emergency_trajectory["ax"][i + 1] = ax_avail_hat
+            emergency_trajectory["ay"][i + 1] = ay_hat
+            emergency_trajectory["ax_tilde"][i + 1] = ax_avail_tilde
+            emergency_trajectory["ay_tilde"][i + 1] = ay_tilde
+            emergency_trajectory["g_tilde"][i + 1] = g_tilde
+
+            if emergency_trajectory["V"][i + 1] < 1e-3:
+                emergency_trajectory["ax_tilde"][i + 1] = 0.0
+
+            if not (emergency_trajectory["V"][-1] <= 1e-3 and emergency_trajectory["V"][-2] <= 1e-3):
+                if extension_count == 0:
+                    t_emergency_start = performance_trajectory["t"][-1] - \
+                        self.params.extension_emergency_time_offset
+                    mask = performance_trajectory["t"] <= t_emergency_start
+                    start_idx = np.min(
+                        np.argpartition(
+                            np.abs(performance_trajectory["t"] - t_emergency_start), 2)[:2]
+                    )
+
+                    for key in emergency_trajectory:
+                        try:
+                            emergency_trajectory[key] = emergency_trajectory[key][mask]
+                        except:
+                            pass
+                    s_min = performance_trajectory["s_loc"][-1] - \
+                        emergency_trajectory["s_loc"][-1]
+                else:
+                    t_emergency_start = emergency_trajectory["t"][-1]
+                    s_min = 5.0
+
+                s_max = self.params.extension_max_s_sample
+                s_range = np.linspace(
+                    s_max, s_min, num=self.params.extension_n_samples)
+                solution_within_trackbounds = self.__extend_emergency_trajectory(
+                    trajectory=emergency_trajectory,
+                    track_handler=track_handler,
+                    s_range=s_range,
+                    vehicle_params=vehicle_params,
+                    msgs_logger=msgs_logger
+                )
+                extension_count = extension_count + 1
+                if not solution_within_trackbounds:
+                    return
+
+        # set tire utilization to 1.0 while V > 0.0 + threshold
+        emergency_trajectory["tire_util"] = np.where(
+            emergency_trajectory["V"] > 1e-3, 1.0, 0.0)
+
+        # Compute s_dot
+        Omega_z = np.interp(
+            emergency_trajectory["s"], track_handler.s_coord(), track_handler.omega_z())
+        emergency_trajectory['s_dot'] = emergency_trajectory['V'] * np.cos(
+            emergency_trajectory['chi']) / (1.0 - emergency_trajectory['n'] * Omega_z)
+
+        return emergency_trajectory
+
+    def extend_performance_trajectory(
+        self,
+        trajectory: dict,
+        track_handler: Track,
+    ):
+        # Reload parameters in case they've been updated
+        self.load_parameters()
+
+        ds = self.params.min_trajectory_length / self.params.num_samples
+        V = trajectory["V"][-1]
+        n = trajectory["n"][-1]
+        trajectory_extension = {}
+
+        trajectory_extension["t"] = trajectory["t"][-1] + \
+            np.cumsum(ds / V * np.ones(self.params.num_samples))
+        trajectory_extension["V"] = V * np.ones(self.params.num_samples)
+        trajectory_extension["n"] = n * np.ones(self.params.num_samples)
+        trajectory_extension["s"] = (
+            trajectory["s"][-1] +
+            np.cumsum(ds * np.ones(self.params.num_samples))
+        ) % track_handler.s_coord()[-1]
+        trajectory_extension["s_loc"] = trajectory["s_loc"][-1] + \
+            np.cumsum(ds * np.ones(self.params.num_samples))
+        trajectory_extension["Omega_x"] = np.interp(
+            trajectory_extension["s"],
+            track_handler.s_coord(),
+            track_handler.omega_x(),
+            period=track_handler.s_coord()[-1],
+        )
+        trajectory_extension["Omega_y"] = np.interp(
+            trajectory_extension["s"],
+            track_handler.s_coord(),
+            track_handler.omega_y(),
+            period=track_handler.s_coord()[-1],
+        )
+        Omega_z_tmp = np.interp(
+            trajectory_extension["s"],
+            track_handler.s_coord(),
+            track_handler.omega_z(),
+            period=track_handler.s_coord()[-1],
+        )
+
+        # prevent Omega_z from becoming zero
+        Omega_z_tmp_no_zeros = np.where(Omega_z_tmp == 0, 1e-7, Omega_z_tmp)
+
+        trajectory_extension["Omega_z"] = 1.0 / \
+            (1.0 / (Omega_z_tmp_no_zeros) - n)
+        trajectory_extension["s_dot"] = V / (
+            1.0 - n *
+            np.interp(
+                trajectory_extension["s"], track_handler.s_coord(), track_handler.omega_z())
+        )
+        trajectory_extension["ax"] = np.zeros(self.params.num_samples)
+        trajectory_extension["jx"] = np.zeros(self.params.num_samples)
+        trajectory_extension["jy"] = np.zeros(self.params.num_samples)
+        trajectory_extension["epsilon_rho"] = np.zeros(self.params.num_samples)
+        trajectory_extension["epsilon_V"] = np.zeros(self.params.num_samples)
+        trajectory_extension["ay"] = trajectory_extension["Omega_z"] * \
+            trajectory_extension["V"] ** 2
+        trajectory_extension["chi"] = np.zeros(self.params.num_samples)
+        trajectory_extension["ax_tilde"], trajectory_extension["ay_tilde"], trajectory_extension["g_tilde"] = (
+            track_handler.calc_apparent_acceleration(
+                trajectory_extension["s"],
+                trajectory_extension["n"],
+                trajectory_extension["chi"],
+                trajectory_extension["ax"],
+                trajectory_extension["ay"],
+                trajectory_extension["V"],
+            )
+        )
+
+        trajectory_extension["ax_tilde"] = np.squeeze(
+            trajectory_extension["ax_tilde"])
+        trajectory_extension["ay_tilde"] = np.squeeze(
+            trajectory_extension["ay_tilde"])
+        trajectory_extension["g_tilde"] = np.squeeze(
+            trajectory_extension["g_tilde"])
+
+        trajectory_extension["s_ddot"] = np.zeros(self.params.num_samples)
+        trajectory_extension["n_dot"] = np.zeros(self.params.num_samples)
+        trajectory_extension["n_ddot"] = np.zeros(self.params.num_samples)
+
+        trajectory_extension["tire_util"] = np.zeros(self.params.num_samples)
+
+        for key in trajectory:
+            if isinstance(trajectory[key], np.ndarray):
+                trajectory[key] = np.concatenate(
+                    (trajectory[key], trajectory_extension[key]))
+
+        return trajectory

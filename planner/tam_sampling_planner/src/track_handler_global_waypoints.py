@@ -165,12 +165,12 @@ class GlobalWaypointsTrackHandler:
             raise RuntimeError("Track handler not initialized with waypoints")
         return self._s_coords
 
-    def trackwidth_left(self, s: float = None) -> Union[float, np.ndarray]:
+    def trackwidth_left(self, s: Union[float, np.ndarray] = None) -> Union[float, np.ndarray]:
         """
-        Get left track width at given arc length position, or entire array if s is None.
+        Get left track width at given arc length position(s), or entire array if s is None.
 
         Args:
-            s: Arc length position [m]. If None, returns entire array.
+            s: Arc length position(s) [m]. If None, returns entire array. Can be scalar or array.
 
         Returns:
             float or np.ndarray: Left track width [m] (positive = available width to the left)
@@ -179,19 +179,23 @@ class GlobalWaypointsTrackHandler:
             if s is None:
                 return np.full(len(self._s_coords) if self._s_coords is not None else 1,
                                self._default_track_width / 2)
+            if isinstance(s, np.ndarray):
+                return np.full_like(s, self._default_track_width / 2)
             return self._default_track_width / 2
 
         if s is None:
             return self._d_left_coords.copy()
 
-        return float(np.interp(s, self._s_coords, self._d_left_coords, period=self._track_length))
+        result = np.interp(s, self._s_coords,
+                           self._d_left_coords, period=self._track_length)
+        return result if isinstance(s, np.ndarray) else float(result)
 
-    def trackwidth_right(self, s: float = None) -> Union[float, np.ndarray]:
+    def trackwidth_right(self, s: Union[float, np.ndarray] = None) -> Union[float, np.ndarray]:
         """
-        Get right track width at given arc length position, or entire array if s is None.
+        Get right track width at given arc length position(s), or entire array if s is None.
 
         Args:
-            s: Arc length position [m]. If None, returns entire array.
+            s: Arc length position(s) [m]. If None, returns entire array. Can be scalar or array.
 
         Returns:
             float or np.ndarray: Right track width [m] (positive = available width to the right)
@@ -200,12 +204,16 @@ class GlobalWaypointsTrackHandler:
             if s is None:
                 return np.full(len(self._s_coords) if self._s_coords is not None else 1,
                                self._default_track_width / 2)
+            if isinstance(s, np.ndarray):
+                return np.full_like(s, self._default_track_width / 2)
             return self._default_track_width / 2
 
         if s is None:
             return self._d_right_coords.copy()
 
-        return float(np.interp(s, self._s_coords, self._d_right_coords, period=self._track_length))
+        result = np.interp(s, self._s_coords,
+                           self._d_right_coords, period=self._track_length)
+        return result if isinstance(s, np.ndarray) else float(result)
 
     def lateral_offset(self, s: float) -> float:
         """
@@ -292,14 +300,14 @@ class GlobalWaypointsTrackHandler:
 
         return float(chi)
 
-    def omega_z(self, s: float = None) -> Union[float, np.ndarray]:
+    def omega_z(self, s: Union[float, np.ndarray] = None) -> Union[float, np.ndarray]:
         """
-        Get angular velocity (curvature * velocity) at given arc length position, or entire array if s is None.
+        Get angular velocity (curvature * velocity) at given arc length position(s), or entire array if s is None.
 
         For planning purposes, this approximates the yaw rate contribution from track curvature.
 
         Args:
-            s: Arc length position [m]. If None, returns entire array.
+            s: Arc length position(s) [m]. If None, returns entire array. Can be scalar or array.
 
         Returns:
             float or np.ndarray: Angular velocity contribution [rad/s per m/s]
@@ -307,6 +315,8 @@ class GlobalWaypointsTrackHandler:
         if self._kappa_coords is None:
             if s is None:
                 return np.zeros(len(self._s_coords) if self._s_coords is not None else 1)
+            if isinstance(s, np.ndarray):
+                return np.zeros_like(s)
             return 0.0
 
         if s is None:
@@ -315,10 +325,10 @@ class GlobalWaypointsTrackHandler:
         # Return curvature at position s
         # Note: omega_z = kappa * s_dot, but since we don't have s_dot here,
         # we return just curvature and let the caller multiply by velocity
-        kappa = np.interp(s, self._s_coords, self._kappa_coords,
-                          period=self._track_length)
+        result = np.interp(s, self._s_coords,
+                           self._kappa_coords, period=self._track_length)
 
-        return float(kappa)
+        return result if isinstance(s, np.ndarray) else float(result)
 
     def get_track_length(self) -> float:
         """
@@ -420,8 +430,9 @@ class GlobalWaypointsTrackHandler:
         """
         return self._frenet_converter is not None
 
-    def calc_apparent_acceleration(self, s: float, n: float, chi: float, ax_hat: float,
-                                   ay_hat: float, V: float) -> Tuple[float, float, float]:
+    def calc_apparent_acceleration(self, s: Union[float, np.ndarray], n: Union[float, np.ndarray],
+                                   chi: Union[float, np.ndarray], ax_hat: Union[float, np.ndarray],
+                                   ay_hat: Union[float, np.ndarray], V: Union[float, np.ndarray]) -> Tuple:
         """
         Calculate apparent acceleration components for vehicle dynamics.
 
@@ -430,15 +441,15 @@ class GlobalWaypointsTrackHandler:
         implementation would be needed.
 
         Args:
-            s: Arc length position [m]
-            n: Lateral offset [m]
-            chi: Vehicle heading angle relative to track [rad]
-            ax_hat: Longitudinal acceleration in vehicle frame [m/s²]
-            ay_hat: Lateral acceleration in vehicle frame [m/s²]
-            V: Vehicle velocity [m/s]
+            s: Arc length position(s) [m] - can be scalar or array
+            n: Lateral offset(s) [m] - can be scalar or array
+            chi: Vehicle heading angle(s) relative to track [rad] - can be scalar or array
+            ax_hat: Longitudinal acceleration(s) in vehicle frame [m/s²] - can be scalar or array
+            ay_hat: Lateral acceleration(s) in vehicle frame [m/s²] - can be scalar or array
+            V: Vehicle velocity(ies) [m/s] - can be scalar or array
 
         Returns:
-            Tuple[float, float, float]: (ax_tilde, ay_tilde, g_tilde)
+            Tuple: (ax_tilde, ay_tilde, g_tilde) - same type as inputs (scalar or array)
                 ax_tilde: Transformed longitudinal acceleration
                 ay_tilde: Transformed lateral acceleration  
                 g_tilde: Apparent gravitational acceleration
@@ -449,9 +460,185 @@ class GlobalWaypointsTrackHandler:
         # For flat track assumption, the transformations are minimal
         ax_tilde = ax_hat  # No transformation needed for flat track
         ay_tilde = ay_hat  # No transformation needed for flat track
-        g_tilde = 9.81     # Standard gravity for flat track
+
+        # Handle both scalar and array inputs for gravity
+        if isinstance(s, np.ndarray):
+            # Standard gravity for flat track
+            g_tilde = np.full_like(s, 9.81, dtype=float)
+        else:
+            g_tilde = 9.81  # Standard gravity for flat track
 
         return ax_tilde, ay_tilde, g_tilde
+
+    def calc_acceleration(self, s: float, chi: float, ax_tilde: float, ay_tilde: float) -> Tuple[float, float]:
+        """
+        Transform accelerations from track-tilted frame back to velocity frame.
+
+        This is the inverse transformation of calc_apparent_acceleration.
+        For flat track, this is a simple pass-through.
+
+        Args:
+            s: Arc length position [m]
+            chi: Vehicle heading angle relative to track [rad]
+            ax_tilde: Longitudinal acceleration in track-tilted frame [m/s²]
+            ay_tilde: Lateral acceleration in track-tilted frame [m/s²]
+
+        Returns:
+            Tuple[float, float]: (ax_hat, ay_hat) accelerations in velocity frame
+        """
+        # Simplified implementation for flat track
+        ax_hat = ax_tilde
+        ay_hat = ay_tilde
+
+        return ax_hat, ay_hat
+
+    def d_omega_z(self, s: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """
+        Get derivative of angular velocity (rate of change of curvature) with respect to s.
+
+        Args:
+            s: Arc length position(s) [m]
+
+        Returns:
+            float or np.ndarray: d(omega_z)/ds [rad/m²]
+        """
+        if self._kappa_coords is None:
+            if isinstance(s, np.ndarray):
+                return np.zeros_like(s)
+            return 0.0
+
+        # Calculate derivative using finite differences
+        if isinstance(s, np.ndarray):
+            d_kappa = np.gradient(self._kappa_coords, self._s_coords)
+            return np.interp(s, self._s_coords, d_kappa, period=self._track_length)
+        else:
+            d_kappa = np.gradient(self._kappa_coords, self._s_coords)
+            return float(np.interp(s, self._s_coords, d_kappa, period=self._track_length))
+
+    def omega_x(self, s: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """
+        Get angular velocity around x-axis (roll rate contribution from track banking).
+
+        For flat track, this returns zero.
+
+        Args:
+            s: Arc length position(s) [m]
+
+        Returns:
+            float or np.ndarray: Angular velocity around x-axis [rad/s per m/s]
+        """
+        if isinstance(s, np.ndarray):
+            return np.zeros_like(s)
+        return 0.0
+
+    def omega_y(self, s: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """
+        Get angular velocity around y-axis (pitch rate contribution from elevation changes).
+
+        For flat track, this returns zero.
+
+        Args:
+            s: Arc length position(s) [m]
+
+        Returns:
+            float or np.ndarray: Angular velocity around y-axis [rad/s per m/s]
+        """
+        if isinstance(s, np.ndarray):
+            return np.zeros_like(s)
+        return 0.0
+
+    def phi(self, s: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """
+        Get track banking angle at given arc length position(s).
+
+        For flat track, this returns zero.
+
+        Args:
+            s: Arc length position(s) [m]
+
+        Returns:
+            float or np.ndarray: Banking angle [rad]
+        """
+        if isinstance(s, np.ndarray):
+            return np.zeros_like(s)
+        return 0.0
+
+    def mu(self, s: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """
+        Get track pitch/elevation angle at given arc length position(s).
+
+        For flat track, this returns zero.
+
+        Args:
+            s: Arc length position(s) [m]
+
+        Returns:
+            float or np.ndarray: Pitch angle [rad]
+        """
+        if isinstance(s, np.ndarray):
+            return np.zeros_like(s)
+        return 0.0
+
+    def calc_2d_heading_from_chi(self, s: Union[float, np.ndarray], chi: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """
+        Calculate 2D heading angle (psi) from chi angle and track position.
+
+        Chi represents the angle between vehicle velocity and track tangent.
+        Psi is the absolute heading angle in global frame.
+
+        Args:
+            s: Arc length position(s) [m]
+            chi: Chi angle(s) [rad]
+
+        Returns:
+            float or np.ndarray: 2D heading angle(s) [rad]
+        """
+        if self._psi_coords is None:
+            if isinstance(s, np.ndarray):
+                return chi
+            return float(chi)
+
+        # Get track tangent angle at position s
+        if isinstance(s, np.ndarray):
+            track_heading = np.interp(
+                s, self._s_coords, self._psi_coords, period=self._track_length)
+            psi_2d = track_heading + chi
+            # Normalize to [-pi, pi]
+            return np.arctan2(np.sin(psi_2d), np.cos(psi_2d))
+        else:
+            track_heading = np.interp(
+                s, self._s_coords, self._psi_coords, period=self._track_length)
+            psi_2d = track_heading + chi
+            # Normalize to [-pi, pi]
+            return float(np.arctan2(np.sin(psi_2d), np.cos(psi_2d)))
+
+    def angles_to_velocity_frame(self, s: Union[float, np.ndarray], chi: Union[float, np.ndarray]) -> np.ndarray:
+        """
+        Calculate Euler angles (yaw, pitch, roll) from inertial to velocity frame.
+
+        For flat track, this primarily involves the yaw angle transformation.
+
+        Args:
+            s: Arc length position(s) [m]
+            chi: Chi angle(s) [rad]
+
+        Returns:
+            np.ndarray: Euler angles as [yaw, pitch, roll] or array of such if vectorized
+        """
+        # For flat track, velocity frame transformation is primarily yaw
+        psi = self.calc_2d_heading_from_chi(s, chi)
+
+        if isinstance(s, np.ndarray):
+            # Return array of [yaw, pitch, roll] for each position
+            n_points = len(s) if hasattr(s, '__len__') else 1
+            angles = np.zeros((n_points, 3))
+            angles[:, 0] = psi  # yaw
+            angles[:, 1] = 0.0  # pitch (flat track)
+            angles[:, 2] = 0.0  # roll (flat track)
+            return angles
+        else:
+            # Return single [yaw, pitch, roll]
+            return np.array([psi, 0.0, 0.0])
 
 
 # Compatibility alias for easy replacement
