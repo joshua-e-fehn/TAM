@@ -215,21 +215,72 @@
                 <remap from="global_waypoints/overtaking" to="$(arg global_waypoints_overtaking_topic)"/>
         </node>
 
+        <!-- Load TAM sampling parameters from config file -->
+        <rosparam command="load" file="$(find tam_sampling_planner)/config/tam_sampling_params.yaml" />
+        
         <!-- launch TAM sampling planner and dynamic reconfigure -->
         <node pkg="tam_sampling_planner" type="dynamic_tam_sampling_server.py" name="dynamic_tam_sampling_tuner_node" output="screen"/>
         <node pkg="tam_sampling_planner" type="tam_sampling_node.py" name="planner_tam_sampling" output="screen">
+            <!-- Core sampling parameters -->
+            <param name="lateral_samples" value="15"/>
+            <param name="longitudinal_samples" value="8"/>
+            <param name="planning_horizon" value="4.0"/>
+            <param name="dt" value="0.1"/>
+            
+            <!-- Vehicle constraints from NUC2 -->
+            <param name="max_speed" value="10.0"/>
+            <param name="max_accel" value="8.29"/>
+            <param name="max_lateral_accel" value="12.0"/>
+            
+            <!-- Safety parameters -->
+            <param name="safety_distance_track_left" value="0.5"/>
+            <param name="safety_distance_track_right" value="0.5"/>
+            <param name="safety_margin_static" value="0.5"/>
+            <param name="safety_margin_dynamic" value="1.0"/>
+            <param name="tube_width" value="1.0"/>
+            
+            <!-- Cost function weights -->
+            <param name="raceline_cost_weight" value="3.5"/>
+            <param name="velocity_cost_weight" value="3.0"/>
+            <param name="friction_cost_weight" value="5000.0"/>
+            <param name="curvature_cost_weight" value="500000.0"/>
+            <param name="lateral_jerk_cost_weight" value="0.5"/>
+            <param name="prediction_cost_weight" value="100000.0"/>
+            <param name="collision_cost_weight" value="100000000.0"/>
+            
+            <!-- Trajectory validation -->
+            <param name="kappa_thr" value="0.1"/>
+            <param name="curvature_cost_threshold" value="30.0"/>
+            <param name="increasing_rl_cost" value="true"/>
+            
+            <!-- Longitudinal sampling -->
+            <param name="s_dot_discretization" value="2.0"/>
+            <param name="v_sampling_scale" value="1.1"/>
+            <param name="s_dot_max_positive_delta" value="20.0"/>
+            <param name="relative_s_dot_min_percentage" value="0.5"/>
+            
+            <!-- Lateral sampling -->
+            <param name="n_dense_samples" value="5"/>
+            <param name="n_dense_min" value="-0.5"/>
+            <param name="n_dense_max" value="0.5"/>
+            <param name="track_width" value="3.0"/>
+            
+            <!-- Trajectory generation -->
+            <param name="trajectory_len_controller" value="50"/>
+            <param name="lookahead" value="15.0"/>
+            
             <!-- Remap global waypoints to car-specific topics -->
             <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
-            <remap from="local_waypoints" to="/$(arg car_name)/local_waypoints"/>
+            <remap from="local_waypoints" to="local_waypoints"/>
             <!-- Remap to use multi-car obstacles for multi-car racing -->
-            <remap from="perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
-            <!-- Remap to use car-specific topics -->
-            <remap from="car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
-            <remap from="car_state/odom" to="/$(arg car_name)/car_state/odom"/>
-            <!-- Namespace the planner output -->
-            <remap from="planner/avoidance/otwpnts" to="/$(arg car_name)/planner/avoidance/otwpnts"/>
-            <remap from="planner/avoidance/markers" to="/$(arg car_name)/planner/avoidance/markers"/>
+            <remap from="perception/obstacles" to="perception/multi_car_obstacles"/>
+            <!-- Remap to use car-specific topics (relative paths - already in car namespace) -->
+            <remap from="car_state/odom_frenet" to="car_state/odom_frenet"/>
+            <remap from="car_state/odom" to="car_state/odom"/>
+            <!-- Namespace the planner output (relative paths) -->
+            <remap from="planner/avoidance/otwpnts" to="planner/avoidance/otwpnts"/>
+            <remap from="planner/avoidance/markers" to="planner/avoidance/markers"/>
         </node>
         
         <!-- TAM Custom Predictor for opponent vehicle prediction -->
