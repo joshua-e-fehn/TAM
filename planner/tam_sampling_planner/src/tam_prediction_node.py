@@ -20,7 +20,6 @@ from visualization_msgs.msg import MarkerArray, Marker
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
 from frenet_converter.frenet_converter import FrenetConverter
-import time
 
 
 class TAMConstantOffsetPredictor:
@@ -196,31 +195,33 @@ class TAMConstantOffsetPredictor:
         """Get all active obstacles including buffered ones"""
         active_obstacles = []
 
-        # Get current obstacles
+        # Get current obstacles FIRST (they take priority)
         dynamic_obstacles = [
             (i, obs) for i, obs in enumerate(self.obstacles.obstacles)
             if not obs.is_static
         ]
 
-        # Add any buffered obstacles that are still valid
+        # Log current obstacle data
+        for i, obs in dynamic_obstacles:
+            rospy.logdebug_throttle(
+                5.0, f"{self.log_name} Current obstacle {i}: s={obs.s_center:.2f}, d={obs.d_center:.2f}, vs={obs.vs:.2f}")
+
+        # Create set of current obstacle IDs for quick lookup
+        current_ids = {i for i, _ in dynamic_obstacles}
+
+        # Add any buffered obstacles that are NOT in current obstacles
         for key, entry in self.prediction_buffer.items():
             age = (current_time - entry['timestamp']).to_sec()
-            if age <= self.max_buffer_age:
-                # Check if this obstacle is already in current obstacles
-                found = False
-                for i, obs in dynamic_obstacles:
-                    if i == entry['obstacle_id']:
-                        found = True
-                        break
+            if age <= self.max_buffer_age and entry['obstacle_id'] not in current_ids:
+                # Use buffered obstacle with time extrapolation
+                extrapolated_obs = self.extrapolate_obstacle(entry, age)
+                if extrapolated_obs:
+                    active_obstacles.append(
+                        (entry['obstacle_id'], extrapolated_obs))
+                    rospy.logdebug_throttle(
+                        5.0, f"{self.log_name} Using buffered obstacle {entry['obstacle_id']} (age: {age:.2f}s)")
 
-                if not found:
-                    # Use buffered obstacle with time extrapolation
-                    extrapolated_obs = self.extrapolate_obstacle(entry, age)
-                    if extrapolated_obs:
-                        active_obstacles.append(
-                            (entry['obstacle_id'], extrapolated_obs))
-
-        # Add current obstacles
+        # Add current obstacles (these take priority)
         active_obstacles.extend(dynamic_obstacles)
         return active_obstacles
 
@@ -333,10 +334,14 @@ class TAMConstantOffsetPredictor:
 
     def predict_obstacle_trajectory(self, obstacle: Obstacle, obstacle_id: int):
         """
-        Generate constant offset prediction for a single obstacle
+        Generate relative offset prediction for a single obstacle
 
         The prediction follows the global waypoints track and applies the obstacle's 
-        current lateral offset to each waypoint position along the track.
+        current RELATIVE lateral position to each waypoint position along the track.
+
+        If the obstacle is currently 20% to the right of the track center, it will
+        maintain that 20% relative position throughout the prediction, adapting to
+        varying track widths.
 
         Args:
             obstacle: Current obstacle state
@@ -355,14 +360,21 @@ class TAMConstantOffsetPredictor:
             if vs_current < 0.5:  # Minimum velocity assumption
                 vs_current = 2.0
 
+            # Calculate the relative position at the obstacle's current location
+            # This requires finding the current track boundaries
+            relative_position = self.calculate_relative_position(obstacle)
+
+            rospy.loginfo_throttle(
+                2.0, f"{self.log_name} Obstacle {obstacle_id}: s={obstacle.s_center:.2f}, d={d_current:.2f}, relative_pos={relative_position:.2%}")
+
             # Generate prediction points based on global waypoints
             predicted_waypoints = []
 
-            # Iterate through all global waypoints and apply constant offset
+            # Iterate through all global waypoints and apply relative offset
             for waypoint in self.global_waypoints.wpnts:
-                # Apply boundary constraints at this waypoint position
-                d_future = self.apply_boundary_constraints_at_waypoint(
-                    waypoint, d_current)
+                # Calculate future d offset based on relative position and local track width
+                d_future = self.apply_relative_position_at_waypoint(
+                    waypoint, relative_position)
 
                 # # Convert s and d to Cartesian coordinates using Frenet converter
                 try:
@@ -389,7 +401,7 @@ class TAMConstantOffsetPredictor:
                 predicted_waypoints.append(pred_waypoint)
 
             rospy.loginfo_throttle(
-                1.0, f"{self.log_name} Generated {len(predicted_waypoints)} prediction waypoints (matching global waypoints)")
+                1.0, f"{self.log_name} Generated {len(predicted_waypoints)} prediction waypoints with relative position {relative_position:.2%}")
             return predicted_waypoints
 
         except Exception as e:
@@ -397,9 +409,102 @@ class TAMConstantOffsetPredictor:
                 10.0, f"{self.log_name} Error predicting trajectory for obstacle {obstacle_id}: {e}")
             return None
 
+    def calculate_relative_position(self, obstacle: Obstacle) -> float:
+        """
+        Calculate the relative position of the obstacle within the track boundaries.
+
+        Returns a value between -1.0 (at right boundary) and +1.0 (at left boundary),
+        where 0.0 is the centerline.
+
+        Args:
+            obstacle: Current obstacle state with s_center and d_center
+
+        Returns:
+            float: Relative position (-1.0 to +1.0)
+        """
+        try:
+            # Find the closest waypoint to get track boundaries
+            waypoint_idx = self.find_closest_waypoint_index(obstacle.s_center)
+            waypoint = self.global_waypoints.wpnts[waypoint_idx]
+
+            d_left = waypoint.d_left
+            d_right = waypoint.d_right
+            d_current = obstacle.d_center
+
+            # Calculate total track width (d_right is typically negative)
+            track_width = d_left + abs(d_right)
+
+            if track_width < 0.1:  # Avoid division by zero
+                return 0.0
+
+            # Calculate relative position
+            # If d_current = 0: position = 0.0 (centerline)
+            # If d_current = d_left: position = +1.0 (left boundary)
+            # If d_current = d_right: position = -1.0 (right boundary)
+
+            if d_current >= 0:
+                # Obstacle is on the left side
+                relative_position = d_current / d_left if d_left > 0.01 else 0.0
+            else:
+                # Obstacle is on the right side
+                relative_position = d_current / \
+                    abs(d_right) if abs(d_right) > 0.01 else 0.0
+
+            # Clamp to [-1, 1] range
+            relative_position = max(-1.0, min(1.0, relative_position))
+
+            # rospy.logerr(
+            #     f"{self.log_name} Relative position: {relative_position:.2%} (d={d_current:.2f}, left={d_left:.2f}, right={d_right:.2f}, width={track_width:.2f})")
+
+            return relative_position
+
+        except Exception as e:
+            rospy.logwarn_throttle(
+                10.0, f"{self.log_name} Error calculating relative position: {e}")
+            return 0.0  # Default to centerline
+
+    def apply_relative_position_at_waypoint(self, waypoint, relative_position: float) -> float:
+        """
+        Apply the relative position to a specific waypoint, respecting track boundaries.
+
+        Args:
+            waypoint: The global waypoint containing boundary information
+            relative_position: Relative position from -1.0 (right boundary) to +1.0 (left boundary)
+
+        Returns:
+            float: Absolute d offset at this waypoint
+        """
+        try:
+            # Get track boundaries at this waypoint
+            d_left = waypoint.d_left
+            d_right = waypoint.d_right
+
+            # Apply safety margins
+            d_left_safe = d_left - self.safety_margin
+            # d_right is positive
+            d_right_safe = d_right - self.safety_margin
+
+            # Calculate the absolute d offset based on relative position
+            if relative_position >= 0:
+                # Obstacle is on the left side
+                d_offset = relative_position * d_left_safe
+            else:
+                # Obstacle is on the right side (relative_position is negative)
+                d_offset = relative_position * d_right_safe
+
+            # Final safety check: ensure we're within bounds
+            d_offset = max(-d_right_safe, min(d_left_safe, d_offset))
+
+            return d_offset
+
+        except Exception as e:
+            rospy.logwarn_throttle(
+                10.0, f"{self.log_name} Error applying relative position at waypoint: {e}")
+            return 0.0  # Default to centerline
+
     def apply_boundary_constraints_at_waypoint(self, waypoint, d_offset):
         """
-        Apply track boundary constraints at a specific waypoint
+        Apply track boundary constraints at a specific waypoint (LEGACY - for absolute offset)
 
         Args:
             waypoint: The global waypoint containing boundary information
@@ -507,6 +612,12 @@ class TAMConstantOffsetPredictor:
         marker.id = obstacle_id
         marker.type = Marker.LINE_STRIP
         marker.action = Marker.ADD
+
+        # Initialize pose with identity quaternion to avoid RViz warning
+        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.y = 0.0
+        marker.pose.orientation.z = 0.0
+        marker.pose.orientation.w = 1.0
 
         # Add configurable lifetime to prevent blinking - marker persists beyond update frequency
         marker.lifetime = rospy.Duration(self.marker_lifetime)
