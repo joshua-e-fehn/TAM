@@ -23,7 +23,9 @@ Publishes to:
 import rospy
 from visualization_msgs.msg import MarkerArray, Marker
 from std_msgs.msg import ColorRGBA
+from f110_msgs.msg import WpntArray
 from copy import deepcopy
+import math
 
 
 class MarkerColorModifier:
@@ -38,15 +40,39 @@ class MarkerColorModifier:
         rospy.loginfo(f"Marker Color Modifier initialized for {self.car_name}")
 
         # Color schemes for different cars
-        self.colors = {
-            'car1': ColorRGBA(1.0, 0.2, 0.2, 0.8),  # Red with transparency
-            'car2': ColorRGBA(0.2, 0.2, 1.0, 0.8),  # Blue with transparency
-            'car3': ColorRGBA(0.2, 1.0, 0.2, 0.8),  # Green with transparency
-            'car4': ColorRGBA(1.0, 1.0, 0.2, 0.8),  # Yellow with transparency
+        # SQP trajectory colors (bright, solid)
+        self.sqp_colors = {
+            'car1': ColorRGBA(1.0, 0.0, 0.0, 1.0),  # Bright Red - Car1 SQP
+            'car2': ColorRGBA(0.0, 0.5, 1.0, 1.0),  # Bright Blue - Car2 SQP
+            'car3': ColorRGBA(0.0, 1.0, 0.0, 1.0),  # Bright Green - Car3 SQP
+            'car4': ColorRGBA(1.0, 1.0, 0.0, 1.0),  # Bright Yellow - Car4 SQP
         }
 
-        # Default color for unknown cars
-        self.default_color = ColorRGBA(0.5, 0.5, 0.5, 0.8)  # Gray
+        # Opponent prediction colors (darker, more transparent)
+        self.opponent_colors = {
+            # Orange - Car1's opponent prediction
+            'car1': ColorRGBA(0.8, 0.4, 0.0, 0.6),
+            # Purple - Car2's opponent prediction
+            'car2': ColorRGBA(0.6, 0.0, 0.8, 0.6),
+            # Cyan - Car3's opponent prediction
+            'car3': ColorRGBA(0.0, 0.6, 0.6, 0.6),
+            # Dark Yellow - Car4's opponent prediction
+            'car4': ColorRGBA(0.8, 0.6, 0.0, 0.6),
+        }
+
+        # Collision prediction colors (warning colors)
+        self.collision_colors = {
+            'car1': ColorRGBA(1.0, 0.0, 0.0, 0.9),  # Red - Car1 collision
+            'car2': ColorRGBA(1.0, 0.5, 0.0, 0.9),  # Orange - Car2 collision
+            'car3': ColorRGBA(1.0, 0.0, 0.5, 0.9),  # Pink - Car3 collision
+            'car4': ColorRGBA(1.0, 1.0, 0.0, 0.9),  # Yellow - Car4 collision
+        }
+
+        # Default colors for unknown cars
+        self.default_sqp_color = ColorRGBA(0.5, 0.5, 0.5, 1.0)  # Gray
+        self.default_opponent_color = ColorRGBA(
+            0.3, 0.3, 0.3, 0.6)  # Dark Gray
+        self.default_collision_color = ColorRGBA(0.8, 0.0, 0.0, 0.9)  # Red
 
         # Initialize subscribers for car-specific topics
         self.init_subscribers()
@@ -86,6 +112,13 @@ class MarkerColorModifier:
             self.collision_end_callback
         )
 
+        # Local waypoints - controller waypoints from state machine
+        rospy.Subscriber(
+            f'/{self.car_name}/local_waypoints',
+            WpntArray,
+            self.local_waypoints_callback
+        )
+
         # Global overtaking reference line (only subscribe from car1 to avoid duplication)
         if self.car_name == 'car1':
             rospy.Subscriber(
@@ -96,37 +129,51 @@ class MarkerColorModifier:
 
     def init_publishers(self):
         """Initialize publishers for global visualization topics"""
-        # Global SQP trajectory markers
+        # Car-specific SQP trajectory markers
         self.sqp_pub = rospy.Publisher(
-            '/visualization/predictive_spliner/sqp_markers',
+            f'/visualization/predictive_spliner/{self.car_name}/sqp_markers',
             MarkerArray,
             queue_size=10
         )
 
-        # Global opponent trajectory markers
+        # Car-specific opponent trajectory markers
         self.opponent_pub = rospy.Publisher(
-            '/visualization/predictive_spliner/opponent_traj',
+            f'/visualization/predictive_spliner/{self.car_name}/opponent_traj',
             MarkerArray,
             queue_size=10
         )
 
-        # Global collision prediction markers
+        # Car-specific collision prediction markers
         self.collision_pub = rospy.Publisher(
-            '/visualization/predictive_spliner/collision_predict',
+            f'/visualization/predictive_spliner/{self.car_name}/collision_predict',
             MarkerArray,
             queue_size=10
         )
 
-        # Global overtaking reference line
+        # Car-specific controller waypoints
+        self.controller_pub = rospy.Publisher(
+            f'/visualization/predictive_spliner/{self.car_name}/controller_waypoints',
+            MarkerArray,
+            queue_size=10
+        )
+
+        # Global overtaking reference line (shared)
         self.overtaking_ref_pub = rospy.Publisher(
             '/visualization/predictive_spliner/overtaking_reference',
             MarkerArray,
             queue_size=10
         )
 
-    def get_car_color(self):
-        """Get the color for this car"""
-        return self.colors.get(self.car_name, self.default_color)
+    def get_car_color(self, marker_type):
+        """Get the color for this car based on marker type"""
+        if 'opponent' in marker_type:
+            return self.opponent_colors.get(self.car_name, self.default_opponent_color)
+        elif 'collision' in marker_type:
+            return self.collision_colors.get(self.car_name, self.default_collision_color)
+        elif 'sqp' in marker_type:
+            return self.sqp_colors.get(self.car_name, self.default_sqp_color)
+        else:
+            return self.sqp_colors.get(self.car_name, self.default_sqp_color)
 
     def modify_marker(self, marker, marker_type, marker_id_offset=0):
         """
@@ -145,8 +192,8 @@ class MarkerColorModifier:
         # Set car-specific namespace
         new_marker.ns = f"{self.car_name}_{marker_type}"
 
-        # Apply car-specific color
-        new_marker.color = self.get_car_color()
+        # Apply car-specific color based on marker type
+        new_marker.color = self.get_car_color(marker_type)
 
         # Ensure unique IDs across cars by adding car-specific offset
         # Use hash for consistent offset
@@ -155,6 +202,18 @@ class MarkerColorModifier:
 
         # Ensure frame is global map
         new_marker.header.frame_id = "map"
+
+        # Scale adjustments for better visibility
+        if 'opponent' in marker_type:
+            # Make opponent predictions slightly smaller and more transparent
+            new_marker.scale.x *= 0.8
+            new_marker.scale.y *= 0.8
+            new_marker.scale.z *= 0.8
+        elif 'collision' in marker_type:
+            # Make collision markers larger and more visible
+            new_marker.scale.x *= 1.2
+            new_marker.scale.y *= 1.2
+            new_marker.scale.z *= 1.5
 
         return new_marker
 
@@ -219,6 +278,60 @@ class MarkerColorModifier:
         except Exception as e:
             rospy.logwarn(
                 f"Error processing collision end marker for {self.car_name}: {e}")
+
+    def local_waypoints_callback(self, msg):
+        """Handle local waypoints - controller waypoints from state machine"""
+        try:
+            markers = self.create_controller_waypoint_markers(msg)
+            if markers.markers:
+                self.controller_pub.publish(markers)
+        except Exception as e:
+            rospy.logwarn(
+                f"Error processing controller waypoints for {self.car_name}: {e}")
+
+    def create_controller_waypoint_markers(self, waypoints_msg):
+        """Create visualization markers for controller waypoints - use SPHERE instead of ARROW"""
+        marker_array = MarkerArray()
+
+        if not waypoints_msg.wpnts:
+            return marker_array
+
+        car_color = self.get_car_color('sqp')
+        car_offset = hash(self.car_name) % 1000 + 3000  # Different offset
+
+        # Downsample: take every 5th waypoint for cleaner visualization
+        for i in range(0, len(waypoints_msg.wpnts), 5):
+            wpnt = waypoints_msg.wpnts[i]
+            marker = Marker()
+            marker.header.frame_id = "map"
+            marker.header.stamp = rospy.Time.now()
+            marker.ns = f"{self.car_name}_controller_wpnts"
+            marker.id = car_offset + (i // 5)
+            marker.type = Marker.SPHERE  # Use spheres to distinguish from SQP trajectory
+            marker.action = Marker.ADD
+
+            # Position
+            marker.pose.position.x = wpnt.x_m
+            marker.pose.position.y = wpnt.y_m
+            marker.pose.position.z = 0.0
+
+            # Orientation (not really needed for spheres but set it anyway)
+            marker.pose.orientation.w = 1.0
+
+            # Scale - larger spheres for visibility
+            marker.scale.x = 0.25
+            marker.scale.y = 0.25
+            marker.scale.z = 0.25
+
+            # Color - use car-specific color, fully opaque
+            marker.color = car_color
+
+            # Lifetime
+            marker.lifetime = rospy.Duration(0.15)
+
+            marker_array.markers.append(marker)
+
+        return marker_array
 
     def overtaking_reference_callback(self, msg):
         """Handle global overtaking reference line markers"""

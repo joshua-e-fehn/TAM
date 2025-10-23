@@ -69,16 +69,16 @@ class SplinerVisualization:
 
     def init_publishers(self):
         """Initialize publishers to global visualization topics"""
-        # Local waypoints - what's actually being sent to the controller (from state machine)
+        # Car-specific local waypoints - what's actually being sent to the controller (from state machine)
         self.local_wpnts_pub = rospy.Publisher(
-            '/visualization/spliner/controller_waypoints',
+            f'/visualization/spliner/{self.car_name}/controller_waypoints',
             MarkerArray,
             queue_size=1
         )
 
-        # Avoidance waypoints - spliner's output (arrows showing avoidance path)
+        # Car-specific avoidance waypoints - spliner's output (arrows showing avoidance path)
         self.avoidance_wpnts_pub = rospy.Publisher(
-            '/visualization/spliner/avoidance_waypoints',
+            f'/visualization/spliner/{self.car_name}/avoidance_waypoints',
             MarkerArray,
             queue_size=1
         )
@@ -184,15 +184,21 @@ class SplinerVisualization:
         car_color = self.get_car_color()
         car_offset = hash(self.car_name) % 1000
 
-        # Create markers for each waypoint
+        # Create markers for each waypoint (downsampled - every 3rd waypoint)
+        marker_id = 0
         for i, wpnt in enumerate(waypoints_msg.wpnts):
+            # Downsample - only show every 3rd waypoint
+            if i % 3 != 0:
+                continue
+
             marker = Marker()
             marker.header.frame_id = "map"
             marker.header.stamp = rospy.Time.now()
             marker.ns = f"{self.car_name}_{namespace_suffix}"
-            marker.id = car_offset + i
+            marker.id = car_offset + marker_id
             marker.type = Marker.ARROW
             marker.action = Marker.ADD
+            marker_id += 1
 
             # Position
             marker.pose.position.x = wpnt.x_m
