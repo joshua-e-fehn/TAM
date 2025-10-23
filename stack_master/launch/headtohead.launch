@@ -79,6 +79,15 @@
             <!-- CRITICAL: Remap output to namespaced topic -->
             <remap from="/planner/avoidance/otwpnts" to="$(arg planner_output_topic)"/>
         </node>
+        
+        <!-- Spliner Visualization for multi-car trajectory markers -->
+        <node pkg="spliner" type="visualization.py" name="spliner_visualization" output="screen">
+            <!-- Car name parameter for color coding -->
+            <param name="car_name" value="$(arg car_name)"/>
+            <!-- Smooth visualization parameters -->
+            <!-- <param name="visualization_rate" value="20.0"/>  20 Hz for smooth display
+            <param name="marker_timeout" value="1.0"/>  Cache timeout in seconds -->
+        </node>
     </group>
 
     <!-- PLANNER PREDICTIVE SPLINER-->

@@ -222,6 +222,27 @@ Visualization Manager:
       Namespaces: {}
       Queue Size: 100
       Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/tam_sampling_planner/planned_trajectory
+      Name: TAM_Sampling_Planner_Planned_Trajectory
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/spliner/controller_waypoints
+      Name: Spliner_Controller_Waypoints
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/spliner/avoidance_waypoints
+      Name: Spliner_Avoidance_Waypoints
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
