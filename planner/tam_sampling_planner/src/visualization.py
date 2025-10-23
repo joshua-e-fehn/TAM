@@ -7,22 +7,22 @@ and republishes them to global topics with car-specific colors and namespaces
 for multi-car visualization in RViz.
 
 Subscribes to:
-# - /{car_name}/planner/avoidance/markers_sqp: SQP avoidance trajectory markers
-- /{car_name}/prediction/opponent_markerarray: Opponent trajectory prediction markers  
-# - /{car_name}/collision_predict/beginn: Collision prediction start markers
-# - /{car_name}/collision_predict/end: Collision prediction end markers
-# - /global_waypoints/overtaking/markers: Global overtaking reference line markers
+- /{car_name}/planner/avoidance/markers: TAM planned trajectory markers
+- /{car_name}/prediction/opponent_markerarray: Opponent trajectory prediction markers
+- /{car_name}/local_waypoints: Controller waypoints (from state machine)
 
 Publishes to:
-# - /visualization/tam_sampling_planner/sqp_markers: Global SQP trajectory markers
-- /visualization/tam_sampling_planner/opponent_traj: Global opponent trajectory markers
-# - /visualization/tam_sampling_planner/collision_predict: Global collision prediction markers
-# - /visualization/tam_sampling_planner/overtaking_reference: Global overtaking reference line
+- /visualization/tam_sampling_planner/{car_name}/planned_trajectory: Per-car planned trajectory markers
+- /visualization/tam_sampling_planner/{car_name}/opponent_traj: Per-car opponent trajectory markers
+- /visualization/tam_sampling_planner/{car_name}/controller_waypoints: Per-car controller waypoints
 """
 
 import rospy
+import math
 from visualization_msgs.msg import MarkerArray, Marker
 from std_msgs.msg import ColorRGBA
+from f110_msgs.msg import WpntArray
+from geometry_msgs.msg import Point
 from copy import deepcopy
 
 
@@ -39,23 +39,33 @@ class TAMSamplingPlannerVisualization:
             f"TAM Sampling Planner Visualization initialized for {self.car_name}")
 
         # Color schemes for different cars
-        self.colors = {
-            'car1': ColorRGBA(1.0, 0.2, 0.2, 0.8),  # Red with transparency
-            'car2': ColorRGBA(0.2, 0.2, 1.0, 0.8),  # Blue with transparency
-            'car3': ColorRGBA(0.2, 1.0, 0.2, 0.8),  # Green with transparency
-            'car4': ColorRGBA(1.0, 1.0, 0.2, 0.8),  # Yellow with transparency
+        # Planned trajectory colors (bright, solid)
+        self.planned_colors = {
+            'car1': ColorRGBA(1.0, 0.0, 0.0, 1.0),  # Bright Red - Car1 planned
+            # Bright Blue - Car2 planned
+            'car2': ColorRGBA(0.0, 0.5, 1.0, 1.0),
+            # Bright Green - Car3 planned
+            'car3': ColorRGBA(0.0, 1.0, 0.0, 1.0),
+            # Bright Yellow - Car4 planned
+            'car4': ColorRGBA(1.0, 1.0, 0.0, 1.0),
         }
 
-        # Default color for unknown cars
-        self.default_color = ColorRGBA(0.5, 0.5, 0.5, 0.8)  # Gray
+        # Opponent prediction colors (darker, more transparent)
+        self.opponent_colors = {
+            # Orange - Car1's opponent prediction
+            'car1': ColorRGBA(0.8, 0.4, 0.0, 0.6),
+            # Purple - Car2's opponent prediction
+            'car2': ColorRGBA(0.6, 0.0, 0.8, 0.6),
+            # Cyan - Car3's opponent prediction
+            'car3': ColorRGBA(0.0, 0.6, 0.6, 0.6),
+            # Dark Yellow - Car4's opponent prediction
+            'car4': ColorRGBA(0.8, 0.6, 0.0, 0.6),
+        }
 
-        # Smooth visualization parameters
-        self.visualization_rate = rospy.get_param(
-            '~visualization_rate', 20.0)  # 20 Hz default
-        self.last_markers = MarkerArray()  # Cache last markers for smooth republishing
-        self.last_update_time = rospy.Time.now()
-        self.marker_timeout = rospy.get_param(
-            '~marker_timeout', 1.0)  # 1 second timeout
+        # Default colors for unknown cars
+        self.default_planned_color = ColorRGBA(0.5, 0.5, 0.5, 1.0)  # Gray
+        self.default_opponent_color = ColorRGBA(
+            0.3, 0.3, 0.3, 0.6)  # Dark Gray
 
         # Initialize subscribers for car-specific topics
         self.init_subscribers()
@@ -68,20 +78,49 @@ class TAMSamplingPlannerVisualization:
 
     def init_subscribers(self):
         """Initialize subscribers to car-specific marker topics"""
+        # Opponent prediction markers
         opponent_topic = f'/{self.car_name}/prediction/opponent_markerarray'
         rospy.Subscriber(opponent_topic, MarkerArray, self.opponent_callback)
 
+        # Planned trajectory markers
+        planned_topic = f'/{self.car_name}/planner/avoidance/markers'
+        rospy.Subscriber(planned_topic, MarkerArray,
+                         self.planned_trajectory_callback)
+
+        # Local waypoints - the actual trajectory sent to the controller (from state machine)
+        local_wpnts_topic = f'/{self.car_name}/local_waypoints'
+        rospy.Subscriber(local_wpnts_topic, WpntArray,
+                         self.local_waypoints_callback)
+
     def init_publishers(self):
-        """Initialize publishers to global visualization topics"""
+        """Initialize publishers to car-specific visualization topics"""
+        # Per-car opponent trajectory predictions
         self.opponent_pub = rospy.Publisher(
-            '/visualization/tam_sampling_planner/opponent_traj',
+            f'/visualization/tam_sampling_planner/{self.car_name}/opponent_traj',
             MarkerArray,
             queue_size=1
         )
 
-    def get_car_color(self):
-        """Get the color for this car"""
-        return self.colors.get(self.car_name, self.default_color)
+        # Per-car planned trajectory (TAM sampling output)
+        self.planned_pub = rospy.Publisher(
+            f'/visualization/tam_sampling_planner/{self.car_name}/planned_trajectory',
+            MarkerArray,
+            queue_size=1
+        )
+
+        # Per-car controller waypoints (what's actually being followed)
+        self.controller_pub = rospy.Publisher(
+            f'/visualization/tam_sampling_planner/{self.car_name}/controller_waypoints',
+            MarkerArray,
+            queue_size=1
+        )
+
+    def get_car_color(self, marker_type):
+        """Get the color for this car based on marker type"""
+        if 'opponent' in marker_type:
+            return self.opponent_colors.get(self.car_name, self.default_opponent_color)
+        else:
+            return self.planned_colors.get(self.car_name, self.default_planned_color)
 
     def modify_marker(self, marker, marker_type, marker_id_offset=0):
         """
@@ -100,8 +139,8 @@ class TAMSamplingPlannerVisualization:
         # Set car-specific namespace
         new_marker.ns = f"{self.car_name}_{marker_type}"
 
-        # Apply car-specific color
-        new_marker.color = self.get_car_color()
+        # Apply car-specific color based on marker type
+        new_marker.color = self.get_car_color(marker_type)
 
         # Ensure unique IDs across cars by adding car-specific offset
         # Use hash for consistent offset
@@ -110,6 +149,22 @@ class TAMSamplingPlannerVisualization:
 
         # Ensure frame is global map
         new_marker.header.frame_id = "map"
+
+        # Fix uninitialized quaternion warning - set identity quaternion if not set
+        if marker.type in [Marker.LINE_STRIP, Marker.LINE_LIST, Marker.POINTS]:
+            # For line/point markers, ensure orientation is identity
+            if (new_marker.pose.orientation.x == 0.0 and
+                new_marker.pose.orientation.y == 0.0 and
+                new_marker.pose.orientation.z == 0.0 and
+                    new_marker.pose.orientation.w == 0.0):
+                new_marker.pose.orientation.w = 1.0
+
+        # Scale adjustments for better visibility
+        if 'opponent' in marker_type:
+            # Make opponent predictions slightly smaller
+            new_marker.scale.x *= 0.8
+            new_marker.scale.y *= 0.8
+            new_marker.scale.z *= 0.8
 
         return new_marker
 
@@ -136,52 +191,107 @@ class TAMSamplingPlannerVisualization:
     def opponent_callback(self, msg):
         """Handle opponent trajectory prediction markers"""
         try:
+            # Publish immediately - don't cache to avoid lag
             modified = self.modify_marker_array(msg, "opponent_traj")
-            self.last_markers = modified
-            self.last_update_time = rospy.Time.now()
-            self.opponent_pub.publish(modified)
+            if modified.markers:
+                self.opponent_pub.publish(modified)
+                rospy.logdebug_throttle(5.0,
+                                        f"{self.car_name}: Published {len(modified.markers)} opponent trajectory markers")
         except Exception as e:
             rospy.logwarn(
                 f"Error processing opponent trajectory markers for {self.car_name}: {e}")
 
-    def publish_smooth_predictions(self):
-        """Publish predictions at fixed rate, using cached data if needed"""
-        current_time = rospy.Time.now()
+    def planned_trajectory_callback(self, msg):
+        """Handle planned trajectory markers from TAM sampling planner"""
+        try:
+            # Publish immediately - don't cache to avoid lag
+            modified = self.modify_marker_array(msg, "planned_traj")
+            if modified.markers:
+                self.planned_pub.publish(modified)
+                rospy.logdebug_throttle(5.0,
+                                        f"{self.car_name}: Published {len(modified.markers)} planned trajectory markers")
+        except Exception as e:
+            rospy.logwarn(
+                f"Error processing planned trajectory markers for {self.car_name}: {e}")
 
-        # Check if we have recent data
-        if self.last_markers.markers and (current_time - self.last_update_time).to_sec() < self.marker_timeout:
-            # Update timestamps but keep same positions for smooth display
-            for marker in self.last_markers.markers:
-                marker.header.stamp = current_time
-                # Extend lifetime slightly to overlap with next update
-                marker.lifetime = rospy.Duration(
-                    1.0 / self.visualization_rate + 0.1)
+    def local_waypoints_callback(self, msg):
+        """Handle local waypoints - the actual trajectory sent to the controller from state machine"""
+        try:
+            # Publish immediately - don't cache to avoid any lag
+            markers = self.create_controller_waypoint_markers(msg)
+            if markers.markers:
+                self.controller_pub.publish(markers)
+                rospy.logdebug_throttle(5.0,
+                                        f"{self.car_name}: Published {len(markers.markers)} controller waypoint markers")
+        except Exception as e:
+            rospy.logwarn(
+                f"Error processing controller waypoints for {self.car_name}: {e}")
 
-            try:
-                self.opponent_pub.publish(self.last_markers)
-            except rospy.ROSException:
-                pass  # Handle shutdown gracefully
+    def create_controller_waypoint_markers(self, waypoints_msg):
+        """Create visualization markers for controller waypoints (downsampled, distinct style)"""
+        marker_array = MarkerArray()
+
+        if not waypoints_msg.wpnts:
+            return marker_array
+
+        car_color = self.get_car_color('controller')
+        # Different offset from other markers
+        car_offset = hash(self.car_name) % 1000 + 3000
+
+        # Create markers for each waypoint (downsampled - every 3rd waypoint)
+        marker_id = 0
+        for i, wpnt in enumerate(waypoints_msg.wpnts):
+            # Downsample - only show every 3rd waypoint
+            if i % 3 != 0:
+                continue
+
+            marker = Marker()
+            marker.header.frame_id = "map"
+            marker.header.stamp = rospy.Time.now()
+            marker.ns = f"{self.car_name}_controller_wpnts"
+            marker.id = car_offset + marker_id
+            marker.type = Marker.SPHERE  # Use spheres for distinction from planner trajectories
+            marker.action = Marker.ADD
+            marker_id += 1
+
+            # Position
+            marker.pose.position.x = wpnt.x_m
+            marker.pose.position.y = wpnt.y_m
+            marker.pose.position.z = 0.0
+
+            # Orientation (identity quaternion)
+            marker.pose.orientation.x = 0.0
+            marker.pose.orientation.y = 0.0
+            marker.pose.orientation.z = 0.0
+            marker.pose.orientation.w = 1.0
+
+            # Scale - spheres
+            marker.scale.x = 0.25
+            marker.scale.y = 0.25
+            marker.scale.z = 0.25
+
+            # Color - use car-specific color, fully opaque for controller waypoints
+            marker.color = car_color
+
+            # Lifetime - short lifetime, will be republished
+            marker.lifetime = rospy.Duration(0.15)
+
+            marker_array.markers.append(marker)
+
+        return marker_array
 
 
 def main():
     """Main function"""
     try:
         visualization = TAMSamplingPlannerVisualization()
-
-        # Use fixed-rate loop instead of rospy.spin() for smoother visualization
-        rate = rospy.Rate(visualization.visualization_rate)
-
-        rospy.loginfo(
-            f"TAM visualization running at {visualization.visualization_rate} Hz")
-
-        while not rospy.is_shutdown():
-            visualization.publish_smooth_predictions()
-            rate.sleep()
+        rospy.loginfo("TAM Sampling Planner visualization node running")
+        rospy.spin()
 
     except rospy.ROSInterruptException:
-        rospy.loginfo("TAM visualization node interrupted")
+        rospy.loginfo("TAM Sampling Planner visualization node interrupted")
     except Exception as e:
-        rospy.logerr(f"TAM visualization node failed: {e}")
+        rospy.logerr(f"TAM Sampling Planner visualization node failed: {e}")
         raise
 
 
