@@ -98,12 +98,20 @@ class GlobalRepublisher:
 
     def glb_markers_cb(self, data):
         self.glb_markers = data
+        # Apply opacity to racing line markers
+        if self.glb_markers is not None:
+            for marker in self.glb_markers.markers:
+                marker.color.a = 0.25
 
     def glb_sp_wpnts_cb(self, data):
         self.glb_sp_wpnts = data
 
     def glb_sp_markers_cb(self, data):
         self.glb_sp_markers = data
+        # Apply opacity to shortest path markers
+        if self.glb_sp_markers is not None:
+            for marker in self.glb_sp_markers.markers:
+                marker.color.a = 0.25
 
     def centerline_wpnt_cb(self, data: WpntArray):
         self.centerline_wpnts = data
@@ -125,8 +133,8 @@ class GlobalRepublisher:
 
     def update_trajectory_colors(self):
         """Update trajectory marker colors and shapes to the new scheme:
-        - Racing line: Blue spheres
-        - Shortest path: Yellow cubes
+        - Racing line: Blue spheres 
+        - Shortest path: Yellow cubes 
         """
         # Update racing line markers to blue spheres
         if self.glb_markers is not None:
@@ -138,7 +146,7 @@ class GlobalRepublisher:
                 marker.color.r = 0.0  # Blue
                 marker.color.g = 0.0
                 marker.color.b = 1.0
-                marker.color.a = 1.0
+                marker.color.a = 0.25
 
         # Update shortest path markers to yellow cubes
         if self.glb_sp_markers is not None:
@@ -150,7 +158,7 @@ class GlobalRepublisher:
                 marker.color.r = 1.0  # Yellow
                 marker.color.g = 1.0
                 marker.color.b = 0.0
-                marker.color.a = 1.0
+                marker.color.a = 0.25
 
     def global_republisher(self):
         rate = rospy.Rate(0.5)  # in Hertz

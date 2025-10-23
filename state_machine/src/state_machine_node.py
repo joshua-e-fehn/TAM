@@ -168,11 +168,8 @@ class StateMachine:
             }
         elif self.ot_planner == "tam_sampling":
             self.state_transitions = {
-                StateType.READY: state_transitions.PSReadyTransition,
-                StateType.GB_TRACK: state_transitions.PSGlobalTrackingTransition,
-                StateType.TRAILING: state_transitions.PSTrailingTransition,
-                StateType.OVERTAKE: state_transitions.PSOvertakingTransition,
-                StateType.FTGONLY: state_transitions.PSFTGOnlyTransition,
+                StateType.READY: state_transitions.TAMReadyTransition,
+                StateType.GB_TRACK: state_transitions.TAMGlobalTrackingTransition,
             }
         elif self.ot_planner == "graph_based":
             rospy.logwarn(
@@ -540,15 +537,15 @@ class StateMachine:
     def _check_ofree(self) -> bool:
         o_free = True
 
-        # Slightly different for spliner
-        if self.ot_planner == "spliner" or self.ot_planner == "predictive_spliner":
+        # Slightly different for spliner and TAM sampling (both use avoidance waypoints)
+        if self.ot_planner == "spliner" or self.ot_planner == "predictive_spliner" or self.ot_planner == "tam_sampling":
             if not self.timetrials_only and self.last_valid_avoidance_wpnts is not None:
                 # Horizon in front of cur_s [m]
                 horizon = self.overtaking_horizon_m
 
                 # Use frenet conversion service to convert (s, d) wrt min curv trajectory to (x, y) in map
                 for obs in self.obstacles:
-                    if self.ot_planner == "spliner" or (self.ot_planner == "predictive_spliner" and obs.is_static == True):
+                    if self.ot_planner == "spliner" or (self.ot_planner == "predictive_spliner" and obs.is_static == True) or self.ot_planner == "tam_sampling":
                         obs_s = obs.s_center
                         # Wrapping madness to check if infront
                         dist_to_obj = (obs_s - self.cur_s) % self.max_s

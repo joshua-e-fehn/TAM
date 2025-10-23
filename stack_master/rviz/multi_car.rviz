@@ -189,22 +189,57 @@ Visualization Manager:
       Value: true
     - Class: rviz/MarkerArray
       Enabled: true
-      Marker Topic: /visualization/predictive_spliner/sqp_markers
-      Name: Predictive_Spliner_Overtaking_Trajectories
+      Marker Topic: /visualization/predictive_spliner/car1/sqp_markers
+      Name: car1_Predictive_Spliner_Overtaking_Trajectories
       Namespaces: {}
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
       Enabled: true
-      Marker Topic: /visualization/predictive_spliner/opponent_traj
-      Name: Predictive_Spliner_Opponent_Line_Predictions
+      Marker Topic: /visualization/predictive_spliner/car2/sqp_markers
+      Name: car2_Predictive_Spliner_Overtaking_Trajectories
       Namespaces: {}
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
       Enabled: true
-      Marker Topic: /visualization/predictive_spliner/collision_predict
-      Name: Predictive_Spliner_RegionOfCollision_Predictions
+      Marker Topic: /visualization/predictive_spliner/car1/controller_waypoints
+      Name: car1_Predictive_Spliner_Controller_Waypoints
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/predictive_spliner/car2/controller_waypoints
+      Name: car2_Predictive_Spliner_Controller_Waypoints
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/predictive_spliner/car1/opponent_traj
+      Name: car1_Predictive_Spliner_Opponent_Line_Predictions
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/predictive_spliner/car2/opponent_traj
+      Name: car2_Predictive_Spliner_Opponent_Line_Predictions
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/predictive_spliner/car1/collision_predict
+      Name: car1_Predictive_Spliner_RegionOfCollision_Predictions
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/predictive_spliner/car2/collision_predict
+      Name: car2_Predictive_Spliner_RegionOfCollision_Predictions
       Namespaces: {}
       Queue Size: 100
       Value: true
@@ -217,8 +252,71 @@ Visualization Manager:
       Value: true
     - Class: rviz/MarkerArray
       Enabled: true
-      Marker Topic: /visualization/tam_sampling_planner/opponent_traj
-      Name: TAM_Sampling_Planner_Opponent_Line_Predictions
+      Marker Topic: /visualization/tam_sampling_planner/car1/opponent_traj
+      Name: car1_TAM_Sampling_Opponent_Line_Predictions
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/tam_sampling_planner/car2/opponent_traj
+      Name: car2_TAM_Sampling_Opponent_Line_Predictions
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/tam_sampling_planner/car1/planned_trajectory
+      Name: car1_TAM_Sampling_Planned_Trajectory
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/tam_sampling_planner/car2/planned_trajectory
+      Name: car2_TAM_Sampling_Planned_Trajectory
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/tam_sampling_planner/car1/controller_waypoints
+      Name: car1_TAM_Sampling_Controller_Waypoints
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/tam_sampling_planner/car2/controller_waypoints
+      Name: car2_TAM_Sampling_Controller_Waypoints
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/spliner/car1/controller_waypoints
+      Name: car1_Spliner_Controller_Waypoints
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/spliner/car2/controller_waypoints
+      Name: car2_Spliner_Controller_Waypoints
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/spliner/car1/avoidance_waypoints
+      Name: car1_Spliner_Avoidance_Waypoints
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization/spliner/car2/avoidance_waypoints
+      Name: car2_Spliner_Avoidance_Waypoints
       Namespaces: {}
       Queue Size: 100
       Value: true

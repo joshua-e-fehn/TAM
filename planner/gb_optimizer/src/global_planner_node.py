@@ -1341,7 +1341,6 @@ class GlobalPlanner:
                 global_marker.color.r = 0.0
                 global_marker.color.g = 0.0
                 global_marker.color.b = 1.0
-            global_marker.color.a = 1.0
 
             global_marker.id = i
             global_marker.pose.position.x = pnt[1]

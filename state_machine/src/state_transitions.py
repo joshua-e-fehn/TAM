@@ -373,6 +373,24 @@ def FrenetFTGOnlyTransition(state_machine: StateMachine) -> StateType:
             return StateType.FTGONLY
 
 
+###########################
+# TAM SAMPLING TRANSITIONS #
+###########################
+
+def TAMReadyTransition(state_machine: StateMachine) -> StateType:
+    """TAM Sampling Ready transition - same as base ready transition"""
+    if hasattr(state_machine, 'race_start_received') and state_machine.race_start_received:
+        state_machine.race_start_received = False
+        return StateType.GB_TRACK
+    else:
+        return StateType.READY
+
+
+def TAMGlobalTrackingTransition(state_machine: StateMachine) -> StateType:
+    """TAM Sampling transitions for being in `StateType.GB_TRACK`"""
+    return StateType.GB_TRACK
+
+
 ####################################
 # OTHER TRANSITIONS  could go here #
 ####################################
