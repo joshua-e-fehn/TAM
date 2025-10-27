@@ -8,22 +8,23 @@ import rospy
 
 @dataclass
 class TrajectoryParams():
-    tube_width: float
-    num_samples: int
-    min_trajectory_length: float
-    extension_emergency_time_offset: float
-    extension_n_samples: int
-    extension_point_distance: float
-    extension_min_resolution: int
-    extension_max_s_sample: int
-    additional_const_time_emergency: float
-    const_trajectory_time: float
-    add_emergency_safety_distance_left: float
-    add_emergency_safety_distance_right: float
+    # Reduced from 1.0 to 0.6m for tighter racing (car width ~0.5m)
+    tube_width: float = 0.6
+    num_samples: int = 51
+    min_trajectory_length: float = 10.0
+    extension_emergency_time_offset: float = 1.0
+    extension_n_samples: int = 10
+    extension_point_distance: float = 2.0
+    extension_min_resolution: int = 10
+    extension_max_s_sample: int = 300
+    additional_const_time_emergency: float = 0.5
+    const_trajectory_time: float = 0.3
+    add_emergency_safety_distance_left: float = 0.0
+    add_emergency_safety_distance_right: float = 0.0
     # Fallback tire limits (used when GGGV data is unavailable)
-    max_braking_deceleration_g: float  # Maximum braking in multiples of g
+    max_braking_deceleration_g: float = 1.0  # Maximum braking in multiples of g
     # Maximum lateral acceleration in multiples of g
-    max_lateral_acceleration_g: float
+    max_lateral_acceleration_g: float = 1.2
 
 
 class Trajectory():
@@ -46,7 +47,8 @@ class Trajectory():
 
     def load_parameters(self):
         """Load parameters from ROS parameter server (relative namespace)."""
-        self.params.tube_width = rospy.get_param('~behavior/tube_width', 1.0)
+        self.params.tube_width = rospy.get_param(
+            '~behavior/tube_width', 0.6)  # 0.6m safety tube
         self.params.num_samples = rospy.get_param(
             'discretization/num_samples', 51)
         self.params.min_trajectory_length = rospy.get_param(
@@ -324,7 +326,7 @@ class Trajectory():
                         trajectory[key] = np.concatenate(
                             (trajectory[key], trajectory_extension[key]))
                 return True
-        msgs_logger.warning(
+        rospy.logwarn(
             "No trajectory extension passed the checks. Trajectory is not extended!")
         return False
 
@@ -339,8 +341,13 @@ class Trajectory():
         msgs_logger
     ):
         """
+        Calculate physics-based emergency braking trajectory.
+
+        This generates optimal braking trajectories using Pacejka tire model and physics.
+        Used as emergency fallback when TAM sampling fails to find valid trajectories.
+
         NOTE: gggv_handler parameter is kept for compatibility but not actively used.
-        Braking limits are calculated using simplified physics-based fallback in __calc_ax_avail().
+        Braking limits are calculated using Pacejka tire model or simplified physics fallback.
         """
 
         emergency_trajectory = copy.deepcopy(performance_trajectory)
@@ -484,23 +491,23 @@ class Trajectory():
         ) % track_handler.s_coord()[-1]
         trajectory_extension["s_loc"] = trajectory["s_loc"][-1] + \
             np.cumsum(ds * np.ones(self.params.num_samples))
+        
+        # Note: NumPy < 1.21 doesn't support 'period' parameter in np.interp
+        # For periodic interpolation, we rely on modulo wrapping of s coordinates above
         trajectory_extension["Omega_x"] = np.interp(
             trajectory_extension["s"],
             track_handler.s_coord(),
             track_handler.omega_x(),
-            period=track_handler.s_coord()[-1],
         )
         trajectory_extension["Omega_y"] = np.interp(
             trajectory_extension["s"],
             track_handler.s_coord(),
             track_handler.omega_y(),
-            period=track_handler.s_coord()[-1],
         )
         Omega_z_tmp = np.interp(
             trajectory_extension["s"],
             track_handler.s_coord(),
             track_handler.omega_z(),
-            period=track_handler.s_coord()[-1],
         )
 
         # prevent Omega_z from becoming zero

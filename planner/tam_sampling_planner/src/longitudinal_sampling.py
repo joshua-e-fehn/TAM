@@ -25,15 +25,16 @@ import numpy as np
 #     REAL_GGGV_AVAILABLE = False
 #     rospy.logwarn("Real GGGV manager not available, using SimpleGGGVManager fallback")
 
+from dataclasses import dataclass
+import rospy
+
 # Try to import helper utilities, fall back to simple version if not available
 try:
     from planning_common.helper.utils import create_trim_mask, create_trim_mask_2d, find_nearest_s_and_idx
 except ImportError:
     from simple_helper_utils import create_trim_mask, create_trim_mask_2d, find_nearest_s_and_idx
-    rospy.logwarn(
-        "Planning common utilities not available, using simple fallback utilities")
-from dataclasses import dataclass
-import rospy
+    # Note: rospy.logwarn will only work after rospy.init_node() is called
+    print("WARNING: Planning common utilities not available, using simple fallback utilities")
 
 
 @dataclass(init=False)
@@ -58,7 +59,7 @@ class LongSamplingParams():
 
 
 class LongitudinalSampling:
-    def __init__(self, param_manager):
+    def __init__(self, debugging=False):
         self.params = LongSamplingParams()
         self.declare_and_update_parameters()
         rospy.loginfo("LongitudinalSampling initialized in SIMPLIFIED mode")
@@ -349,41 +350,76 @@ class LongitudinalSampling:
 
         return {"wpnts": waypoints}
 
+    def _load_yaml_defaults(self):
+        """Load default parameters from tam_sampling_params.yaml"""
+        import rospkg
+        import yaml
+        import os
+        try:
+            rospack = rospkg.RosPack()
+            pkg_path = rospack.get_path('tam_sampling_planner')
+            config_file = os.path.join(
+                pkg_path, 'config', 'tam_sampling_params.yaml')
+
+            with open(config_file, 'r') as f:
+                yaml_params = yaml.safe_load(f)
+                rospy.loginfo(
+                    "LongitudinalSampling: Loaded YAML defaults from tam_sampling_params.yaml")
+                return yaml_params if yaml_params else {}
+        except Exception as e:
+            rospy.logwarn(
+                f"LongitudinalSampling: Could not load YAML defaults: {e}")
+            return {}
+
     def declare_and_update_parameters(self):
+        yaml_defaults = self._load_yaml_defaults()
+
         self.params.s_dot_end_min = rospy.get_param(
-            "discretization/s_dot_end_min", 1.0)
+            "discretization/s_dot_end_min", yaml_defaults.get('s_dot_end_min', 1.0))
         self.params.relative_s_dot_min_percentage = rospy.get_param(
-            "behavior/relative_s_dot_min_percentage", 0.5)
+            "behavior/relative_s_dot_min_percentage",
+            yaml_defaults.get('relative_s_dot_min_percentage', 0.5))
         self.params.s_dot_max_positive_delta = rospy.get_param(
-            "behavior/s_dot_max_positive_delta", 20.0)
+            "behavior/s_dot_max_positive_delta",
+            yaml_defaults.get('s_dot_max_positive_delta', 20.0))
         self.params.s_dot_discretization = rospy.get_param(
-            "discretization/s_dot_discretization", 2.0)
+            "discretization/s_dot_discretization",
+            yaml_defaults.get('s_dot_discretization', 2.0))
         self.params.s_dot_dense_min = rospy.get_param(
-            "discretization/s_dot_dense_min", -4.0)
+            "discretization/s_dot_dense_min",
+            yaml_defaults.get('s_dot_dense_min', -4.0))
         self.params.s_dot_dense_max = rospy.get_param(
-            "discretization/s_dot_dense_max", 1.0)
+            "discretization/s_dot_dense_max",
+            yaml_defaults.get('s_dot_dense_max', 1.0))
         self.params.s_dot_dense_samples = rospy.get_param(
-            "discretization/s_dot_dense_samples", 10)
+            "discretization/s_dot_dense_samples",
+            yaml_defaults.get('s_dot_dense_samples', 10))
         self.params.n_samples = rospy.get_param(
-            "discretization/n_samples", 20)
+            "discretization/n_samples", yaml_defaults.get('lateral_samples', 20))
         self.params.n_dense_samples = rospy.get_param(
-            "discretization/n_dense_samples", 5)
+            "discretization/n_dense_samples",
+            yaml_defaults.get('n_dense_samples', 5))
         self.params.num_samples = rospy.get_param(
-            "discretization/num_samples", 51)
+            "discretization/num_samples", yaml_defaults.get('num_samples', 51))
         self.params.horizon = rospy.get_param(
-            "behavior/horizon", 4.0)
+            "behavior/horizon", yaml_defaults.get('planning_horizon', 4.0))
         self.params.v_sampling_scale = rospy.get_param(
-            "behavior/v_sampling_scale", 1.1)
+            "behavior/v_sampling_scale", yaml_defaults.get('v_sampling_scale', 1.1))
         self.params.forward_backward_velocities = rospy.get_param(
-            "behavior/forward_backward_velocities", True)
-        self.params.samples_forward_backward = rospy.get_param(
-            "behavior/samples_forward_backward", 3.0)
+            "behavior/forward_backward_velocities",
+            yaml_defaults.get('forward_backward_velocities', True))
+        self.params.samples_forward_backward = int(rospy.get_param(
+            "behavior/samples_forward_backward",
+            yaml_defaults.get('samples_forward_backward', 3)))  # F1TENTH: Convert to int for array indexing
         self.params.forward_backward_min_scale = rospy.get_param(
-            "behavior/forward_backward_min_scale", 0.85)
+            "behavior/forward_backward_min_scale",
+            yaml_defaults.get('forward_backward_min_scale', 0.85))
         self.params.forward_backward_max_scale = rospy.get_param(
-            "behavior/forward_backward_max_scale", 0.95)
+            "behavior/forward_backward_max_scale",
+            yaml_defaults.get('forward_backward_max_scale', 0.95))
         self.params.forward_backward_max_v_to_rl_delta = rospy.get_param(
-            "behavior/forward_backward_max_v_to_rl_delta", 0.0)
+            "behavior/forward_backward_max_v_to_rl_delta",
+            yaml_defaults.get('forward_backward_max_v_to_rl_delta', 0.0))
 
     def calc_samples(
             self,
@@ -394,8 +430,8 @@ class LongitudinalSampling:
             # end condition
             V_target: float,
             V_max: float,
-            # Global Waypoints
-            global_waypoints: dict,
+            # Postprocessed Raceline (from postprocess_raceline method)
+            postprocessed_raceline: dict,
             # Track
             track_handler: Track,
             raceline_tendency: bool
@@ -403,11 +439,7 @@ class LongitudinalSampling:
 
         self.declare_and_update_parameters()
 
-        # Convert global waypoints to postprocessed_raceline format
-        postprocessed_raceline = self.convert_global_waypoints_to_raceline_format(
-            global_waypoints)
-
-        # Validate the converted data
+        # Validate the postprocessed raceline data
         if not self.validate_converted_raceline(postprocessed_raceline):
             rospy.logerr(
                 "Raceline validation failed in calc_samples - trajectory sampling may produce poor results")
@@ -418,11 +450,18 @@ class LongitudinalSampling:
         s_ddot_end_rl = np.interp(
             self.params.horizon, postprocessed_raceline["t_post"], postprocessed_raceline["s_ddot_post"])
         if raceline_tendency:  # use s_ddot of race line for boundary conditions
+            # F1TENTH NOTE: NumPy 1.18.1 doesn't support 'period' parameter in unwrap (added in 1.21.0)
+            # Manually implement periodic unwrapping for compatibility
+            s_post = postprocessed_raceline["s_post"]
+            period = track_handler.s_coord()[-1]
+            discont = period / 2
+
+            # Normalize to [-period/2, period/2] range before unwrapping
+            s_normalized = np.mod(s_post + period / 2, period) - period / 2
+            # Unwrap without period parameter (standard unwrap with pi as default discontinuity)
+            # Scale to use standard unwrap, then scale back
             s_continuous = np.unwrap(
-                postprocessed_raceline["s_post"],
-                discont=track_handler.s_coord()[-1] / 2,
-                period=track_handler.s_coord()[-1],
-            )
+                s_normalized * (np.pi / discont)) * (discont / np.pi)
         else:
             s_ddot_end = 0.0
 
@@ -569,18 +608,14 @@ class LongitudinalSampling:
             s_dot_start: float,
             s_ddot_start: float,
             V_target: float,
-            global_waypoints: dict,
+            postprocessed_raceline: dict,
             track_handler: Track,
             raceline_tendency: bool
     ):
 
         self.declare_and_update_parameters()
 
-        # Convert global waypoints to postprocessed_raceline format
-        postprocessed_raceline = self.convert_global_waypoints_to_raceline_format(
-            global_waypoints)
-
-        # Validate the converted data
+        # Validate the postprocessed raceline data
         if not self.validate_converted_raceline(postprocessed_raceline):
             rospy.logerr(
                 "Raceline validation failed in calc_samples_s_based - trajectory sampling may produce poor results")
@@ -787,251 +822,255 @@ class LongitudinalSampling:
 
         return s_array, s_dot_array, s_ddot_array, s_dot_end_values, s_end_values, rel_long_sampling_array, t_array
 
-    # def calc_samples_s_based_forward_backward(
-    #     self,
-    #     s_start: float,
-    #     s_dot_start: float,
-    #     s_ddot_start: float,
-    #     n_start: float,
-    #     V_target: float,
-    #     global_waypoints: dict,
-    #     track_handler: Track,
-    #     gggv_handler: GGGVManager,
-    #     pitlane_mode: bool,
-    #     raceline_tendency: bool
-    # ):
+    def calc_samples_s_based_forward_backward(
+        self,
+        s_start: float,
+        s_dot_start: float,
+        s_ddot_start: float,
+        n_start: float,
+        V_target: float,
+        postprocessed_raceline: dict,
+        track_handler: Track,
+        gggv_handler=None,  # F1TENTH: Not used, kept for compatibility
+        pitlane_mode: bool = False,
+        raceline_tendency: bool = False
+    ):
+        """
+        F1TENTH SIMPLIFIED VERSION: Forward-backward velocity sampling without GGGV.
 
-    #     # Convert global waypoints to postprocessed_raceline format
-    #     postprocessed_raceline = self.convert_global_waypoints_to_raceline_format(
-    #         global_waypoints)
+        Uses fixed kinematic acceleration limits instead of physics-based GGGV diagrams.
+        Suitable for F1TENTH planar racing (z=0, no complex vehicle dynamics).
+        """
 
-    #     # Validate the converted data
-    #     if not self.validate_converted_raceline(postprocessed_raceline):
-    #         rospy.logerr(
-    #             "Raceline validation failed in calc_samples_s_based_forward_backward - trajectory sampling may produce poor results")
+        # F1TENTH: Fixed acceleration limits (replace GGGV-based limits)
+        # Maximum acceleration [m/s^2]
+        ax_max_accel = rospy.get_param('max_accel', 3.0)
+        # Maximum deceleration [m/s^2]
+        ax_max_decel = rospy.get_param('max_decel', 3.0)
 
-    #     # only generate forward integration samples when below target speed
-    #     if (s_dot_start < V_target):  # or True
-    #         num_long_profiles = 2 * self.params.samples_forward_backward
-    #     else:
-    #         num_long_profiles = self.params.samples_forward_backward
+        # only generate forward integration samples when below target speed
+        if (s_dot_start < V_target):  # or True
+            num_long_profiles = 2 * self.params.samples_forward_backward
+        else:
+            num_long_profiles = self.params.samples_forward_backward
 
-    #     n_samples = self.params.n_samples + self.params.n_dense_samples
+        n_samples = self.params.n_samples + self.params.n_dense_samples
 
-    #     # themporary s array with raceline locs, get pruned at the t_horizon
-    #     s_arr_ref = np.copy(postprocessed_raceline["s_post"])
-    #     s_dot_arr_ref = np.copy(postprocessed_raceline["s_dot_post"])
-    #     # make s_arr_ref monotonically increasing
-    #     if s_arr_ref[0] > s_arr_ref[-1]:
-    #         multiplier = np.abs(
-    #             np.floor((2*s_arr_ref[0]) / track_handler.s_coord()[-1])-1)
-    #         s_arr_ref = s_arr_ref + multiplier * track_handler.s_coord()[-1]
+        # themporary s array with raceline locs, get pruned at the t_horizon
+        s_arr_ref = np.copy(postprocessed_raceline["s_post"])
+        s_dot_arr_ref = np.copy(postprocessed_raceline["s_dot_post"])
+        # make s_arr_ref monotonically increasing
+        if s_arr_ref[0] > s_arr_ref[-1]:
+            multiplier = np.abs(
+                np.floor((2*s_arr_ref[0]) / track_handler.s_coord()[-1])-1)
+            s_arr_ref = s_arr_ref + multiplier * track_handler.s_coord()[-1]
 
-    #     # add s_start to s_arr_ref if not in raceline
-    #     if s_start < s_arr_ref[0]:
-    #         s_arr_ref = np.insert(s_arr_ref, 0, s_start)
-    #         s_dot_arr_ref = np.insert(s_dot_arr_ref, 0, s_dot_start)
+        # add s_start to s_arr_ref if not in raceline
+        if s_start < s_arr_ref[0]:
+            s_arr_ref = np.insert(s_arr_ref, 0, s_start)
+            s_dot_arr_ref = np.insert(s_dot_arr_ref, 0, s_dot_start)
 
-    #     # extend s_arr_ref if to short !!!! DONT COPY INVESTIGATE WHY REQUIRED
-    #     if np.shape(s_arr_ref)[0] < self.params.num_samples + 10:
-    #         # extension assumes static step size, but end of horizon so ok even if real rl uneven
-    #         step_size = s_arr_ref[1] - s_arr_ref[0]
-    #         s_arr_ref = np.append(s_arr_ref, s_arr_ref[-1] + step_size + np.linspace(
-    #             0, self.params.num_samples * 4 * step_size, 4 * self.params.num_samples))
+        # extend s_arr_ref if to short !!!! DONT COPY INVESTIGATE WHY REQUIRED
+        if np.shape(s_arr_ref)[0] < self.params.num_samples + 10:
+            # extension assumes static step size, but end of horizon so ok even if real rl uneven
+            step_size = s_arr_ref[1] - s_arr_ref[0]
+            s_arr_ref = np.append(s_arr_ref, s_arr_ref[-1] + step_size + np.linspace(
+                0, self.params.num_samples * 4 * step_size, 4 * self.params.num_samples))
 
-    #     # extend s_dot_arr_ref if to short !!!! DONT COPY INVESTIGATE WHY REQUIRED
-    #     if np.shape(s_dot_arr_ref)[0] < self.params.num_samples + 10:
-    #         s_dot_arr_ref = np.append(s_dot_arr_ref, np.ones(
-    #             self.params.num_samples * 4)*s_dot_arr_ref[-1])
+        # extend s_dot_arr_ref if to short !!!! DONT COPY INVESTIGATE WHY REQUIRED
+        if np.shape(s_dot_arr_ref)[0] < self.params.num_samples + 10:
+            s_dot_arr_ref = np.append(s_dot_arr_ref, np.ones(
+                self.params.num_samples * 4)*s_dot_arr_ref[-1])
 
-    #     s_arr_temp = np.copy(s_arr_ref)
-    #     # assign array sizes depending on number of s_dot end values
-    #     target_shape = (num_long_profiles * n_samples, self.params.num_samples)
+        s_arr_temp = np.copy(s_arr_ref)
+        # assign array sizes depending on number of s_dot end values
+        target_shape = (num_long_profiles * n_samples, self.params.num_samples)
 
-    #     s_array = np.zeros(target_shape)
-    #     s_dot_array = np.zeros(target_shape)
-    #     s_ddot_array = np.zeros(target_shape)
-    #     # save which samples are absolute
-    #     rel_long_sampling_array = np.zeros(target_shape[0])
-    #     t_array = np.zeros(target_shape)
-    #     s_dot_end_values = np.zeros(num_long_profiles)
-    #     s_end_values = np.zeros(num_long_profiles)
+        s_array = np.zeros(target_shape)
+        s_dot_array = np.zeros(target_shape)
+        s_ddot_array = np.zeros(target_shape)
+        # save which samples are absolute
+        rel_long_sampling_array = np.zeros(target_shape[0])
+        t_array = np.zeros(target_shape)
+        s_dot_end_values = np.zeros(num_long_profiles)
+        s_end_values = np.zeros(num_long_profiles)
 
-    #     # Fill out put arrays with scaled profiles
-    #     scales = np.linspace(self.params.forward_backward_min_scale,
-    #                          self.params.forward_backward_max_scale, self.params.samples_forward_backward)
+        # Fill out put arrays with scaled profiles
+        scales = np.linspace(self.params.forward_backward_min_scale,
+                             self.params.forward_backward_max_scale, self.params.samples_forward_backward)
 
-    #     # get fastest accelerating profile
-    #     ##############################################################################################################
-    #     # print('v_target: ', V_target)
-    #     # print('s_dot_start: ', s_dot_start)
-    #     if s_dot_start < V_target:  # or True
-    #         for j in range(self.params.samples_forward_backward, self.params.samples_forward_backward*2):
-    #             # for j in range(1):
-    #             t_cumulative = 0.0
-    #             s_dot_current = max(s_dot_start, self.params.s_dot_end_min)
+        # get fastest accelerating profile
+        ##############################################################################################################
+        # print('v_target: ', V_target)
+        # print('s_dot_start: ', s_dot_start)
+        if s_dot_start < V_target:  # or True
+            for j in range(self.params.samples_forward_backward, self.params.samples_forward_backward*2):
+                # for j in range(1):
+                t_cumulative = 0.0
+                s_dot_current = max(s_dot_start, self.params.s_dot_end_min)
 
-    #             s_vec_local = np.zeros_like(s_arr_temp)
-    #             s_dot_vec_local = np.zeros_like(s_arr_temp)
-    #             s_ddot_vec_local = np.zeros_like(s_arr_temp)
-    #             t_vec_local = np.zeros_like(s_arr_temp)
+                s_vec_local = np.zeros_like(s_arr_temp)
+                s_dot_vec_local = np.zeros_like(s_arr_temp)
+                s_ddot_vec_local = np.zeros_like(s_arr_temp)
+                t_vec_local = np.zeros_like(s_arr_temp)
 
-    #             for i in range(np.shape(s_arr_ref)[0]):
+                for i in range(np.shape(s_arr_ref)[0]):
 
-    #                 s_vec_local[i] = s_arr_ref[i]
-    #                 s_dot_vec_local[i] = s_dot_current
-    #                 t_vec_local[i] = t_cumulative
-    #                 s_step = s_arr_ref[1+i] - s_arr_ref[i]
-    #                 if s_step > 0.5 * track_handler.s_coord()[-1]:
-    #                     s_step = - s_step + track_handler.s_coord()[-1]
+                    s_vec_local[i] = s_arr_ref[i]
+                    s_dot_vec_local[i] = s_dot_current
+                    t_vec_local[i] = t_cumulative
+                    s_step = s_arr_ref[1+i] - s_arr_ref[i]
+                    if s_step > 0.5 * track_handler.s_coord()[-1]:
+                        s_step = - s_step + track_handler.s_coord()[-1]
 
-    #                 ax_avail_min_tilde, ax_avail_max_tilde, ay_tilde, g_tilde = self.__calc_ax_avail(
-    #                     s=s_arr_ref[i+1], n=0.0, chi=0.0, V=s_dot_current, Omega_z=0.0, track_handler=track_handler, gggv_handler=gggv_handler, pitlane_mode=pitlane_mode)
-    #                 ax_avail_scaled = ax_avail_max_tilde * \
-    #                     scales[j-self.params.samples_forward_backward]
-    #                 # s_dot_next = s_dot_current + ax_avail_max_tilde * scales[j-self.params.samples_forward_backward] * (s_step/s_dot_current)  #constant vel approx not constant ax
-    #                 s_dot_next = np.sqrt(
-    #                     s_dot_current**2 + 2 * ax_avail_scaled * s_step)
-    #                 # t_cumulative += (s_step) / s_dot_current #constant vel approx not constant ax
+                    # F1TENTH: Use fixed acceleration limits instead of GGGV
+                    ax_avail_max_tilde = ax_max_accel  # Fixed max acceleration
+                    ax_avail_scaled = ax_avail_max_tilde * \
+                        scales[j-self.params.samples_forward_backward]
+                    # s_dot_next = s_dot_current + ax_avail_max_tilde * scales[j-self.params.samples_forward_backward] * (s_step/s_dot_current)  #constant vel approx not constant ax
+                    s_dot_next = np.sqrt(
+                        s_dot_current**2 + 2 * ax_avail_scaled * s_step)
+                    # t_cumulative += (s_step) / s_dot_current #constant vel approx not constant ax
 
-    #                 max_s_dot = min(max(V_target, self.params.s_dot_end_min), (s_dot_arr_ref[i] + (
-    #                     self.params.forward_backward_max_v_to_rl_delta)) * scales[j-self.params.samples_forward_backward])
-    #                 if s_dot_next > max_s_dot:
+                    max_s_dot = min(max(V_target, self.params.s_dot_end_min), (s_dot_arr_ref[i] + (
+                        self.params.forward_backward_max_v_to_rl_delta)) * scales[j-self.params.samples_forward_backward])
+                    if s_dot_next > max_s_dot:
 
-    #                     # s_ddot_vec_local[i] = (s_dot_next - s_dot_current) / ((s_vec_local[i] - s_vec_local[i-1])/s_dot_current) #const vel expression not const ax
-    #                     s_ddot_vec_local[i] = (
-    #                         max_s_dot**2 - s_dot_current**2) / (2*s_step)
-    #                     # forward acceleration breaks when decreasing vel so at slowest keep const
-    #                     if s_ddot_vec_local[i] < 0.0:
-    #                         s_ddot_vec_local[i] = 0.0
-    #                         s_dot_next = s_dot_current
-    #                     else:
-    #                         s_dot_next = max_s_dot
+                        # s_ddot_vec_local[i] = (s_dot_next - s_dot_current) / ((s_vec_local[i] - s_vec_local[i-1])/s_dot_current) #const vel expression not const ax
+                        s_ddot_vec_local[i] = (
+                            max_s_dot**2 - s_dot_current**2) / (2*s_step)
+                        # forward acceleration breaks when decreasing vel so at slowest keep const
+                        if s_ddot_vec_local[i] < 0.0:
+                            s_ddot_vec_local[i] = 0.0
+                            s_dot_next = s_dot_current
+                        else:
+                            s_dot_next = max_s_dot
 
-    #                 else:
-    #                     # (s_dot_next - s_dot_current) / (t_cumulative-t_vec_forward[i])
-    #                     s_ddot_vec_local[i] = ax_avail_scaled
+                    else:
+                        # (s_dot_next - s_dot_current) / (t_cumulative-t_vec_forward[i])
+                        s_ddot_vec_local[i] = ax_avail_scaled
 
-    #                 if np.abs(s_ddot_vec_local[i]) > 1e-5:
-    #                     t_cumulative += (s_dot_next -
-    #                                      s_dot_current) / s_ddot_vec_local[i]
-    #                 else:
-    #                     t_cumulative += (s_step) / s_dot_current
+                    if np.abs(s_ddot_vec_local[i]) > 1e-5:
+                        t_cumulative += (s_dot_next -
+                                         s_dot_current) / s_ddot_vec_local[i]
+                    else:
+                        t_cumulative += (s_step) / s_dot_current
 
-    #                 s_dot_current = s_dot_next
+                    s_dot_current = s_dot_next
 
-    #                 if t_cumulative > self.params.horizon and i >= (self.params.num_samples-1) or i >= (np.shape(s_arr_ref)[0]-2):
-    #                     break
+                    if t_cumulative > self.params.horizon and i >= (self.params.num_samples-1) or i >= (np.shape(s_arr_ref)[0]-2):
+                        break
 
-    #             rel_long_sampling_array[j *
-    #                                     n_samples:  (j+1) * n_samples] = False
-    #             # print(t_array[j,:])
-    #             trim_mask = np.zeros_like(s_vec_local, dtype=bool)
-    #             trim_mask[:(i+1)] = create_trim_mask(s_vec_local[:(i+1)],
-    #                                                  self.params.num_samples)
-    #             s_array[j*n_samples:  (j+1) * n_samples,
-    #                     :] = np.tile(s_vec_local[trim_mask], (n_samples, 1))
-    #             s_dot_array[j*n_samples:  (j+1) * n_samples, :] = np.tile(
-    #                 s_dot_vec_local[trim_mask], (n_samples, 1))
-    #             s_ddot_array[j*n_samples:  (j+1) * n_samples, :] = np.tile(
-    #                 s_ddot_vec_local[trim_mask], (n_samples, 1))
-    #             t_array[j*n_samples:  (j+1) * n_samples,
-    #                     :] = np.tile(t_vec_local[trim_mask], (n_samples, 1))
+                rel_long_sampling_array[j *
+                                        n_samples:  (j+1) * n_samples] = False
+                # print(t_array[j,:])
+                trim_mask = np.zeros_like(s_vec_local, dtype=bool)
+                trim_mask[:(i+1)] = create_trim_mask(s_vec_local[:(i+1)],
+                                                     self.params.num_samples)
+                s_array[j*n_samples:  (j+1) * n_samples,
+                        :] = np.tile(s_vec_local[trim_mask], (n_samples, 1))
+                s_dot_array[j*n_samples:  (j+1) * n_samples, :] = np.tile(
+                    s_dot_vec_local[trim_mask], (n_samples, 1))
+                s_ddot_array[j*n_samples:  (j+1) * n_samples, :] = np.tile(
+                    s_ddot_vec_local[trim_mask], (n_samples, 1))
+                t_array[j*n_samples:  (j+1) * n_samples,
+                        :] = np.tile(t_vec_local[trim_mask], (n_samples, 1))
 
-    #             # if np.any(np.diff(s_array[j*n_samples,:]) <= 0):
-    #             #     print("Acceleration profile (s) not monotonically increasing")
-    #             #     print(s_array[j*n_samples,:])
+                # if np.any(np.diff(s_array[j*n_samples,:]) <= 0):
+                #     print("Acceleration profile (s) not monotonically increasing")
+                #     print(s_array[j*n_samples,:])
 
-    #             # if np.any(np.diff(t_array[j*n_samples,:]) <= 0):
-    #             #     print("Acceleration profile (time) not monotonically increasing")
-    #             #     print(t_array[j*n_samples,:])
+                # if np.any(np.diff(t_array[j*n_samples,:]) <= 0):
+                #     print("Acceleration profile (time) not monotonically increasing")
+                #     print(t_array[j*n_samples,:])
 
-    #     ##############################################################################################################
+        ##############################################################################################################
 
-    #     # get fastest decelerating profile
-    #     ##############################################################################################################
-    #     if True:
-    #         for j in range(self.params.samples_forward_backward):
-    #             t_cumulative = 0.0
-    #             # s_dot_current =max(s_dot_start, self.params.s_dot_end_min)
-    #             s_dot_current = s_dot_start
+        # get fastest decelerating profile
+        ##############################################################################################################
+        if True:
+            for j in range(self.params.samples_forward_backward):
+                t_cumulative = 0.0
+                # s_dot_current =max(s_dot_start, self.params.s_dot_end_min)
+                s_dot_current = s_dot_start
 
-    #             s_vec_local = np.zeros_like(s_arr_temp)
-    #             s_dot_vec_local = np.zeros_like(s_arr_temp)
-    #             s_ddot_vec_local = np.zeros_like(s_arr_temp)
-    #             t_vec_local = np.zeros_like(s_arr_temp)
+                s_vec_local = np.zeros_like(s_arr_temp)
+                s_dot_vec_local = np.zeros_like(s_arr_temp)
+                s_ddot_vec_local = np.zeros_like(s_arr_temp)
+                t_vec_local = np.zeros_like(s_arr_temp)
 
-    #             for i in range(np.shape(s_arr_ref)[0]):
-    #                 s_vec_local[i] = s_arr_ref[i]
-    #                 s_dot_vec_local[i] = s_dot_current
-    #                 t_vec_local[i] = t_cumulative
-    #                 s_step = s_arr_ref[1+i] - s_arr_ref[i]
-    #                 if s_step > 0.5 * track_handler.s_coord()[-1]:
-    #                     s_step = - s_step + track_handler.s_coord()[-1]
+                for i in range(np.shape(s_arr_ref)[0]):
+                    s_vec_local[i] = s_arr_ref[i]
+                    s_dot_vec_local[i] = s_dot_current
+                    t_vec_local[i] = t_cumulative
+                    s_step = s_arr_ref[1+i] - s_arr_ref[i]
+                    if s_step > 0.5 * track_handler.s_coord()[-1]:
+                        s_step = - s_step + track_handler.s_coord()[-1]
 
-    #                 ax_avail_min_tilde, ax_avail_max_tilde, ay_tilde, g_tilde = self.__calc_ax_avail(
-    #                     s=s_arr_ref[i+1], n=0.0, chi=0.0, V=s_dot_current, Omega_z=0.0, track_handler=track_handler, gggv_handler=gggv_handler, pitlane_mode=pitlane_mode)
-    #                 ax_avail_scaled = -np.abs(ax_avail_min_tilde) * scales[j]
-    #                 # s_dot_next = s_dot_current -np.abs(ax_avail_min_tilde) * scales[j] * (s_step/s_dot_current)  #constant vel approx not constant ax
-    #                 discriminant = s_dot_current**2 + 2 * ax_avail_scaled * s_step
-    #                 if discriminant > 0:
-    #                     s_dot_next = np.sqrt(discriminant)
-    #                 else:
-    #                     s_dot_next = 0.0
+                    # F1TENTH: Use fixed deceleration limits instead of GGGV
+                    # Fixed max deceleration (negative)
+                    ax_avail_min_tilde = -ax_max_decel
+                    ax_avail_scaled = -np.abs(ax_avail_min_tilde) * scales[j]
+                    # s_dot_next = s_dot_current -np.abs(ax_avail_min_tilde) * scales[j] * (s_step/s_dot_current)  #constant vel approx not constant ax
+                    discriminant = s_dot_current**2 + 2 * ax_avail_scaled * s_step
+                    if discriminant > 0:
+                        s_dot_next = np.sqrt(discriminant)
+                    else:
+                        s_dot_next = 0.0
 
-    #                 # below the threshold speed to stop without asymptotic behavior
-    #                 s_dot_min = self.params.s_dot_end_min*0.3
-    #                 if s_dot_next < s_dot_min:
+                    # below the threshold speed to stop without asymptotic behavior
+                    s_dot_min = self.params.s_dot_end_min*0.3
+                    if s_dot_next < s_dot_min:
 
-    #                     # s_ddot_vec_local[i] = (s_dot_next - s_dot_current) / ((s_vec_local[i] - s_vec_local[i-1])/s_dot_current) #const vel expression not const ax
-    #                     s_ddot_vec_local[i] = (
-    #                         s_dot_min**2 - s_dot_current**2) / (2*s_step)
-    #                     s_dot_next = s_dot_min
+                        # s_ddot_vec_local[i] = (s_dot_next - s_dot_current) / ((s_vec_local[i] - s_vec_local[i-1])/s_dot_current) #const vel expression not const ax
+                        s_ddot_vec_local[i] = (
+                            s_dot_min**2 - s_dot_current**2) / (2*s_step)
+                        s_dot_next = s_dot_min
 
-    #                 else:
-    #                     # (s_dot_next - s_dot_current) / (t_cumulative-t_vec_forward[i])
-    #                     s_ddot_vec_local[i] = ax_avail_scaled
+                    else:
+                        # (s_dot_next - s_dot_current) / (t_cumulative-t_vec_forward[i])
+                        s_ddot_vec_local[i] = ax_avail_scaled
 
-    #                 if np.abs(s_ddot_vec_local[i]) > 1e-5:
-    #                     t_cumulative += (s_dot_next -
-    #                                      s_dot_current) / s_ddot_vec_local[i]
-    #                 else:
-    #                     t_cumulative += (s_step) / s_dot_current
+                    if np.abs(s_ddot_vec_local[i]) > 1e-5:
+                        t_cumulative += (s_dot_next -
+                                         s_dot_current) / s_ddot_vec_local[i]
+                    else:
+                        t_cumulative += (s_step) / s_dot_current
 
-    #                 s_dot_current = s_dot_next
+                    s_dot_current = s_dot_next
 
-    #                 if t_cumulative > self.params.horizon and i >= (self.params.num_samples-1) or i >= (np.shape(s_arr_ref)[0]-2):
-    #                     break
+                    if t_cumulative > self.params.horizon and i >= (self.params.num_samples-1) or i >= (np.shape(s_arr_ref)[0]-2):
+                        break
 
-    #             rel_long_sampling_array[j *
-    #                                     n_samples:  (j+1) * n_samples] = False
+                rel_long_sampling_array[j *
+                                        n_samples:  (j+1) * n_samples] = False
 
-    #             trim_mask = np.zeros_like(s_vec_local, dtype=bool)
-    #             trim_mask[:(i+1)] = create_trim_mask(s_vec_local[:(i+1)],
-    #                                                  self.params.num_samples)
+                trim_mask = np.zeros_like(s_vec_local, dtype=bool)
+                trim_mask[:(i+1)] = create_trim_mask(s_vec_local[:(i+1)],
+                                                     self.params.num_samples)
 
-    #             s_array[j*n_samples:  (j+1) * n_samples,
-    #                     :] = np.tile(s_vec_local[trim_mask], (n_samples, 1))
-    #             s_dot_array[j*n_samples:  (j+1) * n_samples, :] = np.tile(
-    #                 s_dot_vec_local[trim_mask], (n_samples, 1))
-    #             s_ddot_array[j*n_samples:  (j+1) * n_samples, :] = np.tile(
-    #                 s_ddot_vec_local[trim_mask], (n_samples, 1))
-    #             t_array[j*n_samples:  (j+1) * n_samples,
-    #                     :] = np.tile(t_vec_local[trim_mask], (n_samples, 1))
+                s_array[j*n_samples:  (j+1) * n_samples,
+                        :] = np.tile(s_vec_local[trim_mask], (n_samples, 1))
+                s_dot_array[j*n_samples:  (j+1) * n_samples, :] = np.tile(
+                    s_dot_vec_local[trim_mask], (n_samples, 1))
+                s_ddot_array[j*n_samples:  (j+1) * n_samples, :] = np.tile(
+                    s_ddot_vec_local[trim_mask], (n_samples, 1))
+                t_array[j*n_samples:  (j+1) * n_samples,
+                        :] = np.tile(t_vec_local[trim_mask], (n_samples, 1))
 
-    #             # if np.any(np.diff(s_array[j*n_samples,:]) <= 0):
-    #             #     print("Deceleration profile (s) not monotonically increasing")
-    #             #     print(s_array[j*n_samples,:])
+                # if np.any(np.diff(s_array[j*n_samples,:]) <= 0):
+                #     print("Deceleration profile (s) not monotonically increasing")
+                #     print(s_array[j*n_samples,:])
 
-    #             # if np.any(np.diff(t_array[j*n_samples,:]) <= 0):
-    #             #     print("Deceleration profile (time) not monotonically increasing")
-    #             #     print(t_array[j*n_samples,:])
+                # if np.any(np.diff(t_array[j*n_samples,:]) <= 0):
+                #     print("Deceleration profile (time) not monotonically increasing")
+                #     print(t_array[j*n_samples,:])
 
-    #     ##############################################################################################################
-    #     s_dot_end_values = s_dot_array[0::n_samples, -1]
-    #     s_end_values = s_array[0::n_samples, -1]
+        ##############################################################################################################
+        s_dot_end_values = s_dot_array[0::n_samples, -1]
+        s_end_values = s_array[0::n_samples, -1]
 
-    #     return s_array, s_dot_array, s_ddot_array, s_dot_end_values, s_end_values, rel_long_sampling_array, t_array
+        return s_array, s_dot_array, s_ddot_array, s_dot_end_values, s_end_values, rel_long_sampling_array, t_array
 
     def calc_time_vector(
             self,

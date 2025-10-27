@@ -6,6 +6,21 @@ Complete integration of TAM algorithms with proper namespaced topics
 This node integrates the complete TAM sampling algorithms into the existing 
 multi-car racing architecture with full namespace support.
 """
+import sys
+import os
+
+# Add the package src directory to Python path FIRST before any local imports
+# This must be done before importing local modules
+if __name__ == '__main__':
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+else:
+    # When executed as a module (e.g., through catkin relay)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+
 import rospy
 import numpy as np
 from typing import List, Dict, Optional
@@ -16,18 +31,16 @@ from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 from dynamic_reconfigure.msg import Config
 from f110_msgs.msg import Obstacle, ObstacleArray, OTWpntArray, Wpnt, WpntArray, OpponentTrajectory
-from tam_sampling_utils import TAMSamplingUtils
-from tam_sampling_core import TAMSamplingCore, FrenetTrajectory
-import sys
-import os
 
-# Add the current directory to Python path to find tam_sampling_core
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-
-# Add the package src directory to Python path for module imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, current_dir)
+# Import TAM modules (must be after sys.path setup)
+try:
+    from tam_sampling_utils import TAMSamplingUtils
+    from tam_sampling_core import LocalSamplingPlanner  # Actual class name in core
+except ImportError as e:
+    print(f"ERROR: Failed to import TAM modules: {e}")
+    print(f"Current directory: {os.path.dirname(os.path.abspath(__file__))}")
+    print(f"sys.path: {sys.path}")
+    raise
 
 
 # ROS message imports
@@ -128,8 +141,13 @@ class TAMSamplingPlannerNode:
         self.update_dynamic_params()
 
         # Initialize F1Tenth-compatible TAM sampling core
-        # NOTE: TAMSamplingCore now uses rospy.get_param() internally
-        self.tam_planner = TAMSamplingCore(use_f1tenth_mode=True)
+        # NOTE: LocalSamplingPlanner uses rospy.get_param() internally
+        # Enable debugging to see detailed path collision analysis
+        self.tam_planner = LocalSamplingPlanner(
+            node_monitor=False,
+            load_from_params=True,
+            debugging=True  # F1TENTH: Enable debugging for trajectory analysis
+        )
 
         # Import CoordinateTransformation for WpntArray conversion
         from coordinate_transformation import CoordinateTransformation
@@ -263,10 +281,34 @@ class TAMSamplingPlannerNode:
         self.global_waypoints = msg
 
         if len(msg.wpnts) > 0:
-            # Initialize GlobalWaypointsTrackHandler for F1Tenth
+            # Convert WpntArray to dictionary format for GlobalWaypointsTrackHandler
             try:
                 from track_handler_global_waypoints import GlobalWaypointsTrackHandler
-                self.track_handler = GlobalWaypointsTrackHandler(msg)
+
+                # Convert ROS message to dictionary format
+                waypoints_dict = {
+                    'wpnts': [
+                        {
+                            's_m': wpnt.s_m,
+                            'x_m': wpnt.x_m,
+                            'y_m': wpnt.y_m,
+                            'd_m': wpnt.d_m if hasattr(wpnt, 'd_m') else 0.0,
+                            'd_left': wpnt.d_left if hasattr(wpnt, 'd_left') else 1.5,
+                            'd_right': wpnt.d_right if hasattr(wpnt, 'd_right') else 1.5,
+                            'psi_rad': wpnt.psi_rad,
+                            'kappa_radpm': wpnt.kappa_radpm,
+                            'vx_mps': wpnt.vx_mps if hasattr(wpnt, 'vx_mps') else 5.0
+                        }
+                        for wpnt in msg.wpnts
+                    ]
+                }
+
+                self.track_handler = GlobalWaypointsTrackHandler(
+                    waypoints_dict)
+
+                # Update the track handler in the TAM planner core
+                self.tam_planner.track_handler = self.track_handler
+
                 rospy.loginfo(
                     f"{self.log_name} ✓ Track handler initialized with {len(msg.wpnts)} waypoints")
             except Exception as e:
@@ -403,57 +445,105 @@ class TAMSamplingPlannerNode:
 
         return obstacles
 
-    # ========== LEGACY PREDICTION METHODS - COMMENTED OUT FOR F1TENTH ==========
-    # These methods are for TAM opponent prediction and are not used in basic F1Tenth
+    def process_predictions(self) -> List[Dict]:
+        """Convert opponent predictions to TAM obstacle format"""
 
-    # def process_predictions(self) -> List[Dict]:
-    #     """Convert opponent predictions to TAM obstacle format"""
-    #
-    #     predicted_obstacles = []
-    #
-    #     try:
-    #         # Group prediction waypoints by time/distance
-    #         prediction_groups = self.group_predictions_by_time()
-    #
-    #         for time_step, waypoints in prediction_groups.items():
-    #             for waypoint in waypoints:
-    #                 # Convert predicted waypoint to TAM obstacle format
-    #                 predicted_obstacle = {
-    #                     'x': waypoint.x_m,
-    #                     'y': waypoint.y_m,
-    #                     's': waypoint.s_m,
-    #                     'd': waypoint.d_m,
-    #                     'v': waypoint.proj_vs_mps,
-    #                     'heading': 0.0,  # Not provided in predictions
-    #                     'width': 0.3,  # Default vehicle width
-    #                     'length': 0.5,  # Default vehicle length
-    #                     'is_static': False,
-    #                     'is_predicted': True,
-    #                     'prediction_time': time_step
-    #                 }
-    #                 predicted_obstacles.append(predicted_obstacle)
-    #
-    #     except Exception as e:
-    #         rospy.logwarn_throttle(
-    #             5.0, f"{self.log_name} Error processing predictions: {e}")
-    #
-    #     return predicted_obstacles
+        predicted_obstacles = []
 
-    # def group_predictions_by_time(self) -> Dict:
-    #     """Group prediction waypoints by time steps for trajectory sampling"""
-    #
-    #     prediction_groups = {}
-    #
-    #     # Simple grouping - could be enhanced with more sophisticated time binning
-    #     dt = 0.1  # 100ms time steps
-    #
-    #     for i, waypoint in enumerate(self.predictions.oppwpnts):
-    #         time_step = i * dt
-    #         if time_step not in prediction_groups:
-    #             prediction_groups[time_step] = []
-    #         prediction_groups[time_step].append(waypoint)
-    #
-    #     return prediction_groups
+        try:
+            # Group prediction waypoints by time/distance
+            prediction_groups = self.group_predictions_by_time()
+
+            for time_step, waypoints in prediction_groups.items():
+                for waypoint in waypoints:
+                    # Convert predicted waypoint to TAM obstacle format
+                    predicted_obstacle = {
+                        's': waypoint.s_m,
+                        'd': waypoint.d_m,
+                        'velocity_s': waypoint.proj_vs_mps,
+                        'velocity_d': 0.0,  # Lateral velocity not provided
+                        'radius': 0.25,  # Default vehicle radius
+                        'is_static': False,
+                        'is_visible': True,
+                        'is_predicted': True,
+                        'prediction_time': time_step
+                    }
+                    predicted_obstacles.append(predicted_obstacle)
+
+        except Exception as e:
+            rospy.logwarn_throttle(
+                5.0, f"{self.log_name} Error processing predictions: {e}")
+
+        return predicted_obstacles
+
+    def group_predictions_by_time(self) -> Dict:
+        """Group prediction waypoints by time steps for trajectory sampling"""
+
+        prediction_groups = {}
+
+        # Simple grouping - could be enhanced with more sophisticated time binning
+        dt = 0.1  # 100ms time steps
+
+        for i, waypoint in enumerate(self.opponent_predictions.oppwpnts):
+            time_step = i * dt
+            if time_step not in prediction_groups:
+                prediction_groups[time_step] = []
+            prediction_groups[time_step].append(waypoint)
+
+        return prediction_groups
+
+    def map_current_state_to_state_estimate(self) -> Dict:
+        """
+        Map F1TENTH current_state format to TAM state_estimate format.
+
+        Converts from:
+            current_state: {s, n, s_dot, n_dot, s_ddot, n_ddot, x, y, heading}
+        To:
+            state_estimate: {x_current, y_current, z_current, psi_current, vel_current, s, n}
+        """
+        # Calculate total velocity from Frenet velocities
+        vel_current = np.sqrt(self.current_state['s_dot']**2 +
+                              self.current_state['n_dot']**2)
+
+        # Convert current_state to state_estimate format
+        state_estimate = {
+            'x_current': self.current_state['x'],
+            'y_current': self.current_state['y'],
+            'z_current': 0.0,  # F1TENTH is 2D planar
+            'psi_current': self.current_state['heading'],
+            'vel_current': vel_current,
+            's': self.current_state['s'],
+            'n': self.current_state['n']
+        }
+
+        return state_estimate
+
+    def get_raceline_from_global_waypoints(self) -> Dict:
+        """
+        Extract raceline dictionary from global waypoints for calc_trajectory.
+
+        Returns:
+            Dictionary with 'wpnts' key containing global waypoints
+        """
+        # Return waypoints in expected format for postprocess_raceline
+        return {'wpnts': self.global_waypoints.wpnts}
+
+    def create_planning_requests(self) -> Dict:
+        """
+        Create planning_requests dictionary with required parameters.
+
+        Returns:
+            Dictionary with planning request parameters
+        """
+        planning_requests = {
+            'V_max': rospy.get_param('max_speed', self.planning_params.get('max_speed', 10.0)),
+            'following_distance': rospy.get_param('following_distance', 10.0),
+            'overtaking_allowed': rospy.get_param('overtaking_allowed', True),
+            'role': rospy.get_param('role', 0),  # 0 = normal racing
+            'gg_scaling': rospy.get_param('gg_scaling', 1.0)
+        }
+
+        return planning_requests
 
     # ========== LEGACY VISUALIZATION METHODS - COMMENTED OUT FOR F1TENTH ==========
     # These methods work with FrenetTrajectory objects from old TAM
@@ -634,53 +724,80 @@ class TAMSamplingPlannerNode:
                 5, f"{self.log_name} Missing required data for planning (track_handler or waypoints)")
             return
 
-        # Process obstacles
-        obstacles = self.process_obstacles()
+        # Process obstacles - convert to prediction format if needed
+        # For now, use empty prediction dict (obstacles integration can be added later)
+        prediction_dict = {}
+
+        # If we have opponent predictions, convert them
+        if len(self.opponent_predictions.oppwpnts) > 0:
+            prediction_dict = {'oppwpnts': self.opponent_predictions.oppwpnts}
 
         # Run F1Tenth TAM sampling planner
         try:
-            # STEP 1: Plan trajectory using F1Tenth calc_trajectory()
-            trajectory_dict = self.tam_planner.calc_trajectory(
-                current_state=self.current_state,
-                track_handler=self.track_handler,
-                obstacles=obstacles
+            # STEP 1: Map state and parameters to TAM format
+            state_estimate = self.map_current_state_to_state_estimate()
+            raceline = self.get_raceline_from_global_waypoints()
+            planning_requests = self.create_planning_requests()
+
+            # STEP 2: Plan trajectory using TAM calc_trajectory()
+            # NOTE: calc_trajectory returns TUPLE of (perf_traj, emerg_traj, s_start, n_start, V_target)
+            result = self.tam_planner.calc_trajectory(
+                state_estimate=state_estimate,
+                raceline=raceline,
+                prediction=prediction_dict,
+                planning_requests=planning_requests
             )
 
-            if trajectory_dict is not None:
-                # STEP 2: Convert trajectory dict to WpntArray
-                wpnt_array = self.coordinate_transformation.convert_trajectory_to_wpnt_array(
-                    trajectory=trajectory_dict,
-                    track_handler=self.track_handler,
-                    traj_cnt=self.planning_count
-                )
+            # STEP 3: Unpack return values (handle tuple return)
+            if result is not None:
+                # calc_trajectory returns tuple: (perf_traj, emerg_traj, s_start, n_start, V_target)
+                if isinstance(result, tuple) and len(result) >= 2:
+                    performance_traj = result[0]
+                    emergency_traj = result[1]
+                    trajectory_dict = performance_traj  # Use performance trajectory
+                else:
+                    # Fallback if unexpected format
+                    trajectory_dict = result
 
-                # STEP 3: Wrap in OTWpntArray for state machine compatibility
-                ot_msg = OTWpntArray()
-                ot_msg.wpnts = wpnt_array
-                ot_msg.header.stamp = rospy.Time.now()
-                ot_msg.header.frame_id = "map"
+                # Verify we have a valid trajectory
+                if trajectory_dict and 's' in trajectory_dict and len(trajectory_dict['s']) > 0:
+                    # STEP 4: Convert trajectory dict to WpntArray
+                    wpnt_array = self.coordinate_transformation.convert_trajectory_to_wpnt_array(
+                        trajectory=trajectory_dict,
+                        track_handler=self.track_handler,
+                        traj_cnt=self.planning_count
+                    )
 
-                # STEP 4: Publish trajectory
-                self.trajectory_pub.publish(ot_msg)
+                    # STEP 5: Wrap in OTWpntArray for state machine compatibility
+                    ot_msg = OTWpntArray()
+                    ot_msg.wpnts = wpnt_array.wpnts  # Extract list of Wpnt objects
+                    ot_msg.header.stamp = rospy.Time.now()
+                    ot_msg.header.frame_id = "map"
 
-                # STEP 5: Publish visualization markers (optional)
-                try:
-                    markers_msg = self.create_f1tenth_visualization_markers(
-                        trajectory_dict, wpnt_array)
-                    self.markers_pub.publish(markers_msg)
-                except Exception as viz_e:
-                    rospy.logdebug(
-                        f"{self.log_name} Visualization error: {viz_e}")
+                    # STEP 6: Publish trajectory
+                    self.trajectory_pub.publish(ot_msg)
 
-                self.planning_count += 1
+                    # STEP 7: Publish visualization markers (optional)
+                    try:
+                        markers_msg = self.create_f1tenth_visualization_markers(
+                            trajectory_dict, wpnt_array)
+                        self.markers_pub.publish(markers_msg)
+                    except Exception as viz_e:
+                        rospy.logdebug(
+                            f"{self.log_name} Visualization error: {viz_e}")
 
-                # Log planning stats
-                is_emergency = trajectory_dict.get('emergency', False)
-                cost = trajectory_dict.get('cost', 0.0)
-                status = "EMERGENCY" if is_emergency else f"cost={cost:.2f}"
+                    self.planning_count += 1
 
-                rospy.loginfo_throttle(
-                    2, f"{self.log_name} Published trajectory #{self.planning_count}: {status}")
+                    # Log planning stats
+                    is_emergency = trajectory_dict.get('emergency', False)
+                    cost = trajectory_dict.get('cost', 0.0)
+                    status = "EMERGENCY" if is_emergency else f"cost={cost:.2f}"
+
+                    rospy.loginfo_throttle(
+                        2, f"{self.log_name} Published trajectory #{self.planning_count}: {status}")
+                else:
+                    rospy.logwarn_throttle(
+                        5, f"{self.log_name} Empty trajectory received from TAM planner")
 
             else:
                 rospy.logwarn_throttle(

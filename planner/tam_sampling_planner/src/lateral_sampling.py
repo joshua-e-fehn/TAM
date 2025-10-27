@@ -33,7 +33,7 @@ class LatSamplingParams():
 
 
 class LateralSampling:
-    def __init__(self):
+    def __init__(self, debugging=False):
         """
         Initialize the LateralSampling class.
 
@@ -42,26 +42,52 @@ class LateralSampling:
         self.params = LatSamplingParams()
         self.declare_and_update_parameters()
 
+    def _load_yaml_defaults(self):
+        """Load default parameters from tam_sampling_params.yaml"""
+        import rospkg
+        import yaml
+        import os
+        try:
+            rospack = rospkg.RosPack()
+            pkg_path = rospack.get_path('tam_sampling_planner')
+            config_file = os.path.join(
+                pkg_path, 'config', 'tam_sampling_params.yaml')
+
+            with open(config_file, 'r') as f:
+                yaml_params = yaml.safe_load(f)
+                rospy.loginfo(
+                    "LateralSampling: Loaded YAML defaults from tam_sampling_params.yaml")
+                return yaml_params if yaml_params else {}
+        except Exception as e:
+            rospy.logwarn(
+                f"LateralSampling: Could not load YAML defaults: {e}")
+            return {}
+
     def declare_and_update_parameters(self):
         """
-        Update parameters from ROS parameter server.
+        Update parameters from ROS parameter server with YAML defaults.
 
         No input parameters - reads from ROS parameter server using rospy.get_param().
         Updates self.params with latest parameter values.
         """
+        yaml_defaults = self._load_yaml_defaults()
+
         self.params.n_samples = rospy.get_param(
-            "discretization/n_samples", 20)
+            "discretization/n_samples", yaml_defaults.get('lateral_samples', 20))
         self.params.n_dense_min = rospy.get_param(
-            "discretization/n_dense_min", -0.5)
+            "discretization/n_dense_min", yaml_defaults.get('n_dense_min', -0.5))
         self.params.n_dense_max = rospy.get_param(
-            "discretization/n_dense_max", 0.5)
+            "discretization/n_dense_max", yaml_defaults.get('n_dense_max', 0.5))
         self.params.n_dense_samples = rospy.get_param(
-            "discretization/n_dense_samples", 5)
+            "discretization/n_dense_samples", yaml_defaults.get('n_dense_samples', 5))
         self.params.safety_distance_track_left = rospy.get_param(
-            "safety_distances/safety_distance_track_left", 0.5)
+            "safety_distances/safety_distance_track_left",
+            yaml_defaults.get('safety_distance_track_left', 0.5))
         self.params.safety_distance_track_right = rospy.get_param(
-            "safety_distances/safety_distance_track_right", 0.5)
-        self.params.tube_width = rospy.get_param("behavior/tube_width", 1.0)
+            "safety_distances/safety_distance_track_right",
+            yaml_defaults.get('safety_distance_track_right', 0.5))
+        self.params.tube_width = rospy.get_param(
+            "behavior/tube_width", yaml_defaults.get('tube_width', 1.0))
 
     def _compute_improved_derivatives(self, waypoints, s_coords, vx_coords, d_coords, kappa_coords):
         """
@@ -128,11 +154,11 @@ class LateralSampling:
             n_ddot_start: float,
             # Time arrays for each sample trajectory [s] - shape: (n_samples, n_points)
             t_array: np.ndarray,
-            # Global waypoints (serves as raceline)
-            # Dictionary with 'wpnts' key containing list of waypoint dicts.
-            global_waypoints: dict,
-            # Each waypoint dict must have: 's_m' (arc length), 'vx_mps' (velocity),
-            # 'd_m' (lateral offset), 'kappa_radpm' (curvature), plus optional fields
+            # Postprocessed raceline (from postprocess_raceline method)
+            # Dictionary with '_post' suffixed keys: 's_post', 'n_post', 's_dot_post',
+            # 's_ddot_post', 'n_dot_post', 'n_ddot_post', 'v_post', 'chi_post',
+            # 'ax_post', 'ay_post', 't_post', 'kappa_post', 'x_post', 'y_post'
+            postprocessed_raceline: dict,
             # If True, sample relative to raceline; if False, sample absolute trajectories
             raceline_tendency: bool,
             # Track
@@ -149,25 +175,20 @@ class LateralSampling:
         n_dot_array = np.zeros_like(s_array)
         n_ddot_array = np.zeros_like(s_array)
 
-        # Create track handler from global waypoints or use existing one
-        if not isinstance(track_handler, Track):
-            # Create new track handler from global waypoints
-            track_handler = Track(global_waypoints)
-        elif not track_handler.is_initialized():
-            # Update existing track handler with new waypoints
-            track_handler.update_waypoints(global_waypoints)
+        # Extract data from postprocessed raceline (already computed by postprocess_raceline)
+        s_coords = postprocessed_raceline['s_post']
+        # Use v_post instead of vx_mps
+        vx_coords = postprocessed_raceline['v_post']
+        # Use n_post (lateral offset)
+        d_coords = postprocessed_raceline['n_post']
+        kappa_coords = postprocessed_raceline['kappa_post']
 
-        # extract data from global waypoints once
-        waypoints = global_waypoints["wpnts"]
-        s_coords = np.array([wp["s_m"] for wp in waypoints])
-        vx_coords = np.array([wp["vx_mps"] for wp in waypoints])
-        # lateral offset (n coordinate)
-        d_coords = np.array([wp["d_m"] for wp in waypoints])
-        kappa_coords = np.array([wp["kappa_radpm"] for wp in waypoints])
-
-        # compute improved derivatives for better approximations
-        derivatives = self._compute_improved_derivatives(
-            waypoints, s_coords, vx_coords, d_coords, kappa_coords)
+        # Pre-computed derivatives from postprocess_raceline
+        s_dot_coords = postprocessed_raceline['s_dot_post']
+        s_ddot_coords = postprocessed_raceline['s_ddot_post']
+        n_dot_coords = postprocessed_raceline['n_dot_post']
+        n_ddot_coords = postprocessed_raceline['n_ddot_post']
+        chi_coords = postprocessed_raceline['chi_post']
 
         # get track length for periodic interpolation
         track_length = track_handler.get_track_length()
@@ -202,19 +223,18 @@ class LateralSampling:
             # calculate the inverse of a for solving the linear equation system in for loop just with a matrix multiplication
             a_inverse = np.linalg.inv(a)
 
-            # evaluate raceline at specific s points using global waypoints
+            # Interpolate raceline data at specific s points using postprocessed raceline
+            # All derivatives and transformations already computed by postprocess_raceline
             s_dot_rl = np.interp(
                 s_array[i],
                 s_coords,
-                vx_coords,
+                s_dot_coords,
                 period=track_length,
             )
-            # improved s_ddot approximation using pre-computed gradient
-            vx_grad = derivatives['vx_grad']
             s_ddot_rl = np.interp(
                 s_array[i],
                 s_coords,
-                vx_grad * vx_coords,  # dv/dt = dv/ds * ds/dt = dv/ds * v
+                s_ddot_coords,
                 period=track_length,
             )
             n_rl = np.interp(
@@ -223,31 +243,29 @@ class LateralSampling:
                 d_coords,
                 period=track_length,
             )
-            # improved lateral derivatives from d_m (lateral offset) data
-            n_prime_rl = np.interp(
-                s_array[i], s_coords, derivatives['d_grad'], period=track_length)
-            n_pprime_rl = np.interp(
-                s_array[i], s_coords, derivatives['d_grad2'], period=track_length)
+            n_dot_rl = np.interp(
+                s_array[i],
+                s_coords,
+                n_dot_coords,
+                period=track_length,
+            )
+            n_ddot_rl = np.interp(
+                s_array[i],
+                s_coords,
+                n_ddot_coords,
+                period=track_length,
+            )
+            chi_rl = np.interp(
+                s_array[i],
+                s_coords,
+                chi_coords,
+                period=track_length,
+            )
 
-            # transform to time derivatives: n_dot = n_prime * s_dot, n_ddot = n_pprime * s_dot² + n_prime * s_ddot
-            n_dot_rl = n_prime_rl * s_dot_rl
-            n_ddot_rl = n_pprime_rl * (s_dot_rl**2) + n_prime_rl * s_ddot_rl
-
-            # improved chi calculation
-            if derivatives['use_geometric_chi']:
-                chi_rl = np.interp(s_array[i], s_coords,
-                                   derivatives['heading_angles'] +
-                                   kappa_coords * d_coords,
-                                   period=track_length)
-            else:
-                # fallback to curvature-based approximation
-                chi_rl = np.interp(
-                    s_array[i],
-                    s_coords,
-                    # fallback chi from curvature
-                    np.arctan(kappa_coords * d_coords),
-                    period=track_length,
-                )
+            # Calculate n_prime and n_pprime for quintic polynomial generation
+            # n_prime = dn/ds, n_pprime = d²n/ds²
+            n_prime_rl = n_dot_rl / s_dot_rl
+            n_pprime_rl = (n_ddot_rl - n_prime_rl * s_ddot_rl) / (s_dot_rl**2)
 
             n_rl_eval = n_rl
             n_dot_rl_eval = n_dot_rl / s_dot_rl * s_dot_array[i]
@@ -361,11 +379,11 @@ class LateralSampling:
             n_ddot_start: float,
             # Time arrays for each sample trajectory [s] - shape: (n_samples, n_points)
             t_array: np.ndarray,
-            # Global waypoints (serves as raceline)
-            # Dictionary with 'wpnts' key containing list of waypoint dicts.
-            global_waypoints: dict,
-        # Each waypoint dict must have: 's_m' (arc length), 'vx_mps' (velocity),
-        # 'd_m' (lateral offset), 'kappa_radpm' (curvature), plus optional fields
+            # Postprocessed raceline (from postprocess_raceline method)
+            # Dictionary with '_post' suffixed keys: 's_post', 'n_post', 's_dot_post',
+            # 's_ddot_post', 'n_dot_post', 'n_ddot_post', 'v_post', 'chi_post',
+            # 'ax_post', 'ay_post', 't_post', 'kappa_post', 'x_post', 'y_post'
+            postprocessed_raceline: dict,
             # If True, sample relative to raceline; if False, sample absolute trajectories
             raceline_tendency: bool,
             # Track
@@ -382,25 +400,20 @@ class LateralSampling:
         n_dot_array = np.zeros_like(s_array)
         n_ddot_array = np.zeros_like(s_array)
 
-        # Create track handler from global waypoints or use existing one
-        if not isinstance(track_handler, Track):
-            # Create new track handler from global waypoints
-            track_handler = Track(global_waypoints)
-        elif not track_handler.is_initialized():
-            # Update existing track handler with new waypoints
-            track_handler.update_waypoints(global_waypoints)
+        # Extract data from postprocessed raceline (already computed by postprocess_raceline)
+        s_coords = postprocessed_raceline['s_post']
+        # Use v_post instead of vx_mps
+        vx_coords = postprocessed_raceline['v_post']
+        # Use n_post (lateral offset)
+        d_coords = postprocessed_raceline['n_post']
+        kappa_coords = postprocessed_raceline['kappa_post']
 
-        # extract data from global waypoints once
-        waypoints = global_waypoints["wpnts"]
-        s_coords = np.array([wp["s_m"] for wp in waypoints])
-        vx_coords = np.array([wp["vx_mps"] for wp in waypoints])
-        # lateral offset (n coordinate)
-        d_coords = np.array([wp["d_m"] for wp in waypoints])
-        kappa_coords = np.array([wp["kappa_radpm"] for wp in waypoints])
-
-        # compute improved derivatives for better approximations
-        derivatives = self._compute_improved_derivatives(
-            waypoints, s_coords, vx_coords, d_coords, kappa_coords)
+        # Pre-computed derivatives from postprocess_raceline
+        s_dot_coords = postprocessed_raceline['s_dot_post']
+        s_ddot_coords = postprocessed_raceline['s_ddot_post']
+        n_dot_coords = postprocessed_raceline['n_dot_post']
+        n_ddot_coords = postprocessed_raceline['n_ddot_post']
+        chi_coords = postprocessed_raceline['chi_post']
 
         # get track length for periodic interpolation
         track_length = track_handler.get_track_length()
@@ -450,19 +463,18 @@ class LateralSampling:
             # calculate the inverse of a for solving the linear equation system in for loop just with a matrix multiplication
             a_inverse = np.linalg.inv(a)
 
-            # evaluate raceline at specific s points using global waypoints
+            # Interpolate raceline data at specific s points using postprocessed raceline
+            # All derivatives and transformations already computed by postprocess_raceline
             s_dot_rl = np.interp(
                 s_array[i],
                 s_coords,
-                vx_coords,
+                s_dot_coords,
                 period=track_length,
             )
-            # improved s_ddot approximation using pre-computed gradient
             s_ddot_rl = np.interp(
                 s_array[i],
                 s_coords,
-                # dv/dt = dv/ds * ds/dt = dv/ds * v
-                derivatives['vx_grad'] * vx_coords,
+                s_ddot_coords,
                 period=track_length,
             )
             n_rl = np.interp(
@@ -471,31 +483,29 @@ class LateralSampling:
                 d_coords,
                 period=track_length,
             )
-            # improved lateral derivatives from d_m (lateral offset) data
-            n_prime_rl = np.interp(
-                s_array[i], s_coords, derivatives['d_grad'], period=track_length)
-            n_pprime_rl = np.interp(
-                s_array[i], s_coords, derivatives['d_grad2'], period=track_length)
+            n_dot_rl = np.interp(
+                s_array[i],
+                s_coords,
+                n_dot_coords,
+                period=track_length,
+            )
+            n_ddot_rl = np.interp(
+                s_array[i],
+                s_coords,
+                n_ddot_coords,
+                period=track_length,
+            )
+            chi_rl = np.interp(
+                s_array[i],
+                s_coords,
+                chi_coords,
+                period=track_length,
+            )
 
-            # transform to time derivatives: n_dot = n_prime * s_dot, n_ddot = n_pprime * s_dot² + n_prime * s_ddot
-            n_dot_rl = n_prime_rl * s_dot_rl
-            n_ddot_rl = n_pprime_rl * (s_dot_rl**2) + n_prime_rl * s_ddot_rl
-
-            # improved chi calculation
-            if derivatives['use_geometric_chi']:
-                chi_rl = np.interp(s_array[i], s_coords,
-                                   derivatives['heading_angles'] +
-                                   kappa_coords * d_coords,
-                                   period=track_length)
-            else:
-                # fallback to curvature-based approximation
-                chi_rl = np.interp(
-                    s_array[i],
-                    s_coords,
-                    # fallback chi from curvature
-                    np.arctan(kappa_coords * d_coords),
-                    period=track_length,
-                )
+            # Calculate n_prime and n_pprime for quintic polynomial generation
+            # n_prime = dn/ds, n_pprime = d²n/ds²
+            n_prime_rl = n_dot_rl / s_dot_rl
+            n_pprime_rl = (n_ddot_rl - n_prime_rl * s_ddot_rl) / (s_dot_rl**2)
 
             n_rl_eval = n_rl
             n_dot_rl_eval = n_dot_rl / s_dot_rl * s_dot_array[i]

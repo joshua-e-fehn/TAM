@@ -7,7 +7,7 @@ Ported from tam_race_stack/mod_planning/sampling_planner/sampling_planner/trajec
 
 MODIFICATIONS:
 - Uses ROS parameter server instead of param_manager
-- Uses global_waypoints format instead of postprocessed_raceline format  
+- Uses postprocessed_raceline format (processed from global waypoints)
 - GGGV-dependent functionality commented out (no GGGV diagrams available)
 - Simplified for use with Pacejka tire model parameters
 - NodeMonitor dependencies simplified to basic print statements
@@ -74,26 +74,55 @@ class TrajectoryChecks():
         self.declare_and_update_parameters()
         self.debugging = debugging
 
+    def _load_yaml_defaults(self):
+        """Load default parameters from tam_sampling_params.yaml"""
+        import rospkg
+        import yaml
+        import os
+        try:
+            rospack = rospkg.RosPack()
+            pkg_path = rospack.get_path('tam_sampling_planner')
+            config_file = os.path.join(
+                pkg_path, 'config', 'tam_sampling_params.yaml')
+
+            with open(config_file, 'r') as f:
+                yaml_params = yaml.safe_load(f)
+                rospy.loginfo(
+                    "TrajectoryChecks: Loaded YAML defaults from tam_sampling_params.yaml")
+                return yaml_params if yaml_params else {}
+        except Exception as e:
+            rospy.logwarn(
+                f"TrajectoryChecks: Could not load YAML defaults: {e}")
+            return {}
+
     def declare_and_update_parameters(self):
-        """Load parameters from ROS parameter server using relative namespace."""
+        """Load parameters from ROS parameter server with YAML defaults."""
+        yaml_defaults = self._load_yaml_defaults()
+
         self.params.tube_width = rospy.get_param(
-            "behavior/tube_width", 1.15)
+            "behavior/tube_width", yaml_defaults.get('tube_width', 1.15))
         self.params.tire_util_max_check = rospy.get_param(
-            "behavior/tire_util_max_check", 1.1)
+            "behavior/tire_util_max_check", yaml_defaults.get('tire_util_max_check', 1.1))
         self.params.kappa_thr = rospy.get_param(
-            "behavior/kappa_thr", 0.1)
+            "behavior/kappa_thr", yaml_defaults.get('kappa_thr', 0.1))
         self.params.safety_distance_track_left = rospy.get_param(
-            "safety_distances/safety_distance_track_left", 0.0)
+            "safety_distances/safety_distance_track_left",
+            yaml_defaults.get('safety_distance_track_left', 0.0))
         self.params.safety_distance_track_right = rospy.get_param(
-            "safety_distances/safety_distance_track_right", 0.0)
+            "safety_distances/safety_distance_track_right",
+            yaml_defaults.get('safety_distance_track_right', 0.0))
         self.params.safety_distance_pitlane_left = rospy.get_param(
-            "safety_distances/safety_distance_pitlane_left", 0.0)
+            "safety_distances/safety_distance_pitlane_left",
+            yaml_defaults.get('safety_distance_pitlane_left', 0.0))
         self.params.safety_distance_pitlane_right = rospy.get_param(
-            "safety_distances/safety_distance_pitlane_right", 0.0)
+            "safety_distances/safety_distance_pitlane_right",
+            yaml_defaults.get('safety_distance_pitlane_right', 0.0))
         self.params.soft_safety_distance_left_m = rospy.get_param(
-            "safety_distances/soft_safety_distance_left_m", 0.0)
+            "safety_distances/soft_safety_distance_left_m",
+            yaml_defaults.get('soft_safety_distance_left_m', 0.0))
         self.params.soft_safety_distance_right_m = rospy.get_param(
-            "safety_distances/soft_safety_distance_right_m", 0.0)
+            "safety_distances/soft_safety_distance_right_m",
+            yaml_defaults.get('soft_safety_distance_right_m', 0.0))
 
     def check_curvature(
         self,
@@ -129,6 +158,7 @@ class TrajectoryChecks():
             safety_distance_left = self.params.safety_distance_track_left
             safety_distance_right = self.params.safety_distance_track_right
 
+        # Left boundary: positive value, reduce by margins to get usable left limit
         left_bound = (
             np.interp(
                 s_array[valid_array],
@@ -139,8 +169,11 @@ class TrajectoryChecks():
             - vehicle_params["total_width"] / 2.0
             - (safety_distance_left + self.params.tube_width)
         )
+
+        # Right boundary: trackwidth_right() returns POSITIVE width (distance from centerline)
+        # We need NEGATIVE boundary (right side of track), so negate and ADD margins inward
         right_bound = (
-            np.interp(
+            -np.interp(
                 s_array[valid_array],
                 track_handler.s_coord(),
                 track_handler.trackwidth_right(),
@@ -152,6 +185,59 @@ class TrajectoryChecks():
 
         valid_tmp = np.all((n_array[valid_array] < left_bound) & (
             n_array[valid_array] > right_bound), axis=1)
+
+        # Debug logging for path collision analysis
+        if self.debugging and np.sum(~valid_tmp) > 0:
+            print("\n=== PATH COLLISION DEBUG ===")
+            print(f"Total trajectories checked: {len(valid_tmp)}")
+            print(f"Failed path check: {np.sum(~valid_tmp)}")
+            print(f"\nBoundary Configuration:")
+            print(f"  Vehicle width: {vehicle_params['total_width']:.3f} m")
+            print(f"  Safety distance left: {safety_distance_left:.3f} m")
+            print(f"  Safety distance right: {safety_distance_right:.3f} m")
+            print(f"  Tube width: {self.params.tube_width:.3f} m")
+            print(
+                f"  Total margin left: {vehicle_params['total_width']/2.0 + safety_distance_left + self.params.tube_width:.3f} m")
+            print(
+                f"  Total margin right: {vehicle_params['total_width']/2.0 + safety_distance_right + self.params.tube_width:.3f} m")
+
+            print(f"\nTrack Boundaries (first point):")
+            if len(left_bound) > 0 and len(right_bound) > 0:
+                # left_bound and right_bound are 2D arrays [trajectories, points]
+                print(f"  Left bound: {float(left_bound[0, 0]):.3f} m")
+                print(f"  Right bound: {float(right_bound[0, 0]):.3f} m")
+                print(
+                    f"  Available width: {float(left_bound[0, 0] - right_bound[0, 0]):.3f} m")
+
+            print(f"\nSampled Lateral Positions (n_array):")
+            if len(n_array[valid_array]) > 0:
+                # First point of each trajectory
+                n_values = n_array[valid_array][:, 0]
+                print(f"  Min n: {np.min(n_values):.3f} m")
+                print(f"  Max n: {np.max(n_values):.3f} m")
+                print(f"  Mean n: {np.mean(n_values):.3f} m")
+                print(f"  Range: {np.max(n_values) - np.min(n_values):.3f} m")
+
+                # Show which trajectories exceed bounds
+                exceeds_left = np.any(
+                    n_array[valid_array] >= left_bound, axis=1)
+                exceeds_right = np.any(
+                    n_array[valid_array] <= right_bound, axis=1)
+                print(
+                    f"\n  Trajectories exceeding left bound: {np.sum(exceeds_left)}")
+                print(
+                    f"  Trajectories exceeding right bound: {np.sum(exceeds_right)}")
+
+                if np.sum(exceeds_left) > 0:
+                    max_violation_left = np.max(
+                        n_array[valid_array][exceeds_left] - left_bound[exceeds_left])
+                    print(f"  Max left violation: {max_violation_left:.3f} m")
+                if np.sum(exceeds_right) > 0:
+                    max_violation_right = np.max(
+                        right_bound[exceeds_right] - n_array[valid_array][exceeds_right])
+                    print(
+                        f"  Max right violation: {max_violation_right:.3f} m")
+            print("========================\n")
 
         # store trajectories that failed this check
         if self.debugging:
@@ -222,7 +308,7 @@ class TrajectoryChecks():
             msgs_logger,  # NodeMonitor - simplified
             pitlane_mode: bool,
             invalid_array_info: np.ndarray,
-            global_waypoints: dict,
+            postprocessed_raceline: dict,
     ):
         ax_tilde = np.zeros_like(s_array)
         ay_tilde = np.zeros_like(s_array)
@@ -324,11 +410,11 @@ class TrajectoryChecks():
         #     valid_tmp = np.all(tire_util_array[valid_array] <= self.params.tire_util_max_check, axis=1) & \
         #         np.all(ax_tilde[valid_array] <= (ax_machine_lim), axis=1)
         #
-        #     # recalc raceline tire utilization - commented out due to global waypoints format
-        #     # Note: calc_raceline_tire_util expects postprocessed_raceline format,
-        #     # but we now use global_waypoints format. This needs to be adapted when GGGV is re-enabled.
+        #     # recalc raceline tire utilization - commented out due to postprocessed_raceline format
+        #     # Note: calc_raceline_tire_util expects specific raceline format.
+        #     # This needs to be adapted when GGGV is re-enabled.
         #     # tire_util_array_rl = calc_raceline_tire_util(
-        #     #     track_handler, gggv_handler, global_waypoints)
+        #     #     track_handler, gggv_handler, postprocessed_raceline)
         #
         #     # if np.sum(np.any(tire_util_array_rl > 1.005)) > 0: # add tolerance for numerical inaccuracies
         #     #    print("Raceline violates the friction check!")
@@ -380,7 +466,7 @@ class TrajectoryChecks():
                                     vehicle_params: dict,
                                     ggv_mode: str,
                                     gggv_handler,  # GGGVManager - commented out due to no GGGV diagrams
-                                    global_waypoints: dict,
+                                    postprocessed_raceline: dict,
                                     ):
 
         self.declare_and_update_parameters()
@@ -390,6 +476,14 @@ class TrajectoryChecks():
 
         # info for invalid arrays in visualizer
         invalid_array_info = np.array([""] * s_array.shape[0], dtype='<U20')
+
+        # Initialize return variables with safe defaults (in case all trajectories fail early checks)
+        ax_tilde = np.zeros_like(s_array)
+        ay_tilde = np.zeros_like(s_array)
+        g_tilde = np.ones_like(s_array) * 9.81  # Standard gravity
+        tire_util_array = np.zeros_like(s_array)
+        left_bound = np.array([])
+        right_bound = np.array([])
 
         # checks modify the valid array. The order of the checks can have influence on the calculation time
         valid_sum = np.sum(valid_array)
@@ -474,7 +568,7 @@ class TrajectoryChecks():
                 msgs_logger=msgs_logger,
                 pitlane_mode=pitlane_mode,
                 invalid_array_info=invalid_array_info,
-                global_waypoints=global_waypoints,
+                postprocessed_raceline=postprocessed_raceline,
             )
             valid_sum_tmp = np.sum(valid_array)
             if not valid_sum_tmp:
