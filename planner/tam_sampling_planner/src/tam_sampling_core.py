@@ -617,8 +617,10 @@ class LocalSamplingPlanner:
                 elif isinstance(aligned_traj[key], list):
                     const_part_traj[key] = aligned_traj[key][:const_end_idx]
 
-        # Update initial state from end of constant segment
-        if new_N > 0:
+        # Update initial state from end of constant segment OR current state estimate
+        # If const_trajectory_time == 0 or const_end_idx == 0, use current state estimate instead of old trajectory
+        if new_N > 0 and const_end_idx > 0:
+            # Use old trajectory (warm-starting enabled)
             s_start = aligned_traj['s'][const_end_idx]
             s_dot_start = max(s_dot_min, aligned_traj.get(
                 's_dot', [s_dot_min] * new_N)[const_end_idx])
@@ -632,6 +634,17 @@ class LocalSamplingPlanner:
             t_start = aligned_traj.get('t', [0.0] * new_N)[const_end_idx]
             s_loc_start = aligned_traj.get(
                 's_loc', [0.0] * new_N)[const_end_idx]
+        else:
+            # Use current state estimate (no warm-starting or const_trajectory_time == 0)
+            s_start = state_estimate.get('s', 0.0)
+            s_dot_start = max(s_dot_min, state_estimate.get(
+                'vel_current', s_dot_min))
+            s_ddot_start = 0.0
+            n_start = state_estimate.get('n', 0.0)
+            n_dot_start = 0.0
+            n_ddot_start = 0.0
+            t_start = 0.0
+            s_loc_start = 0.0
 
         # Erase the constant part from aligned trajectory
         if const_end_idx > 0 and const_end_idx < new_N:
@@ -793,6 +806,7 @@ class LocalSamplingPlanner:
             lap_update_bool = False
 
             # delete previous trajectory to plan from current state estimate in stillstand mode
+            # CRITICAL: Clear BEFORE match_and_hold_constant so we don't advance along old trajectory
             if self.status == self.status_dict["stillstand"]:
                 self.performance_trajectory.clear()
 
@@ -881,7 +895,7 @@ class LocalSamplingPlanner:
             )
 
             # transform frenet curves to velocity frame
-            V_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array = self.coordinate_transformation.transform_to_velocity_frame(
+            V_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array, kappa_vf_array = self.coordinate_transformation.transform_to_velocity_frame(
                 track_handler=self.track_handler,
                 s_array=s_array,
                 s_dot_array=s_dot_array,
@@ -897,8 +911,9 @@ class LocalSamplingPlanner:
                 ax_vf_array[:] = 0.0
 
             # perform all trajectory checks
+            # Note: kappa_vf_array contains path curvature (rad/m), not yaw rate
             valid_array, ax_tilde, ay_tilde, g_tilde, tire_util_array, invalid_array_info, track_bound = self.trajectory_checks.mandatory_checks_trajectory(
-                Omega_z_vf_array=Omega_z_vf_array,
+                Omega_z_vf_array=kappa_vf_array,
                 track_handler=self.track_handler,
                 s_array=s_array,
                 n_array=n_array,
@@ -960,6 +975,12 @@ class LocalSamplingPlanner:
 
             sorted_idx = self.calculation_costs.sort_trajectories_by_cost(
                 valid_array=valid_array, cost_array=cost_array)
+
+            # Ensure trajectories are dictionaries before clearing
+            if not isinstance(self.performance_trajectory, dict):
+                self.performance_trajectory = {}
+            if not isinstance(self.emergency_trajectory, dict):
+                self.emergency_trajectory = {}
 
             self.performance_trajectory.clear()
             self.emergency_trajectory.clear()
@@ -1032,6 +1053,14 @@ class LocalSamplingPlanner:
                     vehicle_params=self.vehicle_params,
                     msgs_logger=self.msgs_logger
                 )
+
+                # Handle case where emergency trajectory calculation fails
+                if self.emergency_trajectory is None:
+                    rospy.logwarn(
+                        "Emergency trajectory calculation failed, using performance trajectory as fallback")
+                    self.emergency_trajectory = copy.deepcopy(
+                        self.performance_trajectory)
+                    self.emergency_trajectory["emergency"] = True
 
                 if constant_part_trajectory:
                     for trajectory in [self.performance_trajectory, self.emergency_trajectory]:

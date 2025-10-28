@@ -109,12 +109,13 @@ class CoordinateTransformation:
             postprocessed_raceline: Raceline data (not used in simplified version)
 
         Returns:
-            Tuple of (V_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array):
+            Tuple of (V_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array, kappa_vf_array):
             - V_array: Total velocity magnitude [m/s] - shape (n_samples, n_points)
             - chi_array: Heading angle in Frenet frame [rad] - shape (n_samples, n_points)
             - ax_vf_array: Longitudinal acceleration in velocity frame [m/s²]
             - ay_vf_array: Lateral acceleration in velocity frame [m/s²]
             - Omega_z_vf_array: Yaw rate [rad/s] - shape (n_samples, n_points)
+            - kappa_vf_array: Path curvature [rad/m] - shape (n_samples, n_points)
         """
 
         # Get track curvature (omega_z) at each s position
@@ -162,9 +163,15 @@ class CoordinateTransformation:
         chi_dot = (n_ddot_array * s_dot_array - n_dot_array *
                    s_ddot_array) / velocity_squared_safe
 
-        # Calculate Omega_z in velocity frame
+        # Calculate Omega_z in velocity frame (yaw rate in rad/s)
         # For F1TENTH 2D kinematics: Omega_z_vf = omega_z * s_dot + chi_dot
         Omega_z_vf_array = omega_z_rf_array * s_dot_array + chi_dot
+
+        # Calculate trajectory curvature (kappa in rad/m)
+        # kappa = Omega_z / V (path curvature, not yaw rate)
+        # Use safe division to avoid numerical issues at low velocities
+        V_safe = np.maximum(V_array, epsilon)
+        kappa_vf_array = Omega_z_vf_array / V_safe
 
         # Calculate accelerations in velocity frame
         # For planar motion without banking/pitch:
@@ -200,8 +207,10 @@ class CoordinateTransformation:
             ay_vf_array = np.where(mask_low_velocity, 0.0, ay_vf_array)
             Omega_z_vf_array = np.where(
                 mask_low_velocity, 0.0, Omega_z_vf_array)
+            kappa_vf_array = np.where(
+                mask_low_velocity, 0.0, kappa_vf_array)
 
-        return V_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array
+        return V_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array, kappa_vf_array
 
     def __cut_trajectory_at_zero(self, trajectory_N):
 

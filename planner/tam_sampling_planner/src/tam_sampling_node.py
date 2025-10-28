@@ -26,7 +26,7 @@ import numpy as np
 from typing import List, Dict, Optional
 import time
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, String
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 from dynamic_reconfigure.msg import Config
@@ -90,6 +90,9 @@ class TAMSamplingPlannerNode:
             's': 0.0, 'n': 0.0, 's_dot': 0.0, 'n_dot': 0.0,
             's_ddot': 0.0, 'n_ddot': 0.0, 'x': 0.0, 'y': 0.0, 'heading': 0.0
         }
+
+        # State machine state tracking
+        self.state_machine_state = "GB_TRACK"  # Default to racing mode
 
         # Complete TAM planning parameters (from original TAM implementation)
         self.planning_params = {
@@ -199,6 +202,10 @@ class TAMSamplingPlannerNode:
         # TAM Custom Prediction Subscriber
         self.opponent_prediction_sub = rospy.Subscriber(
             "prediction/opponent_waypoints", OpponentTrajectory, self.opponent_prediction_callback, queue_size=1)
+
+        # State machine state subscriber for race start coordination
+        self.state_machine_sub = rospy.Subscriber(
+            "state_machine", String, self.state_machine_callback, queue_size=1)
 
         # Dynamic reconfigure subscriber (only if not from bag)
         if not self.from_bag:
@@ -430,6 +437,13 @@ class TAMSamplingPlannerNode:
         # rospy.loginfo_throttle(
         #     5, f"{self.log_name} Predictions updated: {len(msg.oppwpnts)} predicted opponent waypoints")
 
+    def state_machine_callback(self, msg: String):
+        """Callback for state machine state - used to coordinate race start"""
+        self.state_machine_state = msg.data
+        # Log state transitions for debugging
+        rospy.loginfo_throttle(
+            2.0, f"{self.log_name} State machine state: {self.state_machine_state}")
+
     def dynamic_params_callback(self, msg: Config):
         """Handle dynamic reconfigure parameter updates (LEGACY - F1Tenth uses rospy params directly)"""
 
@@ -562,16 +576,33 @@ class TAMSamplingPlannerNode:
         """
         Create planning_requests dictionary with required parameters.
 
+        Integrates with state machine to force stillstand when in READY state,
+        ensuring the planner doesn't advance trajectories before race start.
+
         Returns:
             Dictionary with planning request parameters
         """
-        planning_requests = {
-            'V_max': rospy.get_param('max_speed', self.planning_params.get('max_speed', 10.0)),
-            'following_distance': rospy.get_param('following_distance', 10.0),
-            'overtaking_allowed': rospy.get_param('overtaking_allowed', True),
-            'role': rospy.get_param('role', 0),  # 0 = normal racing
-            'gg_scaling': rospy.get_param('gg_scaling', 1.0)
-        }
+        # Check if state machine is in READY state - if so, force stopping/stillstand
+        if self.state_machine_state == "READY":
+            # Force V_max = 0 to trigger stopping -> stillstand transition in TAM planner
+            planning_requests = {
+                'V_max': 0.0,  # Forces TAM planner into stopping -> stillstand mode
+                'following_distance': rospy.get_param('following_distance', 10.0),
+                'overtaking_allowed': False,  # No overtaking before race start
+                'role': rospy.get_param('role', 0),
+                'gg_scaling': rospy.get_param('gg_scaling', 1.0)
+            }
+            rospy.loginfo_throttle(
+                5.0, f"{self.log_name} State READY: Forcing V_max=0 (stillstand mode)")
+        else:
+            # Normal racing mode - use configured maximum speed
+            planning_requests = {
+                'V_max': rospy.get_param('max_speed', self.planning_params.get('max_speed', 10.0)),
+                'following_distance': rospy.get_param('following_distance', 10.0),
+                'overtaking_allowed': rospy.get_param('overtaking_allowed', True),
+                'role': rospy.get_param('role', 0),  # 0 = normal racing
+                'gg_scaling': rospy.get_param('gg_scaling', 1.0)
+            }
 
         return planning_requests
 

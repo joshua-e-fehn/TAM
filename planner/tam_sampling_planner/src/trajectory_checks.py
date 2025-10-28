@@ -125,11 +125,37 @@ class TrajectoryChecks():
     def check_curvature(
         self,
         valid_array: np.ndarray,
+        # Actually kappa (curvature in rad/m), not Omega_z (yaw rate in rad/s)
         Omega_z: np.ndarray,
         invalid_array_info: np.ndarray,
     ):
         valid_tmp = np.all(
             np.abs(Omega_z[valid_array]) <= self.params.kappa_thr, axis=1)
+
+        # # Debug logging
+        # rospy.logerr(f"\n=== CURVATURE CHECK DEBUG ===")
+        # rospy.logerr(f"Total trajectories: {len(valid_array)}")
+        # rospy.logerr(f"Currently valid: {np.sum(valid_array)}")
+        # rospy.logerr(f"Kappa threshold: {self.params.kappa_thr:.4f} rad/m")
+        # if np.sum(valid_array) > 0:
+        #     max_kappa = np.max(np.abs(Omega_z[valid_array]))
+        #     min_kappa = np.min(np.abs(Omega_z[valid_array]))
+        #     mean_kappa = np.mean(np.abs(Omega_z[valid_array]))
+        #     rospy.logerr(f"Trajectory curvature statistics:")
+        #     rospy.logerr(f"  Max curvature: {max_kappa:.4f} rad/m")
+        #     rospy.logerr(f"  Min curvature: {min_kappa:.4f} rad/m")
+        #     rospy.logerr(f"  Mean curvature: {mean_kappa:.4f} rad/m")
+        #     rospy.logerr(f"Passing curvature check: {np.sum(valid_tmp)}")
+        #     rospy.logerr(f"Failing curvature check: {np.sum(~valid_tmp)}")
+        #     if np.sum(~valid_tmp) > 0:
+        #         failed_indices = np.where(valid_array)[0][~valid_tmp]
+        #         rospy.logerr(
+        #             f"Failed trajectory indices (first 5): {failed_indices[:5]}")
+        #         failed_kappas = np.max(
+        #             np.abs(Omega_z[valid_array][~valid_tmp]), axis=1)
+        #         rospy.logerr(
+        #             f"Max kappas of failed (first 5): {failed_kappas[:5]}")
+        # rospy.logerr("===========================\n")
 
         # store trajectories that failed this check
         if self.debugging:
@@ -149,12 +175,12 @@ class TrajectoryChecks():
         vehicle_params: dict,
         invalid_array_info: np.ndarray,
     ):
-        if pitlane_mode:
-            safety_distance_left = self.params.safety_distance_pitlane_left
-            safety_distance_right = self.params.safety_distance_pitlane_right
-        else:
-            safety_distance_left = self.params.safety_distance_track_left
-            safety_distance_right = self.params.safety_distance_track_right
+        # if pitlane_mode:
+        #     safety_distance_left = self.params.safety_distance_pitlane_left
+        #     safety_distance_right = self.params.safety_distance_pitlane_right
+        # else:
+        safety_distance_left = self.params.safety_distance_track_left
+        safety_distance_right = self.params.safety_distance_track_right
 
         # Left boundary: positive value, reduce by margins to get usable left limit
         left_bound = (
@@ -184,69 +210,148 @@ class TrajectoryChecks():
         valid_tmp = np.all((n_array[valid_array] < left_bound) & (
             n_array[valid_array] > right_bound), axis=1)
 
-        # # Debug logging for path collision analysis
-        # if self.debugging and np.sum(~valid_tmp) > 0:
-        #     print("\n=== PATH COLLISION DEBUG ===")
-        #     print(f"Total trajectories checked: {len(valid_tmp)}")
-        #     print(f"Failed path check: {np.sum(~valid_tmp)}")
-        #     print(f"\nBoundary Configuration:")
-        #     print(f"  Vehicle width: {vehicle_params['total_width']:.3f} m")
-        #     print(f"  Safety distance left: {safety_distance_left:.3f} m")
-        #     print(f"  Safety distance right: {safety_distance_right:.3f} m")
-        #     print(f"  Tube width: {self.params.tube_width:.3f} m")
-        #     print(
-        #         f"  Total margin left: {vehicle_params['total_width']/2.0 + safety_distance_left + self.params.tube_width:.3f} m")
-        #     print(
-        #         f"  Total margin right: {vehicle_params['total_width']/2.0 + safety_distance_right + self.params.tube_width:.3f} m")
+        # Check for impossible constraints due to excessive safety margins
+        has_negative_left = np.any(left_bound < 0)
+        has_positive_right = np.any(right_bound > 0)
 
-        #     print(f"\nTrack Boundaries (first point):")
-        #     if len(left_bound) > 0 and len(right_bound) > 0:
-        #         # left_bound and right_bound are 2D arrays [trajectories, points]
-        #         print(f"  Left bound: {float(left_bound[0, 0]):.3f} m")
-        #         print(f"  Right bound: {float(right_bound[0, 0]):.3f} m")
-        #         print(
-        #             f"  Available width: {float(left_bound[0, 0] - right_bound[0, 0]):.3f} m")
+        if has_negative_left or has_positive_right:
+            rospy.logerr("\n" + "="*80)
+            rospy.logerr(
+                "⚠️⚠️⚠️  CRITICAL WARNING: SAFETY MARGINS TOO LARGE  ⚠️⚠️⚠️")
+            rospy.logerr("="*80)
+            if has_negative_left:
+                min_left = np.min(left_bound)
+                rospy.logerr(
+                    f"❌ LEFT BOUND has NEGATIVE values (min: {min_left:.3f} m)")
+                rospy.logerr(
+                    f"   This means safety margins exceed available left track width!")
+            if has_positive_right:
+                max_right = np.max(right_bound)
+                rospy.logerr(
+                    f"❌ RIGHT BOUND has POSITIVE values (max: {max_right:.3f} m)")
+                rospy.logerr(
+                    f"   This means safety margins exceed available right track width!")
+            rospy.logerr(f"\n🔧 ACTION REQUIRED: Reduce safety parameters:")
+            rospy.logerr(
+                f"   - Current tube_width: {self.params.tube_width:.3f} m")
+            rospy.logerr(
+                f"   - Current safety_distance_track_left: {safety_distance_left:.3f} m")
+            rospy.logerr(
+                f"   - Current safety_distance_track_right: {safety_distance_right:.3f} m")
+            rospy.logerr(
+                f"   - Current vehicle_width/2: {vehicle_params['total_width']/2.0:.3f} m")
+            rospy.logerr(
+                f"   - Total margin per side: ~{vehicle_params['total_width']/2.0 + safety_distance_left + self.params.tube_width:.3f} m")
+            rospy.logerr(
+                f"\n💡 These margins are NOT compatible with this raceline/map!")
+            rospy.logerr(f"   Adjust parameters in tam_sampling_params.yaml")
+            rospy.logerr("="*80 + "\n")
 
-        #     print(f"\nSampled Lateral Positions (n_array):")
-        #     if len(n_array[valid_array]) > 0:
-        #         # First point of each trajectory
-        #         n_values = n_array[valid_array][:, 0]
-        #         print(f"  Min n: {np.min(n_values):.3f} m")
-        #         print(f"  Max n: {np.max(n_values):.3f} m")
-        #         print(f"  Mean n: {np.mean(n_values):.3f} m")
-        #         print(f"  Range: {np.max(n_values) - np.min(n_values):.3f} m")
+        # Debug logging for path collision analysis
+        # rospy.logerr("\n=== PATH COLLISION DEBUG ===")
+        # rospy.logerr(f"Total trajectories checked: {len(valid_tmp)}")
+        # rospy.logerr(f"Passing path check: {np.sum(valid_tmp)}")
+        # rospy.logerr(f"Failing path check: {np.sum(~valid_tmp)}")
 
-        #         # Check if all trajectories have the same n value
-        #         unique_n = np.unique(np.round(n_values, 6))
-        #         if len(unique_n) == 1:
-        #             print(
-        #                 f"\n  ⚠️  WARNING: All {len(n_values)} trajectories have IDENTICAL n value = {unique_n[0]:.6f} m")
-        #             print(
-        #                 f"  ⚠️  This indicates lateral sampling is NOT producing variation!")
-        #         else:
-        #             print(
-        #                 f"  ✓  Found {len(unique_n)} unique lateral positions")
+        # rospy.logerr(f"\nBoundary Configuration:")
+        # rospy.logerr(f"  Vehicle width: {vehicle_params['total_width']:.3f} m")
+        # rospy.logerr(f"  Safety distance left: {safety_distance_left:.3f} m")
+        # rospy.logerr(f"  Safety distance right: {safety_distance_right:.3f} m")
+        # rospy.logerr(f"  Tube width: {self.params.tube_width:.3f} m")
+        # rospy.logerr(
+        #     f"  Total margin left: {vehicle_params['total_width']/2.0 + safety_distance_left + self.params.tube_width:.3f} m")
+        # rospy.logerr(
+        #     f"  Total margin right: {vehicle_params['total_width']/2.0 + safety_distance_right + self.params.tube_width:.3f} m")
 
-        #         # Show which trajectories exceed bounds
-        #         exceeds_left = np.any(
-        #             n_array[valid_array] >= left_bound, axis=1)
-        #         exceeds_right = np.any(
-        #             n_array[valid_array] <= right_bound, axis=1)
-        #         print(
-        #             f"\n  Trajectories exceeding left bound: {np.sum(exceeds_left)}")
-        #         print(
-        #             f"  Trajectories exceeding right bound: {np.sum(exceeds_right)}")
+        # rospy.logerr(f"\nTrack Boundaries at first point:")
+        # if len(left_bound) > 0 and len(right_bound) > 0:
+        #     # left_bound and right_bound are 2D arrays [trajectories, points]
+        #     rospy.logerr(f"  Left bound: {float(left_bound[0, 0]):.3f} m")
+        #     rospy.logerr(f"  Right bound: {float(right_bound[0, 0]):.3f} m")
+        #     rospy.logerr(
+        #         f"  Available width: {float(left_bound[0, 0] - right_bound[0, 0]):.3f} m")
 
-        #         if np.sum(exceeds_left) > 0:
-        #             max_violation_left = np.max(
-        #                 n_array[valid_array][exceeds_left] - left_bound[exceeds_left])
-        #             print(f"  Max left violation: {max_violation_left:.3f} m")
-        #         if np.sum(exceeds_right) > 0:
-        #             max_violation_right = np.max(
-        #                 right_bound[exceeds_right] - n_array[valid_array][exceeds_right])
-        #             print(
-        #                 f"  Max right violation: {max_violation_right:.3f} m")
-        #     print("========================\n")
+        #     # Show bounds variation along track
+        #     rospy.logerr(
+        #         f"  Left bound range: [{np.min(left_bound):.3f}, {np.max(left_bound):.3f}]")
+        #     rospy.logerr(
+        #         f"  Right bound range: [{np.min(right_bound):.3f}, {np.max(right_bound):.3f}]")
+
+        # rospy.logerr(f"\nSampled Lateral Positions (n_array):")
+        # if len(n_array[valid_array]) > 0:
+        #     # Check end points for lateral variation (start should all be identical at car position)
+        #     n_start = n_array[valid_array][:, 0]
+        #     n_end_points = n_array[valid_array][:, -1]
+        #     unique_n_end = np.unique(np.round(n_end_points, 6))
+
+        #     # Also check middle point for additional verification
+        #     mid_idx = n_array.shape[1] // 2
+        #     n_mid_points = n_array[valid_array][:, mid_idx]
+        #     unique_n_mid = np.unique(np.round(n_mid_points, 6))
+
+        #     rospy.logerr(f"  Lateral position variation:")
+        #     rospy.logerr(
+        #         f"    Start point n: {n_start[0]:.6f} (all should be identical - current car position)")
+        #     rospy.logerr(
+        #         f"    Unique n values at START: {len(np.unique(np.round(n_start, 6)))}")
+        #     rospy.logerr(
+        #         f"    Unique n values at END point: {len(unique_n_end)}")
+        #     rospy.logerr(
+        #         f"    Unique n values at MID point: {len(unique_n_mid)}")
+        #     rospy.logerr(
+        #         f"    n range (end): [{np.min(n_end_points):.6f}, {np.max(n_end_points):.6f}]")
+        #     rospy.logerr(f"    n mean (end): {np.mean(n_end_points):.6f}")
+        #     rospy.logerr(f"    n std dev (end): {np.std(n_end_points):.6f}")
+
+        #     if len(unique_n_end) == 1:
+        #         rospy.logerr(
+        #             f"\n  ⚠️  WARNING: All {len(n_end_points)} trajectories have IDENTICAL end n = {unique_n_end[0]:.6f}")
+        #         rospy.logerr(
+        #             f"  ⚠️  Lateral sampling failed to produce variation!")
+        #     else:
+        #         rospy.logerr(
+        #             f"  ✓ Lateral variation detected: {len(unique_n_end)} unique end positions")
+        #         rospy.logerr(
+        #             f"  Unique end n values (first 10): {unique_n_end[:10]}")
+
+        #     # Check full trajectory, not just first point
+        #     n_full_min = np.min(n_array[valid_array])
+        #     n_full_max = np.max(n_array[valid_array])
+        #     rospy.logerr(
+        #         f"\n  Full trajectory n range: [{n_full_min:.6f}, {n_full_max:.6f}]")
+
+        #     # Show which trajectories exceed bounds
+        #     exceeds_left = np.any(n_array[valid_array] >= left_bound, axis=1)
+        #     exceeds_right = np.any(n_array[valid_array] <= right_bound, axis=1)
+        #     rospy.logerr(
+        #         f"\n  Trajectories exceeding left bound: {np.sum(exceeds_left)}")
+        #     rospy.logerr(
+        #         f"  Trajectories exceeding right bound: {np.sum(exceeds_right)}")
+
+        #     if np.sum(exceeds_left) > 0:
+        #         violations_left = n_array[valid_array][exceeds_left] - \
+        #             left_bound[exceeds_left]
+        #         max_violation_left = np.max(violations_left)
+        #         rospy.logerr(
+        #             f"  Max left violation: {max_violation_left:.6f} m")
+        #         # Show which trajectory and which point
+        #         worst_traj_left = np.unravel_index(
+        #             np.argmax(violations_left), violations_left.shape)
+        #         rospy.logerr(
+        #             f"  Worst left violation at trajectory {worst_traj_left[0]}, point {worst_traj_left[1]}")
+
+        #     if np.sum(exceeds_right) > 0:
+        #         violations_right = right_bound[exceeds_right] - \
+        #             n_array[valid_array][exceeds_right]
+        #         max_violation_right = np.max(violations_right)
+        #         rospy.logerr(
+        #             f"  Max right violation: {max_violation_right:.6f} m")
+        #         # Show which trajectory and which point
+        #         worst_traj_right = np.unravel_index(
+        #             np.argmax(violations_right), violations_right.shape)
+        #         rospy.logerr(
+        #             f"  Worst right violation at trajectory {worst_traj_right[0]}, point {worst_traj_right[1]}")
+        # rospy.logerr("===========================\n")
 
         # store trajectories that failed this check
         if self.debugging:
@@ -458,6 +563,7 @@ class TrajectoryChecks():
         return ax_tilde, ay_tilde, g_tilde, tire_util_array
 
     def mandatory_checks_trajectory(self,
+                                    # NOTE: Actually trajectory curvature (kappa) in rad/m, not yaw rate!
                                     Omega_z_vf_array: np.ndarray,
                                     track_handler: Track,
                                     s_array: np.ndarray,
@@ -478,10 +584,25 @@ class TrajectoryChecks():
                                     postprocessed_raceline: dict,
                                     ):
 
+        # rospy.logerr(f"\n{'='*60}")
+        # rospy.logerr(f"STARTING MANDATORY TRAJECTORY CHECKS (ID: {traj_cnt})")
+        # rospy.logerr(f"{'='*60}")
+        # rospy.logerr(f"Input arrays:")
+        # rospy.logerr(f"  s_array shape: {s_array.shape}")
+        # rospy.logerr(f"  n_array shape: {n_array.shape}")
+        # rospy.logerr(f"  Total trajectories to check: {s_array.shape[0]}")
+        # rospy.logerr(
+        #     f"  Points per trajectory: {s_array.shape[1] if len(s_array.shape) > 1 else 1}")
+        # rospy.logerr(f"Vehicle params:")
+        # rospy.logerr(f"  width: {vehicle_params.get('total_width', 'N/A')}")
+        # rospy.logerr(f"  length: {vehicle_params.get('total_length', 'N/A')}")
+
         self.declare_and_update_parameters()
 
         # initially all valid
         valid_array = np.ones(s_array.shape[0], dtype=bool)
+        # rospy.logerr(
+        #     f"\nInitial state: {np.sum(valid_array)} trajectories marked as valid")
 
         # info for invalid arrays in visualizer
         invalid_array_info = np.array([""] * s_array.shape[0], dtype='<U20')
@@ -498,15 +619,20 @@ class TrajectoryChecks():
         valid_sum = np.sum(valid_array)
 
         # Curvature Check
+        # rospy.logerr(f"\n--- Running Curvature Check ---")
         self.check_curvature(
             valid_array=valid_array,
             Omega_z=Omega_z_vf_array,
             invalid_array_info=invalid_array_info,
         )
         valid_sum_tmp = np.sum(valid_array)
+        # rospy.logerr(
+        #     f"After curvature check: {valid_sum_tmp} valid (lost {valid_sum - valid_sum_tmp})")
+
         if not valid_sum_tmp:
-            print(
-                f"Trajectory ID {traj_cnt}: No valid edges after curvature check. Valid edges before: {valid_sum}")
+            rospy.logerr(
+                f"❌ CRITICAL: No valid edges after curvature check. Valid edges before: {valid_sum}")
+            rospy.logerr(f"Returning with all trajectories invalid!")
             # Simplified monitoring without NodeMonitor dependency
             # if node_monitor:
             #     node_monitor.set_error_lvl("curvature_checks", ErrorLvl.WARN)
@@ -517,6 +643,7 @@ class TrajectoryChecks():
 
         # Path Collision Check
         valid_sum = valid_sum_tmp
+        # rospy.logerr(f"\n--- Running Path Collision Check ---")
 
         left_bound, right_bound = self.__check_path_collision(
             track_handler=track_handler,
@@ -528,9 +655,13 @@ class TrajectoryChecks():
             invalid_array_info=invalid_array_info,
         )
         valid_sum_tmp = np.sum(valid_array)
+        # rospy.logerr(
+        #     f"After path collision check: {valid_sum_tmp} valid (lost {valid_sum - valid_sum_tmp})")
+
         if not valid_sum_tmp:
-            print(
-                f"Trajectory ID {traj_cnt}: No valid edges after path check. Valid edges before: {valid_sum}")
+            rospy.logerr(
+                f"❌ CRITICAL: No valid edges after path check. Valid edges before: {valid_sum}")
+            rospy.logerr(f"Returning with all trajectories invalid!")
             # Simplified monitoring without NodeMonitor dependency
             # if node_monitor:
             #     node_monitor.set_error_lvl("path_collision_checks", ErrorLvl.WARN)
@@ -541,6 +672,7 @@ class TrajectoryChecks():
 
             # Rules Check
             valid_sum = valid_sum_tmp
+            # rospy.logerr(f"\n--- Running Rules Check (DISABLED) ---")
             # self.__check_rules(
             #     valid_array=valid_array,
             #     V_array=V_array,
@@ -548,9 +680,12 @@ class TrajectoryChecks():
             #     invalid_array_info=invalid_array_info,
             # )
             valid_sum_tmp = np.sum(valid_array)
+            # rospy.logerr(
+            #     f"After rules check: {valid_sum_tmp} valid (lost {valid_sum - valid_sum_tmp})")
+
             if not valid_sum_tmp:
-                print(
-                    f'Trajectory ID {traj_cnt}: No valid edges after rule check. Valid edges before: {valid_sum}')
+                rospy.logerr(
+                    f"❌ CRITICAL: No valid edges after rule check. Valid edges before: {valid_sum}")
                 # Simplified monitoring without NodeMonitor dependency
                 # if node_monitor:
                 #     node_monitor.set_error_lvl("rule_checks", ErrorLvl.WARN)
@@ -561,6 +696,7 @@ class TrajectoryChecks():
 
             # Friction Check
             valid_sum = valid_sum_tmp
+            # rospy.logerr(f"\n--- Running Friction Check (SIMPLIFIED) ---")
             ax_tilde, ay_tilde, g_tilde, tire_util_array = self.__check_friction_limits(
                 valid_array=valid_array,
                 track_handler=track_handler,
@@ -580,9 +716,13 @@ class TrajectoryChecks():
                 postprocessed_raceline=postprocessed_raceline,
             )
             valid_sum_tmp = np.sum(valid_array)
+            # rospy.logerr(
+            #     f"After friction check: {valid_sum_tmp} valid (lost {valid_sum - valid_sum_tmp})")
+
             if not valid_sum_tmp:
-                print(
-                    f'Trajectory ID {traj_cnt}: No valid edges after friction check. Valid edges before: {valid_sum}')
+                rospy.logerr(
+                    f"❌ CRITICAL: No valid edges after friction check. Valid edges before: {valid_sum}")
+                rospy.logerr(f"Returning with all trajectories invalid!")
                 # Simplified monitoring without NodeMonitor dependency
                 # if node_monitor:
                 #     node_monitor.set_error_lvl("friction_checks", ErrorLvl.WARN)
@@ -590,5 +730,11 @@ class TrajectoryChecks():
                 pass
                 # if node_monitor:
                 #     node_monitor.set_error_lvl("friction_checks", ErrorLvl.OK)
+
+        # rospy.logerr(f"\n{'='*60}")
+        # rospy.logerr(f"TRAJECTORY CHECKS COMPLETE")
+        # rospy.logerr(
+        #     f"Final result: {np.sum(valid_array)} / {len(valid_array)} trajectories valid")
+        # rospy.logerr(f"{'='*60}\n")
 
         return valid_array, ax_tilde, ay_tilde, g_tilde, tire_util_array, invalid_array_info, (left_bound, right_bound)

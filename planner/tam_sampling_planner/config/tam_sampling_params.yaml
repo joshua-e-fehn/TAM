@@ -61,8 +61,8 @@ lateral_jerk_cost_weight_overtaking: 0.0  # Lateral jerk cost during overtaking
 # Safety Parameters
 # ========================================
 # Track boundary safety distances (F1TENTH: reduced for 1/10 scale racing)
-safety_distance_track_left: 0.1    # Safety distance to left track boundary (m)
-safety_distance_track_right: 0.1   # Safety distance to right track boundary (m)
+safety_distance_track_left: 0.02   # Safety distance to left track boundary (m) - F1TENTH: 2cm
+safety_distance_track_right: 0.02  # Safety distance to right track boundary (m) - F1TENTH: 2cm
 
 # Pitlane safety distances (for pit entry/exit scenarios)
 safety_distance_pitlane_left: 0.0  # Safety distance to left pitlane boundary (m)
@@ -78,7 +78,7 @@ safety_margin_dynamic: 0.5         # Safety margin for dynamic obstacles (m)
 safety_distance_vehicles: 0.5      # Additional inter-vehicle safety distance (m)
 
 # Tube and lane parameters (F1TENTH: reduced from 1.0m to fit narrower tracks)
-tube_width: 0.3                    # Trajectory tube width (m) - REDUCED for F1TENTH
+tube_width: 0.05                   # Trajectory tube width (m) - F1TENTH: 5cm soft margin
 
 # Emergency safety distances
 add_emergency_safety_distance_left: 0.3   # Extra emergency safety left (m)
@@ -87,7 +87,8 @@ add_emergency_safety_distance_right: 0.3  # Extra emergency safety right (m)
 # ========================================
 # Trajectory Validation Parameters
 # ========================================
-kappa_thr: 0.1                     # Maximum allowed curvature (1/m)
+# Safety and Constraint Parameters
+kappa_thr: 1.5                     # Maximum allowed curvature (rad/m) - F1TENTH: 1.5 allows R_min ≈ 0.67m (kinematic limit)
 curvature_cost_threshold: 30.0     # Curvature threshold for cost penalty
 tire_util_max_check: 1.1           # Maximum tire utilization check
 
@@ -121,7 +122,7 @@ prediction_n_factor_static: 0.35        # Prediction n factor for static objects
 # ========================================
 num_samples: 51                         # Number of trajectory points
 min_trajectory_length: 10.0             # Minimum trajectory length (m)
-const_trajectory_time: 0.3              # Constant trajectory time (s)
+const_trajectory_time: 0.00              # Constant trajectory time (s)
 
 # Extension parameters for emergency trajectories
 extension_emergency_time_offset: 1.0    # Extension emergency time offset (s)
