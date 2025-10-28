@@ -55,8 +55,6 @@ class LateralSampling:
 
             with open(config_file, 'r') as f:
                 yaml_params = yaml.safe_load(f)
-                rospy.loginfo(
-                    "LateralSampling: Loaded YAML defaults from tam_sampling_params.yaml")
                 return yaml_params if yaml_params else {}
         except Exception as e:
             rospy.logwarn(
@@ -195,6 +193,10 @@ class LateralSampling:
 
         i = 0
         for s_dot_end, s_end in zip(s_dot_end_values, s_end_values):
+            # Debug: Log loop iteration
+            # rospy.logdebug(
+            #     f"LateralSampling: Longitudinal sample {i}/{len(s_dot_end_values)}, s_end={s_end:.2f}, s_dot_end={s_dot_end:.2f}")
+
             # t_array evaluation
             # precompute the polynomial values of the time
             ones = np.ones_like(t_array[i])
@@ -225,41 +227,36 @@ class LateralSampling:
 
             # Interpolate raceline data at specific s points using postprocessed raceline
             # All derivatives and transformations already computed by postprocess_raceline
+            # Note: NumPy < 1.21 doesn't support 'period' parameter
             s_dot_rl = np.interp(
                 s_array[i],
                 s_coords,
                 s_dot_coords,
-                period=track_length,
             )
             s_ddot_rl = np.interp(
                 s_array[i],
                 s_coords,
                 s_ddot_coords,
-                period=track_length,
             )
             n_rl = np.interp(
                 s_array[i],
                 s_coords,
                 d_coords,
-                period=track_length,
             )
             n_dot_rl = np.interp(
                 s_array[i],
                 s_coords,
                 n_dot_coords,
-                period=track_length,
             )
             n_ddot_rl = np.interp(
                 s_array[i],
                 s_coords,
                 n_ddot_coords,
-                period=track_length,
             )
             chi_rl = np.interp(
                 s_array[i],
                 s_coords,
                 chi_coords,
-                period=track_length,
             )
 
             # Calculate n_prime and n_pprime for quintic polynomial generation
@@ -279,20 +276,93 @@ class LateralSampling:
                 n_rl_eval[-1] + self.params.n_dense_min, n_rl_eval[-1] + self.params.n_dense_max, self.params.n_dense_samples)
 
             # sampled n end conditions (relative to raceline)
-            # no safety distances for sampling (soft constraints)
-            n_min_track = track_handler.trackwidth_right(
-                s_end) + vehicle_params['total_width'] / 2.0 + self.params.tube_width + self.params.safety_distance_track_right
-            # no safety distances for sampling (soft constraints)
-            n_max_track = track_handler.trackwidth_left(
-                s_end) - vehicle_params['total_width'] / 2.0 - self.params.tube_width - self.params.safety_distance_track_left
+            # In Frenet coordinates: positive n = left, negative n = right
+            # Right boundary (negative n): -trackwidth_right + margins
+            trackwidth_right_raw = track_handler.trackwidth_right(s_end)
+            trackwidth_left_raw = track_handler.trackwidth_left(s_end)
+
+            n_min_track = -(trackwidth_right_raw - vehicle_params['total_width'] /
+                            2.0 - self.params.tube_width - self.params.safety_distance_track_right)
+            # Left boundary (positive n): +trackwidth_left - margins
+            n_max_track = trackwidth_left_raw - \
+                vehicle_params['total_width'] / 2.0 - self.params.tube_width - \
+                self.params.safety_distance_track_left
+
+            # # DEBUG: Log boundary calculations
+            # if i == 0:  # Only log for first longitudinal sample to avoid spam
+            #     rospy.logerr(
+            #         f"\n=== LATERAL BOUNDARY DEBUG (first longitudinal sample) ===")
+            #     rospy.logerr(f"  s_end = {s_end:.3f} m")
+            #     rospy.logerr(
+            #         f"  trackwidth_right_raw = {trackwidth_right_raw:.3f} m (should be positive)")
+            #     rospy.logerr(
+            #         f"  trackwidth_left_raw = {trackwidth_left_raw:.3f} m (should be positive)")
+            #     rospy.logerr(
+            #         f"  vehicle_width/2 = {vehicle_params['total_width']/2.0:.3f} m")
+            #     rospy.logerr(f"  tube_width = {self.params.tube_width:.3f} m")
+            #     rospy.logerr(
+            #         f"  safety_right = {self.params.safety_distance_track_right:.3f} m")
+            #     rospy.logerr(
+            #         f"  safety_left = {self.params.safety_distance_track_left:.3f} m")
+            #     rospy.logerr(
+            #         f"  n_min_track (right) = {n_min_track:.3f} m (should be NEGATIVE)")
+            #     rospy.logerr(
+            #         f"  n_max_track (left) = {n_max_track:.3f} m (should be POSITIVE)")
+            #     rospy.logerr(
+            #         f"  Sampling range width: {n_max_track - n_min_track:.3f} m")
+
             n_end_min = n_min_track
             n_end_max = n_max_track
             n_end_values = np.concatenate((np.linspace(n_end_min, n_end_max, self.params.n_samples - 1), [
                                           n_rl_eval[-1]], n_dense_end_values))  # always sample straight driving and raceline
 
+            # Debug: Log n_end_values generation
+            # if i == 0:
+            #     rospy.logerr(
+            #         f"  n_end_values generated: {len(n_end_values)} samples")
+            #     rospy.logerr(
+            #         f"    Coarse samples (n_samples-1={self.params.n_samples-1}): range [{n_end_min:.3f}, {n_end_max:.3f}]")
+            #     rospy.logerr(f"    Raceline: {n_rl_eval[-1]:.3f}")
+            #     rospy.logerr(
+            #         f"    Dense samples: {len(n_dense_end_values)} around raceline")
+            #     rospy.logerr(f"    First 3 n_end values: {n_end_values[:3]}")
+            #     rospy.logerr(f"    Last 3 n_end values: {n_end_values[-3:]}")
+            #     rospy.logerr(
+            #         f"    Unique n_end values: {len(np.unique(np.round(n_end_values, 6)))}")
+            #     rospy.logerr(
+            #         f"==========================================================\n")
+
             n_dot_end = s_dot_array[i][-1] * np.sin(chi_rl[-1])
             # n_prime_end = n_dot_end / s_dot_end
+
+            # DEBUG: Log raceline reference values for first sample
+            # if i == 0:
+            #     rospy.logerr(f"\n=== RACELINE REFERENCE VALUES ===")
+            #     rospy.logerr(f"  n_rl_eval[0] (start) = {n_rl_eval[0]:.3f} m")
+            #     rospy.logerr(f"  n_rl_eval[-1] (end) = {n_rl_eval[-1]:.3f} m")
+            #     rospy.logerr(f"  n_start = {n_start:.3f} m")
+            #     rospy.logerr(f"  n_dot_start = {n_dot_start:.3f} m/s")
+            #     rospy.logerr(f"  n_ddot_start = {n_ddot_start:.3f} m/s²")
+            #     rospy.logerr(
+            #         f"  n_dot_rl_eval[0] = {n_dot_rl_eval[0]:.3f} m/s")
+            #     rospy.logerr(
+            #         f"  n_dot_rl_eval[-1] = {n_dot_rl_eval[-1]:.3f} m/s")
+            #     rospy.logerr(
+            #         f"  n_ddot_rl_eval[0] = {n_ddot_rl_eval[0]:.3f} m/s²")
+            #     rospy.logerr(
+            #         f"  n_ddot_rl_eval[-1] = {n_ddot_rl_eval[-1]:.3f} m/s²")
+            #     rospy.logerr(
+            #         f"  Will sample {len(n_end_values)} different n_end targets")
+            #     rospy.logerr(f"=====================================\n")
+
+            lateral_sample_count = 0
+            lateral_start_i = i  # Track where this longitudinal sample's lateral trajectories start
             for n_end in n_end_values:
+                # DEBUG: Log array index for first few samples
+                # if i < 3 or (lateral_sample_count == 0 and len(s_dot_end_values) <= 2):
+                #     rospy.logerr(
+                #         f"\n[Lateral Loop] i={i}, lateral_sample_count={lateral_sample_count}, n_end={n_end:.3f}")
+
                 # n_dot_end = 0.0
 
                 # assume the same chi for left and right trackbound?
@@ -326,9 +396,29 @@ class LateralSampling:
                             0.0,
                         ]
                     )
+
+                    # DEBUG: Log polynomial boundary conditions for first TWO n_end targets
+                    # if i == 0 and lateral_sample_count < 2:
+                    #     rospy.logerr(
+                    #         f"\n--- Polynomial #{lateral_sample_count}: n_end={n_end:.3f} ---")
+                    #     rospy.logerr(
+                    #         f"  Target end position: n_end = {n_end:.3f} m")
+                    #     rospy.logerr(
+                    #         f"  Relative boundary conditions (b vector):")
+                    #     rospy.logerr(
+                    #         f"    b[0] = {b[0]:.6f} (n_start - n_rl_start = {n_start:.3f} - {n_rl_eval[0]:.3f})")
+                    #     rospy.logerr(
+                    #         f"    b[3] = {b[3]:.6f} (n_end - n_rl_end = {n_end:.3f} - {n_rl_eval[-1]:.3f})")
+
                 else:  # sample curves absolute
                     b = np.array(
                         [n_start, n_dot_start, n_ddot_start, n_end, n_dot_end, 0.0])
+
+                    # DEBUG: Log absolute boundary conditions
+                    # if i == 0 and lateral_sample_count < 2:
+                    #     rospy.logerr(
+                    #         f"\n--- Polynomial #{lateral_sample_count}: n_end={n_end:.3f} (ABSOLUTE) ---")
+                    #     rospy.logerr(f"  b[0] = {b[0]:.6f}, b[3] = {b[3]:.6f}")
 
                 # calculate coefficients of quintic polynomial(now as matrix multiplication)
                 c = a_inverse @ b
@@ -343,6 +433,19 @@ class LateralSampling:
                     n = n_sample + n_rl_eval
                     n_dot = n_dot_sample + n_dot_rl_eval
                     n_ddot = n_ddot_sample + n_ddot_rl_eval
+
+                    # DEBUG: Log final result for first TWO samples
+                    # if i == 0 and lateral_sample_count < 2:
+                    #     rospy.logerr(
+                    #         f"  n_sample[0] = {n_sample[0]:.6f}, n_sample[-1] = {n_sample[-1]:.6f}")
+                    #     rospy.logerr(f"  After adding raceline:")
+                    #     rospy.logerr(
+                    #         f"    n[0] = {n[0]:.6f} m (should be {n_start:.3f})")
+                    #     rospy.logerr(
+                    #         f"    n[-1] = {n[-1]:.6f} m (should be {n_end:.3f})")
+                    #     if abs(n[-1] - n_end) > 0.001:
+                    #         rospy.logerr(
+                    #             f"  ⚠️ ERROR: End position mismatch! Off by {abs(n[-1] - n_end):.6f} m")
                 else:
                     n = n_sample
                     n_dot = n_dot_sample
@@ -351,7 +454,32 @@ class LateralSampling:
                 n_array[i, :] = n
                 n_dot_array[i, :] = n_dot
                 n_ddot_array[i, :] = n_ddot
+
+                # DEBUG: Verify what we just wrote
+                # if i < 3:
+                #     rospy.logerr(
+                #         f"  ✓ Wrote to n_array[{i}]: n[0]={n[0]:.6f}, n[-1]={n[-1]:.6f}")
+                #     rospy.logerr(
+                #         f"  ✓ Verification: n_array[{i},0]={n_array[i,0]:.6f}, n_array[{i},-1]={n_array[i,-1]:.6f}")
+
+                lateral_sample_count += 1
                 i += 1
+
+            # rospy.logerr(
+            #     f"\n[Longitudinal sample complete] Generated {lateral_sample_count} lateral trajectories")
+            # rospy.logerr(f"  Array indices filled: [{lateral_start_i}:{i}]")
+            # rospy.logerr(f"  Next i will be: {i}")
+            # if len(s_dot_end_values) <= 2:  # Only for first 2 longitudinal samples
+            #     rospy.logerr(
+            #         f"  n_array[{lateral_start_i}:{ min(lateral_start_i+3, i)}, 0] = {n_array[lateral_start_i:min(lateral_start_i+3, i), 0]}")
+            #     rospy.logerr(
+            #         f"  n_array[{lateral_start_i}:{min(lateral_start_i+3, i)}, -1] = {n_array[lateral_start_i:min(lateral_start_i+3, i), -1]}")
+
+            rospy.logdebug(
+                f"  Generated {lateral_sample_count} lateral trajectories, total i={i}")
+
+        # rospy.loginfo(
+        #     f"LateralSampling: Generated {i} total trajectories from {len(s_dot_end_values)} longitudinal samples")
 
         return n_array, n_dot_array, n_ddot_array
 
@@ -465,41 +593,36 @@ class LateralSampling:
 
             # Interpolate raceline data at specific s points using postprocessed raceline
             # All derivatives and transformations already computed by postprocess_raceline
+            # Note: NumPy < 1.21 doesn't support 'period' parameter
             s_dot_rl = np.interp(
                 s_array[i],
                 s_coords,
                 s_dot_coords,
-                period=track_length,
             )
             s_ddot_rl = np.interp(
                 s_array[i],
                 s_coords,
                 s_ddot_coords,
-                period=track_length,
             )
             n_rl = np.interp(
                 s_array[i],
                 s_coords,
                 d_coords,
-                period=track_length,
             )
             n_dot_rl = np.interp(
                 s_array[i],
                 s_coords,
                 n_dot_coords,
-                period=track_length,
             )
             n_ddot_rl = np.interp(
                 s_array[i],
                 s_coords,
                 n_ddot_coords,
-                period=track_length,
             )
             chi_rl = np.interp(
                 s_array[i],
                 s_coords,
                 chi_coords,
-                period=track_length,
             )
 
             # Calculate n_prime and n_pprime for quintic polynomial generation
@@ -519,10 +642,11 @@ class LateralSampling:
                 n_rl_eval[-1] + self.params.n_dense_min, n_rl_eval[-1] + self.params.n_dense_max, self.params.n_dense_samples)
 
             # sampled n end conditions (relative to raceline)
-            # no safety distances for sampling (soft constraints)
-            n_min_track = track_handler.trackwidth_right(
-                s_end) + vehicle_params['total_width'] / 2.0 + self.params.tube_width + self.params.safety_distance_track_right
-            # no safety distances for sampling (soft constraints)
+            # In Frenet coordinates: positive n = left, negative n = right
+            # Right boundary (negative n): -trackwidth_right + margins
+            n_min_track = -(track_handler.trackwidth_right(
+                s_end) - vehicle_params['total_width'] / 2.0 - self.params.tube_width - self.params.safety_distance_track_right)
+            # Left boundary (positive n): +trackwidth_left - margins
             n_max_track = track_handler.trackwidth_left(
                 s_end) - vehicle_params['total_width'] / 2.0 - self.params.tube_width - self.params.safety_distance_track_left
             n_end_min = n_min_track

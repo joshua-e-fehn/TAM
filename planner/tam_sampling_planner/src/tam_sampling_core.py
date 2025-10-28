@@ -78,6 +78,11 @@ class LocalSamplingPlanner:
         self.emergency_brake = False
         self.vehicle_ahead = False
 
+        # Store raw sampled trajectories for visualization (populated by calc_trajectory)
+        self.last_s_array = None
+        self.last_n_array = None
+        self.last_valid_array = None
+
         # Initialize track handler (will be updated when waypoints received)
         self.track_handler = GlobalWaypointsTrackHandler()
 
@@ -459,12 +464,12 @@ class LocalSamplingPlanner:
                 'time_offset': 0.0  # Time offset from state estimate to prediction start
             }
 
-            if debugging:
-                rospy.loginfo_throttle(5.0,
-                                       f"[Traj {traj_cnt}] Processed prediction: {N} waypoints, "
-                                       f"s_glob_dist={s_glob_dist:.2f}m, "
-                                       f"following_vel={new_following_vel:.2f}m/s, "
-                                       f"vehicle_ahead={new_vehicle_ahead}")
+            # if debugging:
+            #     rospy.loginfo_throttle(5.0,
+            #                            f"[Traj {traj_cnt}] Processed prediction: {N} waypoints, "
+            #                            f"s_glob_dist={s_glob_dist:.2f}m, "
+            #                            f"following_vel={new_following_vel:.2f}m/s, "
+            #                            f"vehicle_ahead={new_vehicle_ahead}")
 
         else:
             # Legacy format for backward compatibility
@@ -914,6 +919,11 @@ class LocalSamplingPlanner:
                 postprocessed_raceline=postprocessed_raceline,
             )
 
+            # Store raw sampled trajectories for visualization (before filtering)
+            self.last_s_array = s_array.copy() if s_array is not None else None
+            self.last_n_array = n_array.copy() if n_array is not None else None
+            self.last_valid_array = valid_array.copy() if valid_array is not None else None
+
             # for debugging
             V_upper = V_target + 1.0
 
@@ -1195,15 +1205,36 @@ class LocalSamplingPlanner:
         s_end_values = np.array([])
         rel_long_sampling_array = np.array([])
 
+        # rospy.logerr("="*80)
+        # rospy.logerr("TRAJECTORY SAMPLING DEBUG - START")
+        # rospy.logerr(f"Initial conditions:")
+        # rospy.logerr(
+        #     f"  s_start={s_start:.3f}, s_dot_start={s_dot_start:.3f}, s_ddot_start={s_ddot_start:.3f}")
+        # rospy.logerr(
+        #     f"  n_start={n_start:.3f}, n_dot_start={n_dot_start:.3f}, n_ddot_start={n_ddot_start:.3f}")
+        # rospy.logerr(
+        #     f"  V_target={V_target:.3f}, sampling_mode={sampling_mode}")
+        # rospy.logerr(
+        #     f"  enable_relative_sampling={enable_relative_sampling}, hybrid_long_sampling={hybrid_long_sampling}")
+
         # determine sampling strategy
         if hybrid_long_sampling and enable_relative_sampling:
             relative_sampling = [True, False]
+            # rospy.logerr(
+            #     f"Using hybrid sampling: [relative=True, relative=False]")
         else:
             relative_sampling = [False]
+            # rospy.logerr(
+            #     f"Using single sampling strategy: relative={relative_sampling[0]}")
 
-        for tendency in relative_sampling:
+        for idx, tendency in enumerate(relative_sampling):
+            # rospy.logerr(
+            #     f"\n--- Longitudinal Sampling Pass {idx+1}/{len(relative_sampling)} (relative={tendency}) ---")
+
             # use s based sampling
             if sampling_mode == "spatial" and s_dot_start > 10.0:
+                # rospy.logerr(
+                #     f"  Using SPATIAL sampling (s_dot_start={s_dot_start:.3f} > 10.0)")
                 s_part, s_dot_part, s_ddot_part, s_dot_end_part, s_end_part, rel_long_sampling_part, t_array_part = self.longitudinal_sampling.calc_samples_s_based(
                     s_start=s_start,
                     s_dot_start=s_dot_start,
@@ -1215,6 +1246,8 @@ class LocalSamplingPlanner:
                 )
             # sample with fixed time horizon (traditional way)
             else:
+                # rospy.logerr(
+                #     f"  Using TEMPORAL sampling (s_dot_start={s_dot_start:.3f} <= 10.0 or not spatial mode)")
                 # F1TENTH NOTE: No GGGV handler, use V_target as V_max
                 s_part, s_dot_part, s_ddot_part, s_dot_end_part, s_end_part, rel_long_sampling_part, t_array_part = self.longitudinal_sampling.calc_samples(
                     s_start=s_start,
@@ -1227,6 +1260,14 @@ class LocalSamplingPlanner:
                     raceline_tendency=tendency
                 )
 
+            # rospy.logerr(f"  Longitudinal sampling produced:")
+            # rospy.logerr(f"    s_part shape: {s_part.shape}")
+            # rospy.logerr(f"    s_dot_part shape: {s_dot_part.shape}")
+            # rospy.logerr(
+            #     f"    s_dot_end_part: {len(s_dot_end_part)} values, range [{np.min(s_dot_end_part):.2f}, {np.max(s_dot_end_part):.2f}]")
+            # rospy.logerr(
+            #     f"    s_end_part: {len(s_end_part)} values, range [{np.min(s_end_part):.2f}, {np.max(s_end_part):.2f}]")
+
             # concstruct longitudinal sample arrays
             if s_array.shape[0] == 0:
                 s_array = s_part
@@ -1238,6 +1279,8 @@ class LocalSamplingPlanner:
                 t_array = t_array_part
 
             else:
+                # rospy.logerr(
+                #     f"  Concatenating with existing arrays (previous size: {s_array.shape[0]})")
                 s_array = np.concatenate((s_array, s_part))
                 s_dot_array = np.concatenate((s_dot_array, s_dot_part))
                 s_ddot_array = np.concatenate((s_ddot_array, s_ddot_part))
@@ -1248,8 +1291,17 @@ class LocalSamplingPlanner:
                     (rel_long_sampling_array, rel_long_sampling_part))
                 t_array = np.concatenate((t_array, t_array_part))
 
+        # rospy.logerr(f"\n--- After Standard Longitudinal Sampling ---")
+        # rospy.logerr(f"  Total longitudinal samples: {s_array.shape[0]}")
+        # rospy.logerr(f"  s_array shape: {s_array.shape}")
+        # rospy.logerr(f"  s_dot_end_values: {len(s_dot_end_values)} values")
+        # rospy.logerr(f"  s_end_values: {len(s_end_values)} values")
+
         # Forward backward integrated velocity profiles
         if self.add_forward_backward_samples:
+            # rospy.logerr(f"\n--- Forward-Backward Sampling ---")
+            # rospy.logerr(
+            #     f"  add_forward_backward_samples=True, starting forward-backward integration")
             s_part, s_dot_part, s_ddot_part, s_dot_end_part, s_end_part, rel_long_sampling_part, t_array_part = self.longitudinal_sampling.calc_samples_s_based_forward_backward(
                 s_start=s_start,
                 s_dot_start=s_dot_start,
@@ -1263,6 +1315,12 @@ class LocalSamplingPlanner:
                 raceline_tendency=False
             )
 
+            # rospy.logerr(f"  Forward-backward produced:")
+            # rospy.logerr(
+            #     f"    s_part shape: {s_part.shape if s_part is not None else 'None'}")
+            # rospy.logerr(
+            #     f"    s_dot_part shape: {s_dot_part.shape if s_dot_part is not None else 'None'}")
+
             s_array = np.concatenate((s_array, s_part))
             s_dot_array = np.concatenate((s_dot_array, s_dot_part))
             s_ddot_array = np.concatenate((s_ddot_array, s_ddot_part))
@@ -1272,8 +1330,31 @@ class LocalSamplingPlanner:
             rel_long_sampling_array = np.concatenate(
                 (rel_long_sampling_array, rel_long_sampling_part))
             t_array = np.concatenate((t_array, t_array_part))
+        else:
+            # rospy.logerr(f"\n--- Forward-Backward Sampling ---")
+            # rospy.logerr(
+            #     f"  add_forward_backward_samples=False, skipping forward-backward integration")
+            pass
+
+        # rospy.logerr(
+        #     f"\n--- Final Longitudinal Arrays (before lateral sampling) ---")
+        # rospy.logerr(f"  Total longitudinal samples: {s_array.shape[0]}")
+        # rospy.logerr(f"  s_array shape: {s_array.shape}")
+        # rospy.logerr(f"  s_dot_array shape: {s_dot_array.shape}")
+        # rospy.logerr(f"  s_ddot_array shape: {s_ddot_array.shape}")
+        # rospy.logerr(f"  t_array shape: {t_array.shape}")
+        # rospy.logerr(
+        #     f"  s_dot_end_values: {len(s_dot_end_values)} unique velocity targets")
+        # rospy.logerr(
+        #     f"  s_end_values: {len(s_end_values)} unique arc length endpoints")
 
         # lateral sampling mode is temporal
+        # rospy.logerr(f"\n--- Starting Lateral Sampling ---")
+        # rospy.logerr(f"  Input: {s_array.shape[0]} longitudinal trajectories")
+        # rospy.logerr(f"  s_dot_end_values length: {len(s_dot_end_values)}")
+        # rospy.logerr(
+        #     f"  Expected to expand to: {s_array.shape[0]} * n_lateral_samples")
+
         n_array, n_dot_array, n_ddot_array = self.lateral_sampling.calc_samples(
             s_start=s_start,
             s_dot_start=s_dot_start,
@@ -1291,5 +1372,50 @@ class LocalSamplingPlanner:
             track_handler=track_handler,
             vehicle_params=self.vehicle_params,
         )
+
+        # rospy.logerr(f"\n--- After Lateral Sampling ---")
+        # rospy.logerr(f"  n_array shape: {n_array.shape}")
+        # rospy.logerr(f"  n_dot_array shape: {n_dot_array.shape}")
+        # rospy.logerr(f"  n_ddot_array shape: {n_ddot_array.shape}")
+
+        # if n_array.shape[0] > 0:
+        #     # Check for lateral variation at END points (not start - all start at current position!)
+        #     # Check LAST point of each trajectory
+        #     n_end_points = n_array[:, -1]
+        #     unique_n_end = np.unique(np.round(n_end_points, 6))
+        #
+        #     # Also check middle point for additional verification
+        #     mid_idx = n_array.shape[1] // 2
+        #     n_mid_points = n_array[:, mid_idx]
+        #     unique_n_mid = np.unique(np.round(n_mid_points, 6))
+        #
+        #     rospy.logerr(f"  Lateral position variation:")
+        #     rospy.logerr(
+        #         f"    Start point n: {n_array[0, 0]:.3f} (all should be identical - current car position)")
+        #     rospy.logerr(
+        #         f"    Unique n values (END point): {len(unique_n_end)}")
+        #     rospy.logerr(
+        #         f"    Unique n values (MID point): {len(unique_n_mid)}")
+        #     rospy.logerr(
+        #         f"    n range (end): [{np.min(n_end_points):.3f}, {np.max(n_end_points):.3f}]")
+        #     rospy.logerr(f"    n mean (end): {np.mean(n_end_points):.3f}")
+        #
+        #     if len(unique_n_end) == 1:
+        #         rospy.logerr(
+        #             f"  ⚠️  WARNING: All trajectories have IDENTICAL end n = {unique_n_end[0]:.6f}")
+        #         rospy.logerr(
+        #             f"  ⚠️  Lateral sampling failed to produce variation!")
+        #     else:
+        #         rospy.logerr(
+        #             f"  ✓ Lateral variation detected: {len(unique_n_end)} unique end positions")
+
+        # rospy.logerr(f"\n--- Final Trajectory Arrays ---")
+        # rospy.logerr(f"  Total trajectories: {n_array.shape[0]}")
+        # rospy.logerr(
+        #     f"  Points per trajectory: {n_array.shape[1] if len(n_array.shape) > 1 else 0}")
+        # rospy.logerr(
+        #     f"  rel_long_sampling_array shape: {rel_long_sampling_array.shape}")
+        # rospy.logerr("TRAJECTORY SAMPLING DEBUG - END")
+        # rospy.logerr("="*80 + "\n")
 
         return s_array, s_dot_array, s_ddot_array, n_array, n_dot_array, n_ddot_array, rel_long_sampling_array, t_array

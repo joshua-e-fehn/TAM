@@ -132,8 +132,8 @@ class TAMConstantOffsetPredictor:
                         self.track_centerline[:, 0],
                         self.track_centerline[:, 1]
                     )
-                    rospy.loginfo(
-                        f"{self.log_name} Frenet converter initialized")
+                    # rospy.loginfo(
+                    #     f"{self.log_name} Frenet converter initialized")
                 except Exception as e:
                     rospy.logwarn(
                         f"{self.log_name} Failed to initialize Frenet converter: {e}")
@@ -143,8 +143,8 @@ class TAMConstantOffsetPredictor:
         self.obstacles = msg
         current_time = rospy.Time.now()
 
-        rospy.loginfo_throttle(
-            5.0, f"{self.log_name} Received {len(msg.obstacles)} obstacles")
+        # rospy.loginfo_throttle(
+        #     5.0, f"{self.log_name} Received {len(msg.obstacles)} obstacles")
 
         # Store current obstacle data in buffer
         for i, obstacle in enumerate(msg.obstacles):
@@ -162,13 +162,13 @@ class TAMConstantOffsetPredictor:
         if (len(self.global_waypoints.wpnts) == 0 or
             self.converter is None or
                 len(msg.obstacles) == 0):
-            rospy.loginfo_throttle(
-                5.0, f"{self.log_name} Not ready for predictions: waypoints={len(self.global_waypoints.wpnts)}, converter={self.converter is not None}, obstacles={len(msg.obstacles)}")
+            # rospy.loginfo_throttle(
+            #     5.0, f"{self.log_name} Not ready for predictions: waypoints={len(self.global_waypoints.wpnts)}, converter={self.converter is not None}, obstacles={len(msg.obstacles)}")
             return
 
         # Generate and publish predictions
-        rospy.loginfo_throttle(
-            5.0, f"{self.log_name} Generating predictions for {len(msg.obstacles)} obstacles")
+        # rospy.loginfo_throttle(
+        #     5.0, f"{self.log_name} Generating predictions for {len(msg.obstacles)} obstacles")
         self.generate_predictions()
 
     def ego_state_callback(self, msg: Odometry):
@@ -201,10 +201,10 @@ class TAMConstantOffsetPredictor:
             if not obs.is_static
         ]
 
-        # Log current obstacle data
-        for i, obs in dynamic_obstacles:
-            rospy.logdebug_throttle(
-                5.0, f"{self.log_name} Current obstacle {i}: s={obs.s_center:.2f}, d={obs.d_center:.2f}, vs={obs.vs:.2f}")
+        # # Log current obstacle data
+        # for i, obs in dynamic_obstacles:
+        #     rospy.logdebug_throttle(
+        #         5.0, f"{self.log_name} Current obstacle {i}: s={obs.s_center:.2f}, d={obs.d_center:.2f}, vs={obs.vs:.2f}")
 
         # Create set of current obstacle IDs for quick lookup
         current_ids = {i for i, _ in dynamic_obstacles}
@@ -218,8 +218,8 @@ class TAMConstantOffsetPredictor:
                 if extrapolated_obs:
                     active_obstacles.append(
                         (entry['obstacle_id'], extrapolated_obs))
-                    rospy.logdebug_throttle(
-                        5.0, f"{self.log_name} Using buffered obstacle {entry['obstacle_id']} (age: {age:.2f}s)")
+                    # rospy.logdebug_throttle(
+                    #     5.0, f"{self.log_name} Using buffered obstacle {entry['obstacle_id']} (age: {age:.2f}s)")
 
         # Add current obstacles (these take priority)
         active_obstacles.extend(dynamic_obstacles)
@@ -364,8 +364,8 @@ class TAMConstantOffsetPredictor:
             # This requires finding the current track boundaries
             relative_position = self.calculate_relative_position(obstacle)
 
-            rospy.loginfo_throttle(
-                2.0, f"{self.log_name} Obstacle {obstacle_id}: s={obstacle.s_center:.2f}, d={d_current:.2f}, relative_pos={relative_position:.2%}")
+            # rospy.loginfo_throttle(
+            #     2.0, f"{self.log_name} Obstacle {obstacle_id}: s={obstacle.s_center:.2f}, d={d_current:.2f}, relative_pos={relative_position:.2%}")
 
             # Generate prediction points based on global waypoints
             predicted_waypoints = []
@@ -400,8 +400,8 @@ class TAMConstantOffsetPredictor:
 
                 predicted_waypoints.append(pred_waypoint)
 
-            rospy.loginfo_throttle(
-                1.0, f"{self.log_name} Generated {len(predicted_waypoints)} prediction waypoints with relative position {relative_position:.2%}")
+            # rospy.loginfo_throttle(
+            #     1.0, f"{self.log_name} Generated {len(predicted_waypoints)} prediction waypoints with relative position {relative_position:.2%}")
             return predicted_waypoints
 
         except Exception as e:
@@ -519,8 +519,8 @@ class TAMConstantOffsetPredictor:
             d_left = waypoint.d_left
             d_right = waypoint.d_right
 
-            rospy.loginfo_throttle(
-                10.0, f"[TAM Predictor] Current d values: {d_left} and {d_right}")
+            # rospy.loginfo_throttle(
+            #     10.0, f"[TAM Predictor] Current d values: {d_left} and {d_right}")
 
             # Apply safety margins
             d_left_safe = d_left - self.safety_margin
@@ -644,7 +644,7 @@ class TAMConstantOffsetPredictor:
         """Main prediction loop"""
 
         # Wait for required data
-        rospy.loginfo(f"{self.log_name} Waiting for required data...")
+        # rospy.loginfo(f"{self.log_name} Waiting for required data...")
 
         try:
             rospy.wait_for_message("global_waypoints",
@@ -655,8 +655,8 @@ class TAMConstantOffsetPredictor:
             rospy.logwarn(f"{self.log_name} Timeout waiting for messages: {e}")
             return
 
-        rospy.loginfo(
-            f"{self.log_name} All required data received, starting prediction loop")
+        # rospy.loginfo(
+        #     f"{self.log_name} All required data received, starting prediction loop")
 
         # Main prediction loop (predictions are triggered by obstacle callbacks)
         rate = rospy.Rate(10)  # 10 Hz for marker cleanup and diagnostics

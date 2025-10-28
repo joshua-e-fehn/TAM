@@ -212,6 +212,10 @@ class TAMSamplingPlannerNode:
         self.markers_pub = rospy.Publisher(
             "planner/avoidance/markers", MarkerArray, queue_size=1)
 
+        # Publisher for ALL sampled trajectories (for visualization/debugging)
+        self.all_samples_pub = rospy.Publisher(
+            "planner/avoidance/all_samples", MarkerArray, queue_size=1)
+
         # Optional latency publisher for performance measurement
         if self.measuring:
             self.latency_pub = rospy.Publisher(
@@ -309,8 +313,8 @@ class TAMSamplingPlannerNode:
                 # Update the track handler in the TAM planner core
                 self.tam_planner.track_handler = self.track_handler
 
-                rospy.loginfo(
-                    f"{self.log_name} ✓ Track handler initialized with {len(msg.wpnts)} waypoints")
+                # rospy.loginfo(
+                #     f"{self.log_name} ✓ Track handler initialized with {len(msg.wpnts)} waypoints")
             except Exception as e:
                 rospy.logerr(
                     f"{self.log_name} Failed to initialize track handler: {e}")
@@ -348,8 +352,8 @@ class TAMSamplingPlannerNode:
                 'd_omega_z': d_omega_z
             }
 
-            rospy.loginfo_throttle(
-                5, f"{self.log_name} Track data updated: {len(msg.wpnts)} waypoints")
+            # rospy.loginfo_throttle(
+            #     5, f"{self.log_name} Track data updated: {len(msg.wpnts)} waypoints")
 
     def global_waypoints_scaled_callback(self, msg: WpntArray):
         """Process scaled global waypoints and extract raceline data (LEGACY - not used in F1Tenth)"""
@@ -374,9 +378,29 @@ class TAMSamplingPlannerNode:
             self.current_state['s_ddot'] = msg.pose.covariance[0] if msg.pose.covariance[0] != 0 else 0.0
             self.current_state['n_ddot'] = msg.pose.covariance[1] if msg.pose.covariance[1] != 0 else 0.0
 
-        # Cartesian fields are not directly provided in Frenet odom; keep previous values
-        self.current_state['x'] = self.current_state.get('x', 0.0)
-        self.current_state['y'] = self.current_state.get('y', 0.0)
+        # Convert Frenet coordinates to Cartesian using track_handler
+        if self.track_handler is not None:
+            try:
+                # Use sn2cartesian to convert (s, n) -> (x, y)
+                # sn2cartesian expects scalar floats, returns (x, y) tuple
+                x, y = self.track_handler.sn2cartesian(
+                    float(self.current_state['s']),
+                    float(self.current_state['n'])
+                )
+                self.current_state['x'] = x
+                self.current_state['y'] = y
+            except Exception as e:
+                rospy.logerr_throttle(
+                    2.0, f"{self.log_name} Failed to convert Frenet to Cartesian: {e}")
+                import traceback
+                rospy.logerr_throttle(2.0, traceback.format_exc())
+                # Fallback: keep previous values
+                self.current_state['x'] = self.current_state.get('x', 0.0)
+                self.current_state['y'] = self.current_state.get('y', 0.0)
+        else:
+            # Track handler not yet initialized, keep previous values
+            self.current_state['x'] = self.current_state.get('x', 0.0)
+            self.current_state['y'] = self.current_state.get('y', 0.0)
 
         # Extract heading from quaternion
         try:
@@ -388,17 +412,23 @@ class TAMSamplingPlannerNode:
         except:
             self.current_state['heading'] = 0.0
 
+        # Debug logging to verify state updates
+        # rospy.logwarn_throttle(1.0,
+        #                        f"{self.log_name} State: s={self.current_state['s']:.2f}, n={self.current_state['n']:.3f}, "
+        #                        f"x={self.current_state['x']:.2f}, y={self.current_state['y']:.2f}, "
+        #                        f"v={self.current_state['s_dot']:.2f} m/s")
+
     def obstacles_callback(self, msg: ObstacleArray):
         """Process detected obstacles"""
         self.obs = msg
-        rospy.loginfo_throttle(
-            10, f"{self.log_name} Obstacles updated: {len(msg.obstacles)} detected")
+        # rospy.loginfo_throttle(
+        #     10, f"{self.log_name} Obstacles updated: {len(msg.obstacles)} detected")
 
     def opponent_prediction_callback(self, msg: OpponentTrajectory):
         """Process opponent trajectory predictions from TAM custom predictor"""
         self.opponent_predictions = msg
-        rospy.loginfo_throttle(
-            5, f"{self.log_name} Predictions updated: {len(msg.oppwpnts)} predicted opponent waypoints")
+        # rospy.loginfo_throttle(
+        #     5, f"{self.log_name} Predictions updated: {len(msg.oppwpnts)} predicted opponent waypoints")
 
     def dynamic_params_callback(self, msg: Config):
         """Handle dynamic reconfigure parameter updates (LEGACY - F1Tenth uses rospy params directly)"""
@@ -712,6 +742,118 @@ class TAMSamplingPlannerNode:
 
         return marker_array
 
+    def create_all_samples_markers(self, s_array, n_array, valid_array, track_handler) -> MarkerArray:
+        """
+        Create visualization markers for ALL sampled trajectories from perform_trajectory_sampling
+
+        Args:
+            s_array: (N_traj, N_points) array of s-coordinates for all trajectories
+            n_array: (N_traj, N_points) array of n-coordinates for all trajectories
+            valid_array: (N_traj,) boolean array indicating valid (True) vs invalid (False) trajectories
+            track_handler: Track handler object for Frenet->Cartesian conversion
+
+        Returns:
+            MarkerArray with one LINE_STRIP marker per trajectory (blue=valid, red=invalid)
+        """
+        marker_array = MarkerArray()
+
+        # rospy.loginfo_throttle(
+        #     2, f"{self.log_name} create_all_samples_markers called")
+
+        if s_array is None or n_array is None or track_handler is None:
+            rospy.logwarn_throttle(
+                2, f"{self.log_name} create_all_samples_markers: missing inputs - s_array={s_array is not None}, n_array={n_array is not None}, track_handler={track_handler is not None}")
+            return marker_array
+
+        if len(s_array) == 0 or len(n_array) == 0:
+            rospy.logwarn_throttle(
+                2, f"{self.log_name} create_all_samples_markers: empty arrays - s_array.shape={s_array.shape}, n_array.shape={n_array.shape}")
+            return marker_array
+
+        try:
+            num_trajectories = s_array.shape[0]
+            # rospy.loginfo_throttle(
+            #     2, f"{self.log_name} Processing {num_trajectories} trajectories for visualization")
+
+            # Limit visualization to avoid performance issues (e.g., max 500 trajectories)
+            max_viz_trajectories = 500
+            if num_trajectories > max_viz_trajectories:
+                rospy.logwarn_throttle(10,
+                                       f"{self.log_name} Too many trajectories ({num_trajectories}), visualizing only first {max_viz_trajectories}")
+                num_trajectories = max_viz_trajectories
+
+            markers_created = 0
+            points_created = 0
+
+            for i in range(num_trajectories):
+                marker = Marker()
+                marker.header.frame_id = "map"
+                marker.header.stamp = rospy.Time.now()
+                marker.ns = f"{self.car_namespace}_tam_samples" if self.car_namespace else "tam_samples"
+                marker.id = i
+                marker.type = Marker.LINE_STRIP
+                marker.action = Marker.ADD
+                marker.scale.x = 0.02  # Thin lines
+
+                # Color based on validity: blue for valid, red for invalid
+                is_valid = valid_array[i] if valid_array is not None and i < len(
+                    valid_array) else True
+                if is_valid:
+                    # Valid trajectory: semi-transparent blue
+                    marker.color.r = 0.3
+                    marker.color.g = 0.3
+                    marker.color.b = 1.0
+                    marker.color.a = 0.3
+                else:
+                    # Invalid trajectory: semi-transparent red
+                    marker.color.r = 1.0
+                    marker.color.g = 0.3
+                    marker.color.b = 0.3
+                    marker.color.a = 0.3
+
+                # Convert Frenet (s, n) to Cartesian (x, y) for this trajectory
+                s_traj = s_array[i, :]
+                n_traj = n_array[i, :]
+
+                # Use track_handler to convert Frenet to global coordinates
+                for j in range(len(s_traj)):
+                    try:
+                        # Get x, y from track handler at (s, n)
+                        # NOTE: track_handler uses sn2cartesian method (not frenet_to_global)
+                        x, y = track_handler.sn2cartesian(s_traj[j], n_traj[j])
+
+                        point = Point()
+                        point.x = x
+                        point.y = y
+                        point.z = 0.05  # Slightly above ground
+                        marker.points.append(point)
+                        points_created += 1
+                    except Exception as e:
+                        # Skip invalid points (log only first few errors)
+                        if i < 3 and j < 3:
+                            rospy.logwarn_throttle(
+                                10, f"{self.log_name} Frenet conversion error at traj {i}, point {j}: {e}")
+                        continue
+
+                # Only add marker if it has points
+                if len(marker.points) > 0:
+                    marker_array.markers.append(marker)
+                    markers_created += 1
+                elif i < 5:  # Log first few empty markers
+                    rospy.logwarn_throttle(
+                        5, f"{self.log_name} Marker {i} has no valid points (s range: [{s_traj[0]:.2f}, {s_traj[-1]:.2f}], n range: [{n_traj[0]:.2f}, {n_traj[-1]:.2f}])")
+
+            # rospy.loginfo_throttle(
+            #     2, f"{self.log_name} Created {markers_created} markers with {points_created} total points")
+
+        except Exception as e:
+            rospy.logerr_throttle(
+                5, f"{self.log_name} Error creating all-samples markers: {e}")
+            import traceback
+            rospy.logerr_throttle(5, traceback.format_exc())
+
+        return marker_array
+
     def run_planning_cycle(self):
         """Execute one complete F1Tenth TAM planning cycle"""
 
@@ -747,6 +889,49 @@ class TAMSamplingPlannerNode:
                 prediction=prediction_dict,
                 planning_requests=planning_requests
             )
+
+            # STEP 2.5: Publish ALL sampled trajectories for visualization (before filtering)
+            # Access the stored raw arrays from the planner
+            if (hasattr(self.tam_planner, 'last_s_array') and
+                self.tam_planner.last_s_array is not None and
+                hasattr(self.tam_planner, 'last_n_array') and
+                self.tam_planner.last_n_array is not None and
+                hasattr(self.tam_planner, 'last_valid_array') and
+                    self.tam_planner.last_valid_array is not None):
+
+                try:
+                    # Debug: Log array shapes before creating markers
+                    # rospy.loginfo_throttle(2,
+                    #                        f"{self.log_name} Creating all-samples markers: s_array.shape={self.tam_planner.last_s_array.shape}, n_array.shape={self.tam_planner.last_n_array.shape}")
+
+                    all_samples_markers = self.create_all_samples_markers(
+                        self.tam_planner.last_s_array,
+                        self.tam_planner.last_n_array,
+                        self.tam_planner.last_valid_array,
+                        self.track_handler
+                    )
+
+                    # Debug: Log marker count before publishing
+                    # rospy.loginfo_throttle(2,
+                    #                        f"{self.log_name} Created {len(all_samples_markers.markers)} markers, publishing now...")
+
+                    self.all_samples_pub.publish(all_samples_markers)
+
+                    # Log info about sampled trajectories
+                    num_total = self.tam_planner.last_s_array.shape[0]
+                    num_valid = np.sum(
+                        self.tam_planner.last_valid_array) if self.tam_planner.last_valid_array is not None else 0
+                    # rospy.loginfo_throttle(5,
+                    #                        f"{self.log_name} Published {len(all_samples_markers.markers)} trajectory markers ({num_total} total, {num_valid} valid)")
+
+                except Exception as viz_e:
+                    rospy.logerr_throttle(
+                        2, f"{self.log_name} All-samples visualization error: {viz_e}")
+                    import traceback
+                    rospy.logerr_throttle(2, traceback.format_exc())
+            else:
+                rospy.logwarn_throttle(
+                    5, f"{self.log_name} Cannot publish all_samples: last_s_array={self.tam_planner.last_s_array is not None if hasattr(self.tam_planner, 'last_s_array') else 'N/A'}, last_n_array={self.tam_planner.last_n_array is not None if hasattr(self.tam_planner, 'last_n_array') else 'N/A'}")
 
             # STEP 3: Unpack return values (handle tuple return)
             if result is not None:
@@ -793,8 +978,8 @@ class TAMSamplingPlannerNode:
                     cost = trajectory_dict.get('cost', 0.0)
                     status = "EMERGENCY" if is_emergency else f"cost={cost:.2f}"
 
-                    rospy.loginfo_throttle(
-                        2, f"{self.log_name} Published trajectory #{self.planning_count}: {status}")
+                    # rospy.loginfo_throttle(
+                    #     2, f"{self.log_name} Published trajectory #{self.planning_count}: {status}")
                 else:
                     rospy.logwarn_throttle(
                         5, f"{self.log_name} Empty trajectory received from TAM planner")
@@ -823,33 +1008,33 @@ class TAMSamplingPlannerNode:
         """Main planning loop with proper error handling"""
 
         # Wait for critical messages
-        rospy.loginfo(f"{self.log_name} Waiting for required messages...")
-        rospy.loginfo(f"{self.log_name} Listening on topics:")
-        rospy.loginfo(f"{self.log_name}   - global_waypoints")
-        rospy.loginfo(f"{self.log_name}   - global_waypoints_scaled")
-        rospy.loginfo(f"{self.log_name}   - car_state/odom_frenet")
+        # rospy.loginfo(f"{self.log_name} Waiting for required messages...")
+        # rospy.loginfo(f"{self.log_name} Listening on topics:")
+        # rospy.loginfo(f"{self.log_name}   - global_waypoints")
+        # rospy.loginfo(f"{self.log_name}   - global_waypoints_scaled")
+        # rospy.loginfo(f"{self.log_name}   - car_state/odom_frenet")
 
         # Wait for messages with longer timeout and better feedback
         timeout_duration = 60.0  # Extended to 60 seconds for simulator startup
 
         try:
-            rospy.loginfo(f"{self.log_name} Waiting for global_waypoints...")
+            # rospy.loginfo(f"{self.log_name} Waiting for global_waypoints...")
             rospy.wait_for_message(
                 "global_waypoints", WpntArray, timeout=timeout_duration)
-            rospy.loginfo(f"{self.log_name} ✓ Received global_waypoints")
+            # rospy.loginfo(f"{self.log_name} ✓ Received global_waypoints")
 
-            rospy.loginfo(
-                f"{self.log_name} Waiting for global_waypoints_scaled...")
+            # rospy.loginfo(
+            #     f"{self.log_name} Waiting for global_waypoints_scaled...")
             rospy.wait_for_message(
                 "global_waypoints_scaled", WpntArray, timeout=timeout_duration)
-            rospy.loginfo(
-                f"{self.log_name} ✓ Received global_waypoints_scaled")
+            # rospy.loginfo(
+            #     f"{self.log_name} ✓ Received global_waypoints_scaled")
 
-            rospy.loginfo(
-                f"{self.log_name} Waiting for car_state/odom_frenet...")
+            # rospy.loginfo(
+            #     f"{self.log_name} Waiting for car_state/odom_frenet...")
             rospy.wait_for_message(
                 "car_state/odom_frenet", Odometry, timeout=timeout_duration)
-            rospy.loginfo(f"{self.log_name} ✓ Received car_state/odom_frenet")
+            # rospy.loginfo(f"{self.log_name} ✓ Received car_state/odom_frenet")
 
         except rospy.ROSException as e:
             rospy.logerr(
@@ -862,8 +1047,8 @@ class TAMSamplingPlannerNode:
                 f"{self.log_name}   3. Frenet conversion node is active")
             return
 
-        rospy.loginfo(
-            f"{self.log_name} ✓✓✓ All required messages received. Starting TAM planning loop.")
+        # rospy.loginfo(
+        #     f"{self.log_name} ✓✓✓ All required messages received. Starting TAM planning loop.")
 
         # Main planning loop
         while not rospy.is_shutdown():

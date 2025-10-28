@@ -473,8 +473,6 @@ class CalculationCosts():
 
             with open(config_file, 'r') as f:
                 yaml_params = yaml.safe_load(f)
-                rospy.loginfo(
-                    "CalculationCosts: Loaded YAML defaults from tam_sampling_params.yaml")
                 return yaml_params if yaml_params else {}
         except Exception as e:
             rospy.logwarn(

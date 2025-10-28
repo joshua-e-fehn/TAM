@@ -302,7 +302,7 @@ class LongitudinalSampling:
                 rospy.logwarn(
                     f"Very high acceleration detected: {max_accel:.2f} m/s²")
 
-            rospy.loginfo("Raceline validation passed")
+            # rospy.loginfo("Raceline validation passed")
             return True
 
         except Exception as e:
@@ -363,8 +363,6 @@ class LongitudinalSampling:
 
             with open(config_file, 'r') as f:
                 yaml_params = yaml.safe_load(f)
-                rospy.loginfo(
-                    "LongitudinalSampling: Loaded YAML defaults from tam_sampling_params.yaml")
                 return yaml_params if yaml_params else {}
         except Exception as e:
             rospy.logwarn(

@@ -87,8 +87,6 @@ class TrajectoryChecks():
 
             with open(config_file, 'r') as f:
                 yaml_params = yaml.safe_load(f)
-                rospy.loginfo(
-                    "TrajectoryChecks: Loaded YAML defaults from tam_sampling_params.yaml")
                 return yaml_params if yaml_params else {}
         except Exception as e:
             rospy.logwarn(
@@ -186,58 +184,69 @@ class TrajectoryChecks():
         valid_tmp = np.all((n_array[valid_array] < left_bound) & (
             n_array[valid_array] > right_bound), axis=1)
 
-        # Debug logging for path collision analysis
-        if self.debugging and np.sum(~valid_tmp) > 0:
-            print("\n=== PATH COLLISION DEBUG ===")
-            print(f"Total trajectories checked: {len(valid_tmp)}")
-            print(f"Failed path check: {np.sum(~valid_tmp)}")
-            print(f"\nBoundary Configuration:")
-            print(f"  Vehicle width: {vehicle_params['total_width']:.3f} m")
-            print(f"  Safety distance left: {safety_distance_left:.3f} m")
-            print(f"  Safety distance right: {safety_distance_right:.3f} m")
-            print(f"  Tube width: {self.params.tube_width:.3f} m")
-            print(
-                f"  Total margin left: {vehicle_params['total_width']/2.0 + safety_distance_left + self.params.tube_width:.3f} m")
-            print(
-                f"  Total margin right: {vehicle_params['total_width']/2.0 + safety_distance_right + self.params.tube_width:.3f} m")
+        # # Debug logging for path collision analysis
+        # if self.debugging and np.sum(~valid_tmp) > 0:
+        #     print("\n=== PATH COLLISION DEBUG ===")
+        #     print(f"Total trajectories checked: {len(valid_tmp)}")
+        #     print(f"Failed path check: {np.sum(~valid_tmp)}")
+        #     print(f"\nBoundary Configuration:")
+        #     print(f"  Vehicle width: {vehicle_params['total_width']:.3f} m")
+        #     print(f"  Safety distance left: {safety_distance_left:.3f} m")
+        #     print(f"  Safety distance right: {safety_distance_right:.3f} m")
+        #     print(f"  Tube width: {self.params.tube_width:.3f} m")
+        #     print(
+        #         f"  Total margin left: {vehicle_params['total_width']/2.0 + safety_distance_left + self.params.tube_width:.3f} m")
+        #     print(
+        #         f"  Total margin right: {vehicle_params['total_width']/2.0 + safety_distance_right + self.params.tube_width:.3f} m")
 
-            print(f"\nTrack Boundaries (first point):")
-            if len(left_bound) > 0 and len(right_bound) > 0:
-                # left_bound and right_bound are 2D arrays [trajectories, points]
-                print(f"  Left bound: {float(left_bound[0, 0]):.3f} m")
-                print(f"  Right bound: {float(right_bound[0, 0]):.3f} m")
-                print(
-                    f"  Available width: {float(left_bound[0, 0] - right_bound[0, 0]):.3f} m")
+        #     print(f"\nTrack Boundaries (first point):")
+        #     if len(left_bound) > 0 and len(right_bound) > 0:
+        #         # left_bound and right_bound are 2D arrays [trajectories, points]
+        #         print(f"  Left bound: {float(left_bound[0, 0]):.3f} m")
+        #         print(f"  Right bound: {float(right_bound[0, 0]):.3f} m")
+        #         print(
+        #             f"  Available width: {float(left_bound[0, 0] - right_bound[0, 0]):.3f} m")
 
-            print(f"\nSampled Lateral Positions (n_array):")
-            if len(n_array[valid_array]) > 0:
-                # First point of each trajectory
-                n_values = n_array[valid_array][:, 0]
-                print(f"  Min n: {np.min(n_values):.3f} m")
-                print(f"  Max n: {np.max(n_values):.3f} m")
-                print(f"  Mean n: {np.mean(n_values):.3f} m")
-                print(f"  Range: {np.max(n_values) - np.min(n_values):.3f} m")
+        #     print(f"\nSampled Lateral Positions (n_array):")
+        #     if len(n_array[valid_array]) > 0:
+        #         # First point of each trajectory
+        #         n_values = n_array[valid_array][:, 0]
+        #         print(f"  Min n: {np.min(n_values):.3f} m")
+        #         print(f"  Max n: {np.max(n_values):.3f} m")
+        #         print(f"  Mean n: {np.mean(n_values):.3f} m")
+        #         print(f"  Range: {np.max(n_values) - np.min(n_values):.3f} m")
 
-                # Show which trajectories exceed bounds
-                exceeds_left = np.any(
-                    n_array[valid_array] >= left_bound, axis=1)
-                exceeds_right = np.any(
-                    n_array[valid_array] <= right_bound, axis=1)
-                print(
-                    f"\n  Trajectories exceeding left bound: {np.sum(exceeds_left)}")
-                print(
-                    f"  Trajectories exceeding right bound: {np.sum(exceeds_right)}")
+        #         # Check if all trajectories have the same n value
+        #         unique_n = np.unique(np.round(n_values, 6))
+        #         if len(unique_n) == 1:
+        #             print(
+        #                 f"\n  ⚠️  WARNING: All {len(n_values)} trajectories have IDENTICAL n value = {unique_n[0]:.6f} m")
+        #             print(
+        #                 f"  ⚠️  This indicates lateral sampling is NOT producing variation!")
+        #         else:
+        #             print(
+        #                 f"  ✓  Found {len(unique_n)} unique lateral positions")
 
-                if np.sum(exceeds_left) > 0:
-                    max_violation_left = np.max(
-                        n_array[valid_array][exceeds_left] - left_bound[exceeds_left])
-                    print(f"  Max left violation: {max_violation_left:.3f} m")
-                if np.sum(exceeds_right) > 0:
-                    max_violation_right = np.max(
-                        right_bound[exceeds_right] - n_array[valid_array][exceeds_right])
-                    print(
-                        f"  Max right violation: {max_violation_right:.3f} m")
-            print("========================\n")
+        #         # Show which trajectories exceed bounds
+        #         exceeds_left = np.any(
+        #             n_array[valid_array] >= left_bound, axis=1)
+        #         exceeds_right = np.any(
+        #             n_array[valid_array] <= right_bound, axis=1)
+        #         print(
+        #             f"\n  Trajectories exceeding left bound: {np.sum(exceeds_left)}")
+        #         print(
+        #             f"  Trajectories exceeding right bound: {np.sum(exceeds_right)}")
+
+        #         if np.sum(exceeds_left) > 0:
+        #             max_violation_left = np.max(
+        #                 n_array[valid_array][exceeds_left] - left_bound[exceeds_left])
+        #             print(f"  Max left violation: {max_violation_left:.3f} m")
+        #         if np.sum(exceeds_right) > 0:
+        #             max_violation_right = np.max(
+        #                 right_bound[exceeds_right] - n_array[valid_array][exceeds_right])
+        #             print(
+        #                 f"  Max right violation: {max_violation_right:.3f} m")
+        #     print("========================\n")
 
         # store trajectories that failed this check
         if self.debugging:
@@ -249,47 +258,47 @@ class TrajectoryChecks():
 
         return left_bound, right_bound
 
-    def __check_rules(
-        self,
-        valid_array: np.ndarray,
-        V_array: np.ndarray,
-        V_target_rules: float,
-        invalid_array_info: np.ndarray,
-    ):
-        # RULES CHECK DISABLED - No speed rules to enforce
-        # Original functionality commented out:
+    # def __check_rules(
+    #     self,
+    #     valid_array: np.ndarray,
+    #     V_array: np.ndarray,
+    #     V_target_rules: float,
+    #     invalid_array_info: np.ndarray,
+    # ):
+    #     # RULES CHECK DISABLED - No speed rules to enforce
+    #     # Original functionality commented out:
 
-        # # allow slight violation
-        # tolerance_mps = 3.0
-        #
-        # # In case all entries are false the next condition will crash otherwise
-        # if np.sum(valid_array) > 0:
-        #     # handle case when target velocity is reduced to a value below ego velocity
-        #     if V_array[valid_array][0][0] > V_target_rules:
-        #         V_target_rules = V_array[valid_array][0][0]
-        #
-        # # check if every trajectory point is below maximum allowed velocity
-        # valid_tmp = np.all(V_array[valid_array] <
-        #                    V_target_rules + tolerance_mps, axis=1)
-        #
-        # # store trajectories that failed this check for visualizer
-        # if self.debugging:
-        #     combined_mask = valid_array.copy()
-        #     combined_mask[valid_array] = ~valid_tmp
-        #     invalid_array_info[combined_mask] = "rules"
-        #
-        # # if no valid trajectory is found, allow all
-        # if np.sum(valid_tmp) < 1:
-        #     # self.msgs_logger.warning(f'Trajectory ID {self.traj_cnt}: All trajectories failed the rule check - no rule check applied in this step.')
-        #     return
-        #
-        # valid_array[valid_array] = valid_tmp
+    #     # # allow slight violation
+    #     # tolerance_mps = 3.0
+    #     #
+    #     # # In case all entries are false the next condition will crash otherwise
+    #     # if np.sum(valid_array) > 0:
+    #     #     # handle case when target velocity is reduced to a value below ego velocity
+    #     #     if V_array[valid_array][0][0] > V_target_rules:
+    #     #         V_target_rules = V_array[valid_array][0][0]
+    #     #
+    #     # # check if every trajectory point is below maximum allowed velocity
+    #     # valid_tmp = np.all(V_array[valid_array] <
+    #     #                    V_target_rules + tolerance_mps, axis=1)
+    #     #
+    #     # # store trajectories that failed this check for visualizer
+    #     # if self.debugging:
+    #     #     combined_mask = valid_array.copy()
+    #     #     combined_mask[valid_array] = ~valid_tmp
+    #     #     invalid_array_info[combined_mask] = "rules"
+    #     #
+    #     # # if no valid trajectory is found, allow all
+    #     # if np.sum(valid_tmp) < 1:
+    #     #     # self.msgs_logger.warning(f'Trajectory ID {self.traj_cnt}: All trajectories failed the rule check - no rule check applied in this step.')
+    #     #     return
+    #     #
+    #     # valid_array[valid_array] = valid_tmp
 
-        # No rules to check - accept all trajectories
-        if self.debugging:
-            print("Rules check disabled - no speed rules to enforce")
+    #     # No rules to check - accept all trajectories
+    #     # if self.debugging:
+    #     #     print("Rules check disabled - no speed rules to enforce")
 
-        # All trajectories remain valid (no modification to valid_array needed)
+    #     # All trajectories remain valid (no modification to valid_array needed)
 
     def __check_friction_limits(
             self,
@@ -440,9 +449,9 @@ class TrajectoryChecks():
         valid_tmp = np.ones(np.sum(valid_array), dtype=bool)
 
         # Store info for debugging
-        if self.debugging:
-            print(
-                f"Trajectory ID {traj_cnt}: GGGV friction checks disabled - using simplified approach")
+        # if self.debugging:
+        #     print(
+        #         f"Trajectory ID {traj_cnt}: GGGV friction checks disabled - using simplified approach")
 
         valid_array[valid_array] = valid_tmp
 
@@ -532,12 +541,12 @@ class TrajectoryChecks():
 
             # Rules Check
             valid_sum = valid_sum_tmp
-            self.__check_rules(
-                valid_array=valid_array,
-                V_array=V_array,
-                V_target_rules=V_target_rules,
-                invalid_array_info=invalid_array_info,
-            )
+            # self.__check_rules(
+            #     valid_array=valid_array,
+            #     V_array=V_array,
+            #     V_target_rules=V_target_rules,
+            #     invalid_array_info=invalid_array_info,
+            # )
             valid_sum_tmp = np.sum(valid_array)
             if not valid_sum_tmp:
                 print(
