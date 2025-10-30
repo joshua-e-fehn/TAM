@@ -104,7 +104,7 @@ class LongitudinalSampling:
                 {
                     "id": 1,
                     "s_m": 1.0,        # Arc length position [m]
-                    "d_m": 0.0,        # Lateral offset from centerline [m] 
+                    "d_m": 0.0,        # Lateral offset from centerline [m]
                     "x_m": 11.0,       # X coordinate [m]
                     "y_m": 5.1,        # Y coordinate [m]
                     "vx_mps": 8.7,     # Velocity [m/s]
@@ -515,7 +515,8 @@ class LongitudinalSampling:
 
             """if raceline_tendency:
                 # set end acceleration between 0 and raceline acceleration dependent on sampled velocity
-                s_ddot_end_tmp = np.interp(s_dot_end, [0.0, s_dot_end_rl], [0.0, s_ddot_end_rl])
+                s_ddot_end_tmp = np.interp(
+                    s_dot_end, [0.0, s_dot_end_rl], [0.0, s_ddot_end_rl])
                 # only adhere to end acceleration of raceline when start velocity is also near to raceline velocity
                 s_ddot_end = np.interp(s_dot_start, [0.0, postprocessed_raceline['s_dot_post'][0]], [0.0, s_ddot_end_tmp])"""
 
@@ -613,32 +614,52 @@ class LongitudinalSampling:
 
         self.declare_and_update_parameters()
 
-        # Validate the postprocessed raceline data
-        if not self.validate_converted_raceline(postprocessed_raceline):
-            rospy.logerr(
-                "Raceline validation failed in calc_samples_s_based - trajectory sampling may produce poor results")
-
-        # get end s coordinate of current s segment
-        s_loc_raceline = (np.interp(
-            self.params.horizon, postprocessed_raceline["t_post"], postprocessed_raceline["s_post"]) - s_start) % track_handler.s_coord()[-1]
-        s_loc_horizon = min(s_loc_raceline, max(
-            20.0, (1.2 * s_dot_start * 4)))  # segment length in meters
-        # trajectory horizon in meters
+        # Fixed trajectory length: always 8.0 meters
+        s_loc_horizon = 8.0  # segment length in meters
+        # trajectory horizon in meters (handle track wraparound)
         s_glob_end = np.mod(s_start + s_loc_horizon,
                             track_handler.s_coord()[-1])
 
-        # construct local s vector so it uses only s values from the postprocessed_raceline
-        _, idx_end = find_nearest_s_and_idx(
-            postprocessed_raceline["s_post"], s_glob_end, track_handler)
+        # construct local s vector handling track wraparound
+        track_length = track_handler.s_coord()[-1]
 
-        s_glob_interval = postprocessed_raceline["s_post"][:idx_end]
+        # Handle case where trajectory wraps around track end
+        if s_glob_end < s_start:
+            # Trajectory wraps around: need points from s_start to end, then 0 to s_glob_end
+            _, idx_start = find_nearest_s_and_idx(
+                postprocessed_raceline["s_post"], s_start, track_handler)
 
-        # add s_start in pitlane mode
+            # Get points from s_start to track end
+            mask_to_end = postprocessed_raceline["s_post"] >= s_start
+            s_interval_to_end = postprocessed_raceline["s_post"][mask_to_end]
+
+            # Get points from track start to s_glob_end
+            mask_from_start = postprocessed_raceline["s_post"] <= s_glob_end
+            s_interval_from_start = postprocessed_raceline["s_post"][mask_from_start]
+
+            # Concatenate, adjusting second segment by adding track_length
+            s_glob_interval = np.concatenate([
+                s_interval_to_end,
+                s_interval_from_start + track_length
+            ])
+        else:
+            # Normal case: trajectory doesn't wrap
+            _, idx_end = find_nearest_s_and_idx(
+                postprocessed_raceline["s_post"], s_glob_end, track_handler)
+            _, idx_start = find_nearest_s_and_idx(
+                postprocessed_raceline["s_post"], s_start, track_handler)
+
+            s_glob_interval = postprocessed_raceline["s_post"][idx_start:idx_end+1]
+
+        # add s_start if not in raceline
         if s_start not in postprocessed_raceline["s_post"]:
             s_glob_interval = np.insert(s_glob_interval, 0, s_start)
 
-        s_loc_vector = (s_glob_interval -
-                        s_start) % track_handler.s_coord()[-1]
+        # add s_glob_end to ensure we reach exactly 8.0m
+        s_glob_interval = np.append(s_glob_interval, s_start + s_loc_horizon)
+
+        # Local s coordinates (always starts at 0, ends at 8.0)
+        s_loc_vector = s_glob_interval - s_start
 
         # raceline end conditions
         s_dot_end_rl = np.interp(
@@ -733,10 +754,24 @@ class LongitudinalSampling:
                 s_loc_vector + 3 * c[3] * s_loc_vector ** 2
 
             if raceline_tendency:
-                s_dot_rl_eval = np.interp(
-                    s_glob_interval, postprocessed_raceline['s_post'], postprocessed_raceline['s_dot_post'], period=track_handler.s_coord()[-1])
-                s_pprime_rl_eval = np.interp(
-                    s_glob_interval, postprocessed_raceline['s_post'], postprocessed_raceline['s_ddot_post'], period=track_handler.s_coord()[-1]) / s_dot_rl_eval
+                # Interpolate using continuous s coordinates (s_glob_interval already handles wraparound)
+                # For wrapped trajectories, s_glob_interval contains values > track_length
+                # We need to interpolate with periodic wrapping
+
+                # Use manual periodic interpolation to handle wraparound correctly
+                s_dot_rl_eval = np.zeros_like(s_glob_interval)
+                s_ddot_rl_eval = np.zeros_like(s_glob_interval)
+
+                for j, s_val in enumerate(s_glob_interval):
+                    # Wrap s_val to [0, track_length) for lookup
+                    s_wrapped = np.mod(s_val, track_length)
+                    s_dot_rl_eval[j] = np.interp(s_wrapped, postprocessed_raceline['s_post'],
+                                                 postprocessed_raceline['s_dot_post'])
+                    s_ddot_rl_eval[j] = np.interp(s_wrapped, postprocessed_raceline['s_post'],
+                                                  postprocessed_raceline['s_ddot_post'])
+
+                # Calculate s_pprime from s_ddot
+                s_pprime_rl_eval = s_ddot_rl_eval / s_dot_rl_eval
 
                 # add raceline s data to sampled relative s curve
                 s_dot = s_dot_sample + s_dot_rl_eval
@@ -745,52 +780,56 @@ class LongitudinalSampling:
                 s_dot = s_dot_sample
                 s_ddot = s_pprime_sample
 
-            # consider track length
-            s_vals = s_loc_vector + s_start
+            # Keep continuous s coordinates for internal calculations
+            s_vals_continuous = s_loc_vector + s_start
 
-            # postprocessing 1: omit everything that is not in the horizon
-            # add value at horizon to s_array
-
+            # postprocessing 1: calculate time vector using continuous coordinates
+            # Use continuous s coordinates for time calculation to handle wraparound
+            # For calc_time_vector, we need wrapped coordinates for track_handler lookups
+            s_vals_wrapped_for_time = np.mod(s_vals_continuous, track_length)
             t = self.calc_time_vector(
-                track_handler, s_glob_interval, np.zeros_like(s_glob_interval), s_dot)
+                track_handler, s_vals_wrapped_for_time, np.zeros_like(s_vals_wrapped_for_time), s_dot)
 
             # transform s_ddot(s) back to s_ddot(t)
             s_ddot = s_ddot * s_dot
 
-            # cut trajectories after 4 seconds
-            s_horizon = np.interp(self.params.horizon, t, s_vals)
-            s_dot_horizon = np.interp(self.params.horizon, t, s_dot)
-            s_ddot_horizon = np.interp(self.params.horizon, t, s_ddot)
+            # Ensure trajectory ends at exactly 8.0m from start
+            # Find index where we've traveled 8.0m
+            s_distance_traveled = s_loc_vector
+            if len(s_distance_traveled) > 0:
+                # Find point closest to 8.0m mark
+                idx_8m = np.argmin(np.abs(s_distance_traveled - 8.0))
+                if idx_8m < len(s_vals_continuous) - 1:
+                    # Interpolate to get exact 8.0m point (use continuous coordinates)
+                    s_vals_continuous = np.append(
+                        s_vals_continuous[:idx_8m+1], s_start + 8.0)
+                    s_dot = np.append(
+                        s_dot[:idx_8m+1], np.interp(8.0, s_distance_traveled, s_dot))
+                    s_ddot = np.append(
+                        s_ddot[:idx_8m+1], np.interp(8.0, s_distance_traveled, s_ddot))
 
-            # adjust s values and s value at horizon by trakc length
-            s_vals = np.mod(s_vals, track_handler.s_coord()[-1])
-            s_horizon = np.mod(s_horizon, track_handler.s_coord()[-1])
-
-            _, s_idx_horizon = find_nearest_s_and_idx(
-                s_vals, s_horizon, track_handler)
-            s_vals = np.insert(s_vals, s_idx_horizon, s_horizon)
-            s_dot = np.insert(s_dot, s_idx_horizon, s_dot_horizon)
-            s_ddot = np.insert(s_ddot, s_idx_horizon, s_ddot_horizon)
-
-            s_vals = s_vals[:s_idx_horizon + 1]
-            s_dot = s_dot[:s_idx_horizon + 1]
-            s_ddot = s_ddot[:s_idx_horizon + 1]
-
-            # postprocessing 2: cut length to horizon
-            trim_mask = create_trim_mask(s_vals, self.params.num_samples)
-            s_vals = s_vals[trim_mask]
+            # postprocessing 2: trim to target number of samples (use continuous coordinates)
+            # Create wrapped version for trim_mask (which might need actual track coordinates)
+            s_vals_wrapped = np.mod(s_vals_continuous, track_length)
+            trim_mask = create_trim_mask(
+                s_vals_wrapped, self.params.num_samples)
+            s_vals_continuous = s_vals_continuous[trim_mask]
             s_dot = s_dot[trim_mask]
             s_ddot = s_ddot[trim_mask]
 
-            # postprocessing 3: interpolate to get the correct number of samples
-            if len(s_vals) < self.params.num_samples:
+            # postprocessing 3: interpolate to get exact number of samples
+            # Use continuous coordinates for interpolation to maintain monotonicity
+            if len(s_vals_continuous) < self.params.num_samples:
                 # insert points into s_vals between the current data points
-
+                # Interpolate in continuous space
                 s_vals_enriched = np.linspace(
-                    s_vals[0], s_vals[-1], self.params.num_samples)
-                s_dot = np.interp(s_vals_enriched, s_vals, s_dot)
-                s_ddot = np.interp(s_vals_enriched, s_vals, s_ddot)
-                s_vals = s_vals_enriched
+                    s_vals_continuous[0], s_vals_continuous[-1], self.params.num_samples)
+                s_dot = np.interp(s_vals_enriched, s_vals_continuous, s_dot)
+                s_ddot = np.interp(s_vals_enriched, s_vals_continuous, s_ddot)
+                s_vals_continuous = s_vals_enriched
+
+            # NOW apply modulo to get final wrapped coordinates for output
+            s_vals = np.mod(s_vals_continuous, track_length)
 
             # recalc shorter time vector
             t = self.calc_time_vector(
