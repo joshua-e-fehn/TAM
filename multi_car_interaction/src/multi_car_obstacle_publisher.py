@@ -38,7 +38,7 @@ class MultiCarObstaclePublisher:
         else:
             self.car_names = car_names_param
         self.publish_rate = rospy.get_param(
-            '~publish_rate', 50.0)  # Hz - Updated to 50Hz
+            '~publish_rate', 8012.0)  # Hz - Updated to 50Hz
 
         # Car model and dimensions
         self.car_model = rospy.get_param('~car_model', 'NUC2')

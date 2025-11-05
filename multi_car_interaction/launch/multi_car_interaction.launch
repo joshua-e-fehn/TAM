@@ -46,10 +46,10 @@
     </node>
   </group>
 
-  <!-- Car Collision Detector -->
+  <!-- Race Event Monitor (replaces collision detector with full race monitoring) -->
   <group if="$(arg enable_collision_detection)">
-    <node pkg="multi_car_interaction" type="car_collision_detector.py" 
-          name="car_collision_detector" output="screen">
+    <node pkg="multi_car_interaction" type="race_event_monitor.py" 
+          name="race_event_monitor" output="screen">
       <param name="car_names" value="$(arg car_names)"/>
       <param name="car_model" value="$(arg car_model)"/>
       <param name="check_rate" value="$(arg check_rate)"/>
@@ -58,6 +58,9 @@
       <param name="collision_distance" value="$(arg collision_distance)"/>
       <param name="car_length" value="$(arg car_length)"/>
       <param name="car_width" value="$(arg car_width)"/>
+      <!-- Race completion parameters -->
+      <param name="track_width_limit" value="1.5"/>  <!-- meters, for track boundary detection -->
+      <param name="log_directory" value="/tmp/race_logs"/>
     </node>
   </group>
 
