@@ -7,3 +7,4 @@ class StateType(enum.Enum):
     TRAILING = 'TRAILING'
     OVERTAKE = 'OVERTAKE'
     FTGONLY = 'FTGONLY'
+    TAM_PLANNING = 'TAM_PLANNING'

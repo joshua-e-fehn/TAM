@@ -31,6 +31,10 @@ class StateMachine:
         self.name = name
         # Initialize car name for multi-car identification (will be set by main)
         self.car_name = "unknown_car"
+
+        # Track node startup time to reject queued messages from before subscriber connected
+        self.node_start_time = rospy.Time.now()
+
         # Core configuration
         self.rate_hz = rospy.get_param('state_machine/rate')
         self.n_loc_wpnts = rospy.get_param('state_machine/n_loc_wpnts')
@@ -146,6 +150,8 @@ class StateMachine:
                 f"[{self.name}] Race start controller disabled - starting in GB_TRACK state")
 
         self.race_start_received = False
+        # Track previous state for transition detection
+        self.previous_state = self.cur_state
         rospy.loginfo(
             f"[{self.name}] The default state for the state machine is {self.cur_state}")
 
@@ -169,7 +175,7 @@ class StateMachine:
         elif self.ot_planner == "tam_sampling":
             self.state_transitions = {
                 StateType.READY: state_transitions.TAMReadyTransition,
-                StateType.GB_TRACK: state_transitions.TAMGlobalTrackingTransition,
+                StateType.TAM_PLANNING: state_transitions.TAMPlanningTransition,
             }
         elif self.ot_planner == "graph_based":
             rospy.logwarn(
@@ -199,6 +205,7 @@ class StateMachine:
             StateType.TRAILING: states.Trailing,
             StateType.OVERTAKE: states.Overtaking,
             StateType.FTGONLY: states.FTGOnly,
+            StateType.TAM_PLANNING: states.TAMTracking,
         }
 
         # SUBSCRIPTIONS (relative topics for namespacing)
@@ -232,7 +239,7 @@ class StateMachine:
                          ObstacleArray, self.obstacle_prediction_cb)
         if self.ot_planner in ("spliner", "predictive_spliner", "tam_sampling"):
             rospy.Subscriber("planner/avoidance/otwpnts",
-                             OTWpntArray, self.avoidance_cb)
+                             OTWpntArray, self.avoidance_cb, queue_size=1)
         if self.ot_planner == "predictive_spliner":
             rospy.Subscriber("planner/avoidance/merger",
                              Float32MultiArray, self.merger_cb)
@@ -258,6 +265,8 @@ class StateMachine:
         self.vis_loc_wpnt_pub = rospy.Publisher(
             "local_waypoints/markers", MarkerArray, queue_size=10)
         self.state_pub = rospy.Publisher("state_machine", String, queue_size=1)
+        self.state_transition_pub = rospy.Publisher(
+            "state_transition", String, queue_size=10)  # For logging state changes
         self.state_mrk = rospy.Publisher("state_marker", Marker, queue_size=10)
         self.emergency_pub = rospy.Publisher(
             "emergency_marker", Marker, queue_size=5)
@@ -301,13 +310,59 @@ class StateMachine:
 
     def avoidance_cb(self, data: OTWpntArray):
         """spliniboi waypoints"""
+        callback_start = rospy.Time.now()
+
+        # Reject messages published BEFORE this node started (backlog from connection establishment)
+        # This prevents processing 100+ queued messages when subscriber first connects
+        if data.header.stamp < self.node_start_time:
+            # Silently ignore old messages from before node startup
+            return
+
+        # Calculate message age
+        msg_age = (callback_start - data.header.stamp).to_sec()
+
+        # Reject stale messages (older than 200ms) to prevent using outdated trajectories
+        # At 20Hz planning rate, 200ms = 4 planning cycles is reasonable tolerance
+        if msg_age > 0.6:
+            rospy.logwarn_throttle(1.0,  # Only log every 5 seconds to avoid spam
+                                   f"[{self.name}] 🕐 REJECTING STALE MESSAGE | "
+                                   f"msg_age={msg_age*1000:.1f}ms | "
+                                   f"wpnts={len(data.wpnts)} | "
+                                   f"Ignoring outdated trajectory")
+            return
+
+        # Additional check: Only accept messages newer than the last one we processed
+        if not hasattr(self, 'last_trajectory_timestamp'):
+            self.last_trajectory_timestamp = rospy.Time(0)
+
+        if data.header.stamp <= self.last_trajectory_timestamp:
+            # This message is older than or equal to the last one we processed
+            rospy.logdebug(
+                f"[{self.name}] Skipping message with duplicate/old timestamp")
+            return
+
+        # Update last processed timestamp
+        self.last_trajectory_timestamp = data.header.stamp
+
         if len(data.wpnts) > 0:
             self.splini_ttl_counter = int(self.splini_ttl * self.rate_hz)
             self.avoidance_wpnts = data
 
-        # Otherwise we don't overwrite the avoidance waypoints
+            # DEBUG: Log receipt of avoidance waypoints
+            rospy.loginfo_throttle(2.0,
+                                   f"[{self.name}] ✓ Received {len(data.wpnts)} avoidance waypoints | "
+                                   f"s_range=[{data.wpnts[0].s_m:.2f}, {data.wpnts[-1].s_m:.2f}] | "
+                                   f"First wpnt: x={data.wpnts[0].x_m:.2f}, y={data.wpnts[0].y_m:.2f} | "
+                                   f"msg_age={msg_age*1000:.1f}ms")
         else:
-            pass
+            # Empty trajectory received - planner failed or no valid trajectory
+            # Clear avoidance_wpnts to trigger fallback in states.py
+            self.avoidance_wpnts = None
+            callback_time = (rospy.Time.now() - callback_start).to_sec()
+            rospy.logwarn(
+                f"[{self.name}] ⚠️ Received EMPTY avoidance waypoints - setting to None | "
+                f"msg_age={msg_age*1000:.1f}ms | callback_time={callback_time*1000:.1f}ms | "
+                f"(published at {data.header.stamp.to_sec():.3f}, received at {callback_start.to_sec():.3f})")
 
     def frenet_pose_cb(self, data: Odometry):
         self.cur_s = data.pose.pose.position.x
@@ -654,10 +709,26 @@ class StateMachine:
             return False
 
     def _check_availability_splini_wpts(self) -> bool:
+
         if self.avoidance_wpnts is None:
+            rospy.logwarn_throttle(2.0,
+                                   f"[{self.name}] _check_availability: avoidance_wpnts is None -> returning False")
             return False
         elif len(self.avoidance_wpnts.wpnts) == 0:
+            rospy.logwarn(
+                f"[{self.name}] _check_availability: avoidance_wpnts has 0 waypoints -> returning False")
             return False
+
+        # TAM sampling planner: Skip hysteresis check (doesn't switch between discrete sides)
+        # TAM continuously optimizes trajectories, no need for side-switching debouncing
+        if self.ot_planner == "tam_sampling":
+            self.last_valid_avoidance_wpnts = self.avoidance_wpnts.wpnts.copy()
+            rospy.loginfo_throttle(2.0,
+                                   f"[{self.name}] ✓✓✓ TAM: Skipping hysteresis, updating last_valid with {len(self.last_valid_avoidance_wpnts)} waypoints | "
+                                   f"s_range=[{self.last_valid_avoidance_wpnts[0].s_m:.2f}, {self.last_valid_avoidance_wpnts[-1].s_m:.2f}]")
+            return True
+
+        # Spliner/Predictive Spliner: Apply hysteresis check to prevent side-switching oscillation
         # Say no to the ot line if the last switch was less than 0.75 seconds ago
         elif (
             abs((self.avoidance_wpnts.header.stamp -
@@ -670,6 +741,9 @@ class StateMachine:
         else:
             # If the splinis are valid update the last valid ones
             self.last_valid_avoidance_wpnts = self.avoidance_wpnts.wpnts.copy()
+            rospy.loginfo_throttle(2.0,
+                                   f"[{self.name}] ✓✓✓ _check_availability: UPDATING last_valid_avoidance_wpnts with {len(self.last_valid_avoidance_wpnts)} waypoints | "
+                                   f"s_range=[{self.last_valid_avoidance_wpnts[0].s_m:.2f}, {self.last_valid_avoidance_wpnts[-1].s_m:.2f}]")
             return True
 
     def _check_ftg(self) -> bool:
@@ -822,6 +896,14 @@ class StateMachine:
         """Obtain the waypoints by fusing those obtained by spliner with the
         global ones.
         """
+        # DEBUG: Check status of avoidance waypoints
+        avoidance_status = "None" if self.avoidance_wpnts is None else f"{len(self.avoidance_wpnts.wpnts)} wpnts"
+        last_valid_status = "None" if self.last_valid_avoidance_wpnts is None else f"{len(self.last_valid_avoidance_wpnts)} wpnts"
+
+        # rospy.loginfo_throttle(2.0,
+        #                        f"[{self.name}] get_splini_wpts() called | "
+        #                        f"avoidance_wpnts={avoidance_status}, last_valid={last_valid_status}")
+
         splini_glob = self.glb_wpnts.copy()
 
         # Handle wrapping
@@ -856,10 +938,142 @@ class StateMachine:
         # If the last valid points have been reset, then we just pass the global waypoints
         else:
             rospy.logwarn(
-                f"[{self.name}] No valid avoidance waypoints, passing global waypoints")
+                f"[{self.name}] ⚠️⚠️⚠️ No valid avoidance waypoints (last_valid_avoidance_wpnts=None), passing global waypoints")
             pass
 
         return splini_glob
+
+    def get_tam_wpts(self) -> WpntArray:
+        """
+        Obtain waypoints by fusing TAM planner trajectory with global waypoints.
+
+        Uses hybrid Option A + E approach:
+        - Linear interpolation for dynamics (velocity, acceleration, lateral offset)
+        - Track-assisted geometry for position/heading (using global waypoints as reference)
+
+        This achieves 100% TAM coverage by filling gaps between TAM waypoints
+        with interpolated values at 0.1m spacing.
+
+        Returns:
+            WpntArray: Fused waypoint array with interpolated TAM trajectory
+        """
+        import numpy as np
+
+        tam_glob = self.glb_wpnts.copy()
+
+        # Handle wrapping for TAM waypoints
+        if self.avoidance_wpnts is not None and len(self.avoidance_wpnts.wpnts) > 0:
+            tam_wpnts = self.avoidance_wpnts.wpnts
+
+            if len(tam_wpnts) < 2:
+                # Need at least 2 waypoints for interpolation
+                rospy.logwarn_throttle(5.0,
+                                       f"[{self.name}] TAM trajectory has only {len(tam_wpnts)} waypoint(s), need at least 2 for interpolation")
+                return tam_glob
+
+            # Build interpolated waypoint array
+            # For each consecutive pair of TAM waypoints, interpolate at 0.1m spacing
+
+            with self.lock:  # Thread safety
+                # Process each consecutive pair of TAM waypoints
+                for i in range(len(tam_wpnts) - 1):
+                    wpnt_start = tam_wpnts[i]
+                    wpnt_end = tam_wpnts[i + 1]
+
+                    s_start = wpnt_start.s_m
+                    s_end = wpnt_end.s_m
+
+                    # Handle wraparound case (trajectory crosses s=0)
+                    if s_end < s_start:
+                        # Wraparound - interpolate from s_start to track_length, then 0 to s_end
+                        track_length = self.num_glb_wpnts * self.waypoints_dist
+
+                        # First segment: s_start to track_length
+                        s_values_1 = np.arange(
+                            s_start, track_length, self.waypoints_dist)
+                        # Second segment: 0 to s_end
+                        s_values_2 = np.arange(
+                            0, s_end + self.waypoints_dist, self.waypoints_dist)
+                        s_values = np.concatenate([s_values_1, s_values_2])
+
+                        # Adjust s_end for interpolation calculation
+                        s_end_adjusted = s_end + track_length
+                    else:
+                        # Normal case: no wraparound
+                        s_values = np.arange(
+                            s_start, s_end + self.waypoints_dist, self.waypoints_dist)
+                        s_end_adjusted = s_end
+
+                    # For each interpolation point
+                    for s_interp in s_values:
+                        # Wrap s_interp to track range
+                        s_interp_wrapped = s_interp % (
+                            self.num_glb_wpnts * self.waypoints_dist)
+
+                        # Calculate interpolation ratio
+                        if s_end_adjusted > s_start:
+                            alpha = (s_interp - s_start) / \
+                                (s_end_adjusted - s_start)
+                        else:
+                            alpha = 0.0
+                        alpha = np.clip(alpha, 0.0, 1.0)
+
+                        # Create interpolated waypoint
+                        wpnt_interp = Wpnt()
+
+                        # Linear interpolation for dynamics
+                        wpnt_interp.vx_mps = (
+                            1 - alpha) * wpnt_start.vx_mps + alpha * wpnt_end.vx_mps
+                        wpnt_interp.ax_mps2 = (
+                            1 - alpha) * wpnt_start.ax_mps2 + alpha * wpnt_end.ax_mps2
+                        wpnt_interp.d_m = (1 - alpha) * \
+                            wpnt_start.d_m + alpha * wpnt_end.d_m
+                        wpnt_interp.s_m = s_interp_wrapped
+
+                        # Track-assisted geometry: Use global waypoint at this s-position as reference
+                        # This ensures positions follow track geometry accurately
+                        idx_global = int(
+                            s_interp_wrapped / self.waypoints_dist + 0.5) % self.num_glb_wpnts
+                        global_wpnt = self.glb_wpnts[idx_global]
+
+                        # Use global waypoint's position and heading as base
+                        # Adjust position based on lateral offset (d_m)
+                        psi = global_wpnt.psi_rad
+
+                        # Calculate lateral offset direction (perpendicular to track)
+                        dx_lateral = -wpnt_interp.d_m * np.sin(psi)
+                        dy_lateral = wpnt_interp.d_m * np.cos(psi)
+
+                        wpnt_interp.x_m = global_wpnt.x_m + dx_lateral
+                        wpnt_interp.y_m = global_wpnt.y_m + dy_lateral
+                        wpnt_interp.psi_rad = global_wpnt.psi_rad
+                        wpnt_interp.kappa_radpm = global_wpnt.kappa_radpm
+
+                        # Track boundaries from global waypoint
+                        wpnt_interp.d_left = global_wpnt.d_left
+                        wpnt_interp.d_right = global_wpnt.d_right
+
+                        # ID for debugging
+                        wpnt_interp.id = idx_global
+
+                        # Insert into fused array
+                        tam_glob[idx_global] = wpnt_interp
+
+                # Handle the last waypoint (no interpolation needed, just copy)
+                last_wpnt = tam_wpnts[-1]
+                idx_last = int(last_wpnt.s_m /
+                               self.waypoints_dist + 0.5) % self.num_glb_wpnts
+                tam_glob[idx_last] = last_wpnt
+
+            rospy.loginfo_throttle(5.0,
+                                   f"[{self.name}] TAM interpolation: Processed {len(tam_wpnts)} TAM waypoints, "
+                                   f"interpolated at 0.1m spacing from s={tam_wpnts[0].s_m:.2f} to s={tam_wpnts[-1].s_m:.2f}")
+
+        # If no valid TAM waypoints, just return global waypoints
+        else:
+            pass
+
+        return tam_glob
 
     #######
     # VIZ #
@@ -1030,6 +1244,17 @@ class StateMachine:
             end = time.perf_counter()
             self.latency_pub.publish(end - start)
 
+        # Detect state transitions to/from OVERTAKE for spliner and predictive_spliner
+        if self.cur_state != self.previous_state:
+            # Only log for spliner and predictive_spliner (not tam_sampling)
+            if self.ot_planner in ["spliner", "predictive_spliner"]:
+                if self.cur_state == StateType.OVERTAKE or self.previous_state == StateType.OVERTAKE:
+                    transition_msg = f"{self.previous_state.value} -> {self.cur_state.value}"
+                    self.state_transition_pub.publish(transition_msg)
+                    rospy.loginfo(
+                        f"[{self.name}] State transition: {transition_msg}")
+            self.previous_state = self.cur_state
+
         self.state_pub.publish(self.cur_state.value)
         self.visualize_state(state=self.cur_state.value)
 
@@ -1143,6 +1368,8 @@ class StateMachine:
 
         # get the proper local waypoints based on the new state
         self.local_wpnts.wpnts = self.states[self.cur_state](self)
+
+        # Publish waypoints after source is updated
         self._pub_local_wpnts(self.local_wpnts)
 
         # Clear FTG counter if not in TRAILING state

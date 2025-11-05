@@ -381,14 +381,18 @@ def TAMReadyTransition(state_machine: StateMachine) -> StateType:
     """TAM Sampling Ready transition - same as base ready transition"""
     if hasattr(state_machine, 'race_start_received') and state_machine.race_start_received:
         state_machine.race_start_received = False
-        return StateType.GB_TRACK
+        return StateType.TAM_PLANNING
     else:
         return StateType.READY
 
 
-def TAMGlobalTrackingTransition(state_machine: StateMachine) -> StateType:
-    """TAM Sampling transitions for being in `StateType.GB_TRACK`"""
-    return StateType.GB_TRACK
+def TAMPlanningTransition(state_machine: StateMachine) -> StateType:
+    """TAM Sampling transitions for being in `StateType.TAM_PLANNING`"""
+    # Call availability check to update last_valid_avoidance_wpnts with hysteresis
+    # This is the same approach used by predictive spliner
+    state_machine._check_availability_splini_wpts()
+
+    return StateType.TAM_PLANNING
 
 
 ####################################
