@@ -23,8 +23,10 @@ else:
 
 import rospy
 import numpy as np
+from simple_helper_utils import interpolate_with_period
 from typing import List, Dict, Optional
 import time
+import threading
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Float32, String
 from visualization_msgs.msg import Marker, MarkerArray
@@ -59,11 +61,13 @@ class TAMSamplingPlannerNode:
         - global_waypoints_scaled: Speed-scaled global waypoints  
         - car_state/odom_frenet: Vehicle state in Frenet coordinates
         - perception/obstacles: Detected obstacles
-        - dynamic_tam_sampling_tuner_node/parameter_updates: Dynamic reconfigure
+        - prediction/opponent_waypoints: Opponent trajectory predictions
+        - state_machine: State machine state for race coordination
 
     Publishes to (all topics automatically namespaced):
         - planner/avoidance/otwpnts: Planned trajectory for state machine
         - planner/avoidance/markers: Visualization markers
+        - planner/avoidance/all_samples: All sampled trajectories visualization
         - planner/avoidance/latency: Planning computation time
     """
 
@@ -141,7 +145,8 @@ class TAMSamplingPlannerNode:
         }
 
         # Update parameters from ROS parameter server and dynamic reconfigure
-        self.update_dynamic_params()
+        self.initialized_params = False
+        self.declare_and_update_parameters()
 
         # Initialize F1Tenth-compatible TAM sampling core
         # NOTE: LocalSamplingPlanner uses rospy.get_param() internally
@@ -160,11 +165,6 @@ class TAMSamplingPlannerNode:
         # Track handler for F1Tenth (initialized when global_waypoints received)
         self.track_handler = None
 
-        # ROS parameters
-        self.from_bag = rospy.get_param("/from_bag", False)
-        self.measuring = rospy.get_param("/measure", False)
-        self.lookahead = rospy.get_param("~lookahead", 15.0)
-
         # Track and raceline data cache
         self.track_data = {
             'centerline': np.array([]),
@@ -177,8 +177,13 @@ class TAMSamplingPlannerNode:
 
         # Performance monitoring
         self.last_planning_time = 0.0
-        self.planning_rate = rospy.Rate(20)  # 20 Hz matching other planners
+        # 5 Hz to match actual planning computation time (was 20 Hz)
+        self.planning_rate = rospy.Rate(1)
         self.planning_count = 0
+
+        # Planning cycle protection
+        self.planning_in_progress = False
+        self.planning_lock = threading.Lock()
 
         # Initialize ROS interface with namespaced topics
         self.setup_ros_interface()
@@ -207,12 +212,6 @@ class TAMSamplingPlannerNode:
         self.state_machine_sub = rospy.Subscriber(
             "state_machine", String, self.state_machine_callback, queue_size=1)
 
-        # Dynamic reconfigure subscriber (only if not from bag)
-        if not self.from_bag:
-            self.dyn_reconfig_sub = rospy.Subscriber(
-                "dynamic_tam_sampling_tuner_node/parameter_updates",
-                Config, self.dynamic_params_callback, queue_size=1)
-
         # Publishers (topics are automatically namespaced by ROS)
         self.trajectory_pub = rospy.Publisher(
             "planner/avoidance/otwpnts", OTWpntArray, queue_size=1)
@@ -231,61 +230,219 @@ class TAMSamplingPlannerNode:
         rospy.loginfo(
             f"{self.log_name} ROS interface setup complete with namespaced topics")
 
-    def update_dynamic_params(self):
-        """Update parameters from ROS parameter server (complete TAM parameters)"""
+    def _load_yaml_defaults(self):
+        """Load default parameters from tam_sampling_params.yaml"""
+        import rospkg
+        import yaml
+        import os
+        try:
+            rospack = rospkg.RosPack()
+            pkg_path = rospack.get_path('tam_sampling_planner')
+            config_file = os.path.join(
+                pkg_path, 'config', 'tam_sampling_params.yaml')
 
-        # Core sampling parameters
-        self.planning_params['lateral_samples'] = rospy.get_param(
-            "~lateral_samples", 15)
-        self.planning_params['longitudinal_samples'] = rospy.get_param(
-            "~longitudinal_samples", 8)
-        self.planning_params['planning_horizon'] = rospy.get_param(
-            "~planning_horizon", 4.0)
-        self.planning_params['n_dense_samples'] = rospy.get_param(
-            "~n_dense_samples", 5)
+            with open(config_file, 'r') as f:
+                yaml_params = yaml.safe_load(f)
+                return yaml_params if yaml_params else {}
+        except Exception as e:
+            rospy.logwarn(
+                f"TAMSamplingNode: Could not load YAML defaults: {e}")
+            return {}
 
-        # Vehicle constraints
-        self.planning_params['max_speed'] = rospy.get_param("~max_speed", 20.0)
-        self.planning_params['max_accel'] = rospy.get_param("~max_accel", 8.0)
-        self.planning_params['max_lateral_accel'] = rospy.get_param(
-            "~max_lateral_accel", 12.0)
+    def declare_and_update_parameters(self):
+        """Update parameters from ROS parameter server with YAML defaults as fallback"""
+        if not self.initialized_params:
+            yaml_defaults = self._load_yaml_defaults()
 
-        # Longitudinal sampling parameters
-        self.planning_params['s_dot_discretization'] = rospy.get_param(
-            "~s_dot_discretization", 2.0)
-        self.planning_params['v_sampling_scale'] = rospy.get_param(
-            "~v_sampling_scale", 1.1)
+            # Core sampling parameters
+            self.planning_params['lateral_samples'] = yaml_defaults.get(
+                'lateral_samples', rospy.get_param("lateral_samples", 15))
+            rospy.set_param("lateral_samples",
+                            self.planning_params['lateral_samples'])
+            self.planning_params['longitudinal_samples'] = yaml_defaults.get(
+                'longitudinal_samples', rospy.get_param("longitudinal_samples", 8))
+            rospy.set_param("longitudinal_samples",
+                            self.planning_params['longitudinal_samples'])
+            self.planning_params['planning_horizon'] = yaml_defaults.get(
+                'planning_horizon', rospy.get_param("planning_horizon", 4.0))
+            rospy.set_param("planning_horizon",
+                            self.planning_params['planning_horizon'])
+            self.planning_params['n_dense_samples'] = yaml_defaults.get(
+                'n_dense_samples', rospy.get_param("n_dense_samples", 5))
+            rospy.set_param("n_dense_samples",
+                            self.planning_params['n_dense_samples'])
 
-        # Cost weights (TAM naming convention)
-        self.planning_params['raceline_cost_weight'] = rospy.get_param(
-            "~raceline_cost_weight", 3.5)
-        self.planning_params['velocity_cost_weight'] = rospy.get_param(
-            "~velocity_cost_weight", 3.0)
-        self.planning_params['friction_cost_weight'] = rospy.get_param(
-            "~friction_cost_weight", 5000.0)
-        self.planning_params['curvature_cost_weight'] = rospy.get_param(
-            "~curvature_cost_weight", 500000.0)
-        self.planning_params['lateral_jerk_cost_weight'] = rospy.get_param(
-            "~lateral_jerk_cost_weight", 0.5)
-        self.planning_params['prediction_cost_weight'] = rospy.get_param(
-            "~prediction_cost_weight", 100000.0)
-        self.planning_params['collision_cost_weight'] = rospy.get_param(
-            "~collision_cost_weight", 100000000.0)
+            # Vehicle constraints
+            self.planning_params['max_speed'] = yaml_defaults.get(
+                'max_speed', rospy.get_param("max_speed", 10.0))
+            rospy.set_param("max_speed", self.planning_params['max_speed'])
+            self.planning_params['max_accel'] = yaml_defaults.get(
+                'max_accel', rospy.get_param("max_accel", 3.0))
+            rospy.set_param("max_accel", self.planning_params['max_accel'])
+            self.planning_params['max_lateral_accel'] = yaml_defaults.get(
+                'max_lateral_accel', rospy.get_param("max_lateral_accel", 12.0))
+            rospy.set_param("max_lateral_accel",
+                            self.planning_params['max_lateral_accel'])
 
-        # Safety parameters
-        self.planning_params['safety_distance_track_left'] = rospy.get_param(
-            "~safety_distance_track_left", 0.5)
-        self.planning_params['safety_distance_track_right'] = rospy.get_param(
-            "~safety_distance_track_right", 0.5)
-        self.planning_params['safety_margin_static'] = rospy.get_param(
-            "~safety_margin_static", 0.5)
-        self.planning_params['safety_margin_dynamic'] = rospy.get_param(
-            "~safety_margin_dynamic", 1.0)
+            # Longitudinal sampling parameters
+            self.planning_params['s_dot_discretization'] = yaml_defaults.get(
+                's_dot_discretization', rospy.get_param("s_dot_discretization", 2.0))
+            rospy.set_param("s_dot_discretization",
+                            self.planning_params['s_dot_discretization'])
+            self.planning_params['v_sampling_scale'] = yaml_defaults.get(
+                'v_sampling_scale', rospy.get_param("v_sampling_scale", 1.1))
+            rospy.set_param("v_sampling_scale",
+                            self.planning_params['v_sampling_scale'])
 
-        # Trajectory validation parameters
-        self.planning_params['kappa_thr'] = rospy.get_param("~kappa_thr", 0.1)
-        self.planning_params['curvature_cost_threshold'] = rospy.get_param(
-            "~curvature_cost_threshold", 30.0)
+            # Cost weights (TAM naming convention)
+            self.planning_params['raceline_cost_weight'] = yaml_defaults.get(
+                'raceline_cost_weight', rospy.get_param("raceline_cost_weight", 3.5))
+            rospy.set_param("raceline_cost_weight",
+                            self.planning_params['raceline_cost_weight'])
+            self.planning_params['velocity_cost_weight'] = yaml_defaults.get(
+                'velocity_cost_weight', rospy.get_param("velocity_cost_weight", 3.0))
+            rospy.set_param("velocity_cost_weight",
+                            self.planning_params['velocity_cost_weight'])
+            self.planning_params['friction_cost_weight'] = yaml_defaults.get(
+                'friction_cost_weight', rospy.get_param("friction_cost_weight", 5000.0))
+            rospy.set_param("friction_cost_weight",
+                            self.planning_params['friction_cost_weight'])
+            self.planning_params['curvature_cost_weight'] = yaml_defaults.get(
+                'curvature_cost_weight', rospy.get_param("curvature_cost_weight", 500000.0))
+            rospy.set_param("curvature_cost_weight",
+                            self.planning_params['curvature_cost_weight'])
+            self.planning_params['lateral_jerk_cost_weight'] = yaml_defaults.get(
+                'lateral_jerk_cost_weight', rospy.get_param("lateral_jerk_cost_weight", 0.5))
+            rospy.set_param("lateral_jerk_cost_weight",
+                            self.planning_params['lateral_jerk_cost_weight'])
+            self.planning_params['prediction_cost_weight'] = yaml_defaults.get(
+                'prediction_cost_weight', rospy.get_param("prediction_cost_weight", 100000.0))
+            rospy.set_param("prediction_cost_weight",
+                            self.planning_params['prediction_cost_weight'])
+            self.planning_params['collision_cost_weight'] = yaml_defaults.get(
+                'collision_cost_weight', rospy.get_param("collision_cost_weight", 100000000.0))
+            rospy.set_param("collision_cost_weight",
+                            self.planning_params['collision_cost_weight'])
+
+            # Safety parameters
+            self.planning_params['safety_distance_track_left'] = yaml_defaults.get(
+                'safety_distance_track_left', rospy.get_param("safety_distance_track_left", 0.02))
+            rospy.set_param("safety_distance_track_left",
+                            self.planning_params['safety_distance_track_left'])
+            self.planning_params['safety_distance_track_right'] = yaml_defaults.get(
+                'safety_distance_track_right', rospy.get_param("safety_distance_track_right", 0.02))
+            rospy.set_param("safety_distance_track_right",
+                            self.planning_params['safety_distance_track_right'])
+            self.planning_params['safety_margin_static'] = yaml_defaults.get(
+                'safety_margin_static', rospy.get_param("safety_margin_static", 0.2))
+            rospy.set_param("safety_margin_static",
+                            self.planning_params['safety_margin_static'])
+            self.planning_params['safety_margin_dynamic'] = yaml_defaults.get(
+                'safety_margin_dynamic', rospy.get_param("safety_margin_dynamic", 0.5))
+            rospy.set_param("safety_margin_dynamic",
+                            self.planning_params['safety_margin_dynamic'])
+
+            # Trajectory validation parameters
+            self.planning_params['kappa_thr'] = yaml_defaults.get(
+                'kappa_thr', rospy.get_param("kappa_thr", 1.5))
+            rospy.set_param("kappa_thr", self.planning_params['kappa_thr'])
+            self.planning_params['curvature_cost_threshold'] = yaml_defaults.get(
+                'curvature_cost_threshold', rospy.get_param("curvature_cost_threshold", 30.0))
+            rospy.set_param("curvature_cost_threshold",
+                            self.planning_params['curvature_cost_threshold'])
+
+            # ROS parameters
+            self.from_bag = rospy.get_param("from_bag", False)
+            rospy.set_param("from_bag", self.from_bag)
+            self.measuring = rospy.get_param("measure", True)
+            rospy.set_param("measure", self.measuring)
+            self.lookahead = yaml_defaults.get(
+                'lookahead', rospy.get_param("lookahead", 15.0))
+            rospy.set_param("lookahead", self.lookahead)
+
+            self.following_distance = yaml_defaults.get(
+                'following_distance', rospy.get_param('following_distance', 10.0))
+            rospy.set_param('sfollowing_distance', self.following_distance)
+            self.role = yaml_defaults.get(
+                'role', rospy.get_param('role', 0))
+            rospy.set_param('role', self.role)
+            self.gg_scaling = yaml_defaults.get(
+                'gg_scaling', rospy.get_param('gg_scaling', 1.0))
+            rospy.set_param('gg_scaling', self.gg_scaling)
+            self.overtaking_allowed = yaml_defaults.get(
+                'overtaking_allowed', rospy.get_param('overtaking_allowed', True))
+            rospy.set_param('overtaking_allowed', self.overtaking_allowed)
+
+            self.initialized_params = True
+        else:
+            # Core sampling parameters
+            self.planning_params['lateral_samples'] = rospy.get_param(
+                "lateral_samples", self.planning_params['lateral_samples'])
+            self.planning_params['longitudinal_samples'] = rospy.get_param(
+                "longitudinal_samples", self.planning_params['longitudinal_samples'])
+            self.planning_params['planning_horizon'] = rospy.get_param(
+                "planning_horizon", self.planning_params['planning_horizon'])
+            self.planning_params['n_dense_samples'] = rospy.get_param(
+                "n_dense_samples", self.planning_params['n_dense_samples'])
+
+            # Vehicle constraints
+            self.planning_params['max_speed'] = rospy.get_param(
+                "max_speed", self.planning_params['max_speed'])
+            self.planning_params['max_accel'] = rospy.get_param(
+                "max_accel", self.planning_params['max_accel'])
+            self.planning_params['max_lateral_accel'] = rospy.get_param(
+                "max_lateral_accel", self.planning_params['max_lateral_accel'])
+
+            # Longitudinal sampling parameters
+            self.planning_params['s_dot_discretization'] = rospy.get_param(
+                "s_dot_discretization", self.planning_params['s_dot_discretization'])
+            self.planning_params['v_sampling_scale'] = rospy.get_param(
+                "v_sampling_scale", self.planning_params['v_sampling_scale'])
+
+            # Cost weights (TAM naming convention)
+            self.planning_params['raceline_cost_weight'] = rospy.get_param(
+                "raceline_cost_weight", self.planning_params['raceline_cost_weight'])
+            self.planning_params['velocity_cost_weight'] = rospy.get_param(
+                "velocity_cost_weight", self.planning_params['velocity_cost_weight'])
+            self.planning_params['friction_cost_weight'] = rospy.get_param(
+                "friction_cost_weight", self.planning_params['friction_cost_weight'])
+            self.planning_params['curvature_cost_weight'] = rospy.get_param(
+                "curvature_cost_weight", self.planning_params['curvature_cost_weight'])
+            self.planning_params['lateral_jerk_cost_weight'] = rospy.get_param(
+                "lateral_jerk_cost_weight", self.planning_params['lateral_jerk_cost_weight'])
+            self.planning_params['prediction_cost_weight'] = rospy.get_param(
+                "prediction_cost_weight", self.planning_params['prediction_cost_weight'])
+            self.planning_params['collision_cost_weight'] = rospy.get_param(
+                "collision_cost_weight", self.planning_params['collision_cost_weight'])
+
+            # Safety parameters
+            self.planning_params['safety_distance_track_left'] = rospy.get_param(
+                "safety_distance_track_left", self.planning_params['safety_distance_track_left'])
+            self.planning_params['safety_distance_track_right'] = rospy.get_param(
+                "safety_distance_track_right", self.planning_params['safety_distance_track_right'])
+            self.planning_params['safety_margin_static'] = rospy.get_param(
+                "safety_margin_static", self.planning_params['safety_margin_static'])
+            self.planning_params['safety_margin_dynamic'] = rospy.get_param(
+                "safety_margin_dynamic", self.planning_params['safety_margin_dynamic'])
+
+            # Trajectory validation parameters
+            self.planning_params['kappa_thr'] = rospy.get_param(
+                "kappa_thr", self.planning_params['kappa_thr'])
+            self.planning_params['curvature_cost_threshold'] = rospy.get_param(
+                "curvature_cost_threshold", self.planning_params['curvature_cost_threshold'])
+
+            # ROS parameters
+            self.from_bag = rospy.get_param("from_bag", self.from_bag)
+            self.measuring = rospy.get_param("measure", self.measuring)
+            self.lookahead = rospy.get_param(
+                "lookahead", self.lookahead)
+
+            self.following_distance = rospy.get_param(
+                'following_distance', self.following_distance)
+            self.role = rospy.get_param('role',  self.role)
+            self.gg_scaling = rospy.get_param('gg_scaling', self.gg_scaling)
+            self.overtaking_allowed = rospy.get_param(
+                'overtaking_allowed', self.overtaking_allowed)
 
     def global_waypoints_callback(self, msg: WpntArray):
         """Process global waypoints and initialize F1Tenth track handler"""
@@ -441,40 +598,8 @@ class TAMSamplingPlannerNode:
         """Callback for state machine state - used to coordinate race start"""
         self.state_machine_state = msg.data
         # Log state transitions for debugging
-        rospy.loginfo_throttle(
-            2.0, f"{self.log_name} State machine state: {self.state_machine_state}")
-
-    def dynamic_params_callback(self, msg: Config):
-        """Handle dynamic reconfigure parameter updates (LEGACY - F1Tenth uses rospy params directly)"""
-
-        # COMMENTED OUT - F1Tenth reads parameters directly from rospy.get_param()
-        # For dynamic reconfiguration, restart the node or use rosparam set
-
-        # # Update parameters from dynamic reconfigure
-        # for param in msg.doubles:
-        #     # Get parameter name without namespace
-        #     param_name = param.name.split('.')[-1]
-        #     if param_name in self.planning_params:
-        #         old_value = self.planning_params[param_name]
-        #         self.planning_params[param_name] = param.value
-        #         rospy.loginfo(
-        #             f"{self.log_name} Updated {param_name}: {old_value} -> {param.value}")
-        #
-        # for param in msg.ints:
-        #     param_name = param.name.split('.')[-1]
-        #     if param_name in self.planning_params:
-        #         old_value = self.planning_params[param_name]
-        #         self.planning_params[param_name] = param.value
-        #         rospy.loginfo(
-        #             f"{self.log_name} Updated {param_name}: {old_value} -> {param.value}")
-        #
-        # # Reinitialize planner with new parameters
-        # self.tam_planner = TAMSamplingCore(self.planning_params)
-        # rospy.loginfo(
-        #     f"{self.log_name} TAM planner reinitialized with new parameters")
-
-        rospy.logwarn_throttle(
-            10, f"{self.log_name} Dynamic reconfigure not supported in F1Tenth mode. Use rosparam set and restart node.")
+        # rospy.loginfo_throttle(
+        #     2.0, f"{self.log_name} State machine state: {self.state_machine_state}")
 
     def process_obstacles(self) -> List[Dict]:
         """Convert ROS obstacles to TAM format, including predictions"""
@@ -587,21 +712,21 @@ class TAMSamplingPlannerNode:
             # Force V_max = 0 to trigger stopping -> stillstand transition in TAM planner
             planning_requests = {
                 'V_max': 0.0,  # Forces TAM planner into stopping -> stillstand mode
-                'following_distance': rospy.get_param('following_distance', 10.0),
+                'following_distance': self.following_distance,
                 'overtaking_allowed': False,  # No overtaking before race start
-                'role': rospy.get_param('role', 0),
-                'gg_scaling': rospy.get_param('gg_scaling', 1.0)
+                'role': self.role,
+                'gg_scaling': self.gg_scaling
             }
             rospy.loginfo_throttle(
                 5.0, f"{self.log_name} State READY: Forcing V_max=0 (stillstand mode)")
         else:
             # Normal racing mode - use configured maximum speed
             planning_requests = {
-                'V_max': rospy.get_param('max_speed', self.planning_params.get('max_speed', 10.0)),
-                'following_distance': rospy.get_param('following_distance', 10.0),
-                'overtaking_allowed': rospy.get_param('overtaking_allowed', True),
-                'role': rospy.get_param('role', 0),  # 0 = normal racing
-                'gg_scaling': rospy.get_param('gg_scaling', 1.0)
+                'V_max': self.planning_params['max_speed'],
+                'following_distance': self.following_distance,
+                'overtaking_allowed': self.overtaking_allowed,
+                'role': self.role,  # 0 = normal racing
+                'gg_scaling': self.gg_scaling
             }
 
         return planning_requests
@@ -698,6 +823,136 @@ class TAMSamplingPlannerNode:
     #             marker_array.markers.append(velocity_marker)
     #
     #     return marker_array
+
+    def interpolate_trajectory_to_controller_spacing(
+        self,
+        wpnt_array: WpntArray,
+        target_spacing: float = 0.1
+    ) -> WpntArray:
+        """
+        Interpolate trajectory to dense controller spacing (0.1m default).
+
+        This method follows the predictive spliner's proven approach:
+        1. Calculate number of points needed based on target spacing
+        2. Create dense s-array using np.linspace
+        3. Interpolate all fields (d, vx, ax, etc.) to new spacing
+        4. Convert (s,d) back to (x,y) using track geometry
+        5. Recalculate heading, curvature, and track boundaries
+
+        This is the LAST processing step before publishing to state machine.
+
+        Args:
+            wpnt_array: Sparse waypoint array from TAM planner (~10m spacing)
+            target_spacing: Target spacing in meters (default 0.1m for controller)
+
+        Returns:
+            Dense waypoint array with target_spacing between points
+        """
+
+        # Check if input is valid
+        if not wpnt_array or not wpnt_array.wpnts or len(wpnt_array.wpnts) < 2:
+            rospy.logwarn(
+                f"{self.log_name} Cannot interpolate: empty or single-point trajectory")
+            return wpnt_array
+
+        # Extract arrays from input waypoints
+        s_sparse = np.array([w.s_m for w in wpnt_array.wpnts])
+        d_sparse = np.array([w.d_m for w in wpnt_array.wpnts])
+        vx_sparse = np.array([w.vx_mps for w in wpnt_array.wpnts])
+        ax_sparse = np.array([w.ax_mps2 for w in wpnt_array.wpnts])
+
+        # Get track length for wrap-around handling
+        max_s = self.track_handler.s_coord()[-1]
+
+        # Convert to continuous coordinates (unwrap s-values at wrap-around)
+        s_continuous = s_sparse.copy()
+        for i in range(1, len(s_continuous)):
+            # If s decreases significantly (wrap-around detected)
+            if s_continuous[i] < s_continuous[i-1] - max_s/2:
+                # Unwrap by adding max_s to this and all following points
+                s_continuous[i:] += max_s
+
+        # Calculate trajectory length and number of points needed
+        start_s_continuous = s_continuous[0]
+        end_s_continuous = s_continuous[-1]
+        trajectory_length = end_s_continuous - start_s_continuous
+
+        if trajectory_length < 0:
+            rospy.logwarn(
+                f"{self.log_name} Negative trajectory length after unwrapping: {trajectory_length:.2f}m")
+            return wpnt_array
+
+        # Calculate number of interpolated points
+        n_dense_points = max(2, int(trajectory_length / target_spacing))
+
+        # Create dense s-array in continuous coordinates
+        s_dense_continuous = np.linspace(
+            start_s_continuous, end_s_continuous, n_dense_points)
+
+        # Interpolate lateral offset, velocity, and acceleration using CONTINUOUS coordinates
+        d_dense = np.interp(s_dense_continuous, s_continuous, d_sparse)
+        vx_dense = np.interp(s_dense_continuous, s_continuous, vx_sparse)
+        ax_dense = np.interp(s_dense_continuous, s_continuous, ax_sparse)
+
+        # Convert back to modulo coordinates for track geometry lookup
+        s_dense_mod = np.mod(s_dense_continuous, max_s)
+
+        # Convert Frenet (s,d) to Cartesian (x,y) using track geometry
+        xyz_array = self.track_handler.sn2cartesian(s_dense_mod, d_dense)
+        x_dense = xyz_array[:, 0]
+        y_dense = xyz_array[:, 1]
+
+        # Calculate 2D heading from track geometry
+        # Note: chi = 0 for trajectory following centerline, so psi ≈ track heading
+        # Assume following track for interpolated points
+        chi_dense = np.zeros_like(s_dense_continuous)
+        psi_dense = self.track_handler.calc_2d_heading_from_chi(
+            s_dense_mod, chi_dense)
+
+        # Interpolate track curvature
+        kappa_dense = interpolate_with_period(
+            s_dense_mod,
+            self.track_handler.s_coord(),
+            self.track_handler.kappa(),
+            max_s
+        )
+
+        # Calculate track boundaries at interpolated points
+        d_left_dense = self.track_handler.trackwidth_left(
+            s_dense_mod).flatten() - d_dense
+        d_right_dense = np.abs(self.track_handler.trackwidth_right(
+            s_dense_mod).flatten() - d_dense)
+
+        # Create new dense WpntArray
+        dense_wpnt_array = WpntArray()
+        dense_wpnt_array.wpnts = []
+
+        for i in range(n_dense_points):
+            wpnt = Wpnt()
+            wpnt.id = i
+            wpnt.s_m = float(s_dense_mod[i])
+            wpnt.d_m = float(d_dense[i])
+            wpnt.x_m = float(x_dense[i])
+            wpnt.y_m = float(y_dense[i])
+            wpnt.d_left = float(d_left_dense[i])
+            wpnt.d_right = float(d_right_dense[i])
+            wpnt.psi_rad = float(psi_dense[i])
+            wpnt.kappa_radpm = float(kappa_dense[i])
+            wpnt.vx_mps = float(vx_dense[i])
+            wpnt.ax_mps2 = float(ax_dense[i])
+
+            dense_wpnt_array.wpnts.append(wpnt)
+
+        # Log interpolation result
+        wrap_around = (s_continuous[-1] - s_continuous[0]) > max_s * 0.5
+        wrap_info = " (wrap-around)" if wrap_around else ""
+        # rospy.loginfo_throttle(
+        #     5.0,
+        #     f"{self.log_name} Interpolated trajectory{wrap_info}: {len(wpnt_array.wpnts)} points ({trajectory_length:.1f}m) → "
+        #     f"{n_dense_points} points (spacing ~{target_spacing:.2f}m)"
+        # )
+
+        return dense_wpnt_array
 
     def create_f1tenth_visualization_markers(self, trajectory_dict: Dict, wpnt_array: WpntArray) -> MarkerArray:
         """Create F1Tenth visualization markers from trajectory dict and WpntArray"""
@@ -807,10 +1062,10 @@ class TAMSamplingPlannerNode:
             #     2, f"{self.log_name} Processing {num_trajectories} trajectories for visualization")
 
             # Limit visualization to avoid performance issues (e.g., max 500 trajectories)
-            max_viz_trajectories = 500
+            max_viz_trajectories = 600
             if num_trajectories > max_viz_trajectories:
-                rospy.logwarn_throttle(10,
-                                       f"{self.log_name} Too many trajectories ({num_trajectories}), visualizing only first {max_viz_trajectories}")
+                # rospy.logwarn_throttle(10,
+                #                        f"{self.log_name} Too many trajectories ({num_trajectories}), visualizing only first {max_viz_trajectories}")
                 num_trajectories = max_viz_trajectories
 
             markers_created = 0
@@ -846,12 +1101,18 @@ class TAMSamplingPlannerNode:
                 s_traj = s_array[i, :]
                 n_traj = n_array[i, :]
 
+                # CRITICAL FIX: Wrap s-coordinates to [0, track_length) for sn2cartesian
+                # sn2cartesian expects s in [0, track_length) and uses interpolate_with_period internally
+                track_length = track_handler.s_coord()[-1]
+                s_traj_wrapped = np.mod(s_traj, track_length)
+
                 # Use track_handler to convert Frenet to global coordinates
-                for j in range(len(s_traj)):
+                for j in range(len(s_traj_wrapped)):
                     try:
                         # Get x, y from track handler at (s, n)
-                        # NOTE: track_handler uses sn2cartesian method (not frenet_to_global)
-                        x, y = track_handler.sn2cartesian(s_traj[j], n_traj[j])
+                        # sn2cartesian uses interpolate_with_period which handles periodic wrapping
+                        x, y = track_handler.sn2cartesian(
+                            s_traj_wrapped[j], n_traj[j])
 
                         point = Point()
                         point.x = x
@@ -885,8 +1146,61 @@ class TAMSamplingPlannerNode:
 
         return marker_array
 
+    def publish_stop_trajectory(self):
+        """Publish a stop trajectory when TAM planning fails"""
+        try:
+            # Create a minimal stop trajectory at current position
+            ot_msg = OTWpntArray()
+            ot_msg.header.stamp = rospy.Time.now()
+            ot_msg.header.frame_id = "map"
+
+            # Create a single waypoint at current position with zero velocity
+            stop_wpnt = Wpnt()
+            stop_wpnt.x_m = self.current_state.get('x', 0.0)
+            stop_wpnt.y_m = self.current_state.get('y', 0.0)
+            stop_wpnt.psi_rad = self.current_state.get('heading', 0.0)
+            stop_wpnt.s_m = self.current_state.get('s', 0.0)
+            stop_wpnt.d_m = self.current_state.get('n', 0.0)
+            stop_wpnt.vx_mps = 0.0  # Zero velocity = stop
+            stop_wpnt.ax_mps2 = -3.0  # Light braking
+            stop_wpnt.ay_mps2 = 0.0
+            stop_wpnt.kappa_radpm = 0.0
+
+            # Add multiple identical waypoints to create a stable stop trajectory
+            for _ in range(10):
+                ot_msg.wpnts.append(stop_wpnt)
+
+            # Publish stop trajectory
+            self.trajectory_pub.publish(ot_msg)
+
+            rospy.logwarn_throttle(
+                2, f"{self.log_name} Published STOP trajectory - TAM planning failed")
+
+        except Exception as e:
+            rospy.logerr(
+                f"{self.log_name} Failed to publish stop trajectory: {e}")
+
     def run_planning_cycle(self):
         """Execute one complete F1Tenth TAM planning cycle"""
+
+        # Check if a planning cycle is already running
+        if self.planning_in_progress:
+            rospy.logwarn_throttle(
+                2.0, f"{self.log_name} ⚠️ Skipping planning cycle - previous cycle still in progress")
+            return
+
+        # Acquire lock to prevent concurrent planning
+        with self.planning_lock:
+            self.planning_in_progress = True
+            try:
+                self._execute_planning_cycle()
+            finally:
+                self.planning_in_progress = False
+
+    def _execute_planning_cycle(self):
+        """Internal method that does the actual planning work"""
+
+        self.declare_and_update_parameters()
 
         planning_start_time = time.time()
 
@@ -912,7 +1226,7 @@ class TAMSamplingPlannerNode:
             raceline = self.get_raceline_from_global_waypoints()
             planning_requests = self.create_planning_requests()
 
-            # STEP 2: Plan trajectory using TAM calc_trajectory()
+            # STEP 2: Plan trajectory using TAM xjectory()
             # NOTE: calc_trajectory returns TUPLE of (perf_traj, emerg_traj, s_start, n_start, V_target)
             result = self.tam_planner.calc_trajectory(
                 state_estimate=state_estimate,
@@ -966,17 +1280,32 @@ class TAMSamplingPlannerNode:
 
             # STEP 3: Unpack return values (handle tuple return)
             if result is not None:
+                # rospy.loginfo(f"{self.log_name} 📊 TAM PLANNER RETURNED RESULT | Type: {type(result)} | "
+                #               f"Is tuple: {isinstance(result, tuple)} | Length: {len(result) if isinstance(result, tuple) else 'N/A'}")
+
                 # calc_trajectory returns tuple: (perf_traj, emerg_traj, s_start, n_start, V_target)
                 if isinstance(result, tuple) and len(result) >= 2:
                     performance_traj = result[0]
                     emergency_traj = result[1]
                     trajectory_dict = performance_traj  # Use performance trajectory
+                    # rospy.loginfo(
+                    #     f"{self.log_name} ✓ Unpacked tuple: performance_traj type={type(performance_traj)}, "
+                    #     f"has 's' key: {'s' in performance_traj if isinstance(performance_traj, dict) else 'N/A'}, "
+                    #     f"s length: {len(performance_traj.get('s', [])) if isinstance(performance_traj, dict) else 'N/A'}")
                 else:
                     # Fallback if unexpected format
                     trajectory_dict = result
+                    # rospy.logwarn(
+                    #     f"{self.log_name} ⚠️ Using result directly (not tuple): type={type(result)}")
 
                 # Verify we have a valid trajectory
                 if trajectory_dict and 's' in trajectory_dict and len(trajectory_dict['s']) > 0:
+                    # rospy.loginfo(f"{self.log_name} ✅ VALID TRAJECTORY DETECTED | "
+                    #               f"Points: {len(trajectory_dict['s'])} | "
+                    #               f"s_range: [{trajectory_dict['s'][0]:.2f}, {trajectory_dict['s'][-1]:.2f}] | "
+                    #               f"Emergency: {trajectory_dict.get('emergency', False)} | "
+                    #               f"Cost: {trajectory_dict.get('cost', 0.0):.2f}")
+
                     # STEP 4: Convert trajectory dict to WpntArray
                     wpnt_array = self.coordinate_transformation.convert_trajectory_to_wpnt_array(
                         trajectory=trajectory_dict,
@@ -984,14 +1313,46 @@ class TAMSamplingPlannerNode:
                         traj_cnt=self.planning_count
                     )
 
+                    # rospy.loginfo(
+                    #     f"{self.log_name} STEP 4 complete: WpntArray has {len(wpnt_array.wpnts)} waypoints")
+
+                    # STEP 4.5: Interpolate to dense controller spacing (0.1m)
+                    # This follows the predictive spliner's proven approach
+                    wpnt_array = self.interpolate_trajectory_to_controller_spacing(
+                        wpnt_array=wpnt_array,
+                        target_spacing=0.1
+                    )
+
+                    # rospy.loginfo(
+                    #     f"{self.log_name} STEP 4.5 complete: Interpolated to {len(wpnt_array.wpnts)} waypoints")
+
                     # STEP 5: Wrap in OTWpntArray for state machine compatibility
                     ot_msg = OTWpntArray()
                     ot_msg.wpnts = wpnt_array.wpnts  # Extract list of Wpnt objects
                     ot_msg.header.stamp = rospy.Time.now()
                     ot_msg.header.frame_id = "map"
 
+                    # rospy.loginfo(
+                    #     f"{self.log_name} STEP 5 complete: OTWpntArray has {len(ot_msg.wpnts)} waypoints, about to publish...")
+
+                    # DEBUG: Log first waypoint position vs current position
+                    if len(ot_msg.wpnts) > 0:
+                        first_wpnt = ot_msg.wpnts[0]
+                        dx = first_wpnt.x_m - self.current_state['x']
+                        dy = first_wpnt.y_m - self.current_state['y']
+                        dist = np.sqrt(dx**2 + dy**2)
+                        # rospy.logerr(f"{self.log_name} Trajectory start: x={first_wpnt.x_m:.2f}, y={first_wpnt.y_m:.2f}, "
+                        #              f"s={first_wpnt.s_m:.2f}, n={first_wpnt.d_m:.3f}, v={first_wpnt.vx_mps:.2f} | "
+                        #              f"Current: x={self.current_state['x']:.2f}, y={self.current_state['y']:.2f}, "
+                        #              f"s={self.current_state['s']:.2f}, n={self.current_state['n']:.3f} | "
+                        #              f"Distance: {dist:.3f}m")
+
                     # STEP 6: Publish trajectory
                     self.trajectory_pub.publish(ot_msg)
+                    # rospy.loginfo(f"{self.log_name} 📤 STEP 6 complete: PUBLISHED VALID TRAJECTORY | "
+                    #               f"Waypoints: {len(ot_msg.wpnts)} | "
+                    #               f"Interpolated spacing: ~0.1m | "
+                    #               f"Reason: Successful planning cycle")
 
                     # STEP 7: Publish visualization markers (optional)
                     try:
@@ -1012,28 +1373,45 @@ class TAMSamplingPlannerNode:
                     # rospy.loginfo_throttle(
                     #     2, f"{self.log_name} Published trajectory #{self.planning_count}: {status}")
                 else:
-                    rospy.logwarn_throttle(
-                        5, f"{self.log_name} Empty trajectory received from TAM planner")
+                    rospy.logerr(
+                        f"[Sampling Node] ❌ INVALID TRAJECTORY | "
+                        f"trajectory_dict is None: {trajectory_dict is None} | "
+                        f"Has 's' key: {'s' in trajectory_dict if trajectory_dict else False} | "
+                        f"Length: {len(trajectory_dict.get('s', [])) if trajectory_dict else 0}")
+                    # Publish empty trajectory to signal state machine
+                    empty_msg = OTWpntArray()
+                    empty_msg.header.stamp = rospy.Time.now()
+                    empty_msg.header.frame_id = "map"
+                    self.trajectory_pub.publish(empty_msg)
 
             else:
-                rospy.logwarn_throttle(
-                    1, f"{self.log_name} No valid trajectory found - planning returned None")
+                rospy.logerr(f"[Sampling Node] ⁉️ PUBLISHING EMPTY TRAJECTORY | "
+                             f"Reason: TAM planner returned None")
+                # Publish empty trajectory to signal state machine
+                empty_msg = OTWpntArray()
+                empty_msg.header.stamp = rospy.Time.now()
+                empty_msg.header.frame_id = "map"
+                self.trajectory_pub.publish(empty_msg)
 
         except Exception as e:
-            rospy.logerr(f"{self.log_name} Planning failed: {str(e)}")
+            rospy.logerr(
+                f"[Sampling Node] ⚠️⚠️⚠️ TAM planning FAILED with exception: {str(e)} | State machine will use fallback (global waypoints)")
             import traceback
-            traceback.print_exc()
+            rospy.logerr_throttle(5.0, traceback.format_exc())
+
+        # Always measure and log planning time
+        planning_time = time.time() - planning_start_time
+
+        # Log planning time to detect slow cycles
+        # if planning_time > 0.05:  # Warn if planning takes more than 50ms (20Hz rate)
+        rospy.logerr_throttle(2.0,
+                              f"{self.log_name} ⏱️ Slow planning cycle: {planning_time*1000:.1f}ms (target: 50ms @ 20Hz)")
 
         # Publish timing information if measuring
         if self.measuring:
-            planning_time = time.time() - planning_start_time
             latency_msg = Float32()
             latency_msg.data = planning_time * 1000  # Convert to milliseconds
             self.latency_pub.publish(latency_msg)
-
-            if planning_time > 0.05:  # Warn if planning takes more than 50ms
-                rospy.logwarn(
-                    f"{self.log_name} Slow planning cycle: {planning_time*1000:.1f}ms")
 
     def loop(self):
         """Main planning loop with proper error handling"""

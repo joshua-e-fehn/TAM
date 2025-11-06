@@ -324,7 +324,7 @@ class StateMachine:
         # Reject stale messages (older than 200ms) to prevent using outdated trajectories
         # At 20Hz planning rate, 200ms = 4 planning cycles is reasonable tolerance
         if msg_age > 0.6:
-            rospy.logwarn_throttle(1.0,  # Only log every 5 seconds to avoid spam
+            rospy.logwarn_throttle(5.0,  # Only log every 5 seconds to avoid spam
                                    f"[{self.name}] 🕐 REJECTING STALE MESSAGE | "
                                    f"msg_age={msg_age*1000:.1f}ms | "
                                    f"wpnts={len(data.wpnts)} | "

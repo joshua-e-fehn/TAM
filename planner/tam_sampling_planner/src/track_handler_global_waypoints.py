@@ -14,6 +14,9 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional, Union
 import warnings
 
+# Import NumPy compatibility utilities for wraparound interpolation (NumPy < 1.21 support)
+from simple_helper_utils import interpolate_with_period
+
 # Import the existing FrenetConverter
 try:
     from frenet_converter.frenet_converter import FrenetConverter
@@ -199,10 +202,10 @@ class GlobalWaypointsTrackHandler:
             return self._default_track_width / 2
 
         if s is None:
-            return self._d_left_coords.copy()
+            return self._d_left_coords
 
-        result = np.interp(s, self._s_coords,
-                           self._d_left_coords, period=self._track_length)
+        result = interpolate_with_period(s, self._s_coords,
+                                         self._d_left_coords, self._track_length)
         return result if isinstance(s, np.ndarray) else float(result)
 
     def trackwidth_right(self, s: Union[float, np.ndarray] = None) -> Union[float, np.ndarray]:
@@ -228,11 +231,11 @@ class GlobalWaypointsTrackHandler:
             return self._default_track_width / 2
 
         if s is None:
-            # Return absolute value (make negative values positive)
-            return np.abs(self._d_right_coords.copy())
+            # Return full array with absolute values (make negative positive)
+            return np.abs(self._d_right_coords)
 
-        result = np.interp(s, self._s_coords,
-                           self._d_right_coords, period=self._track_length)
+        result = interpolate_with_period(s, self._s_coords,
+                                         self._d_right_coords, self._track_length)
         # Return absolute value (make negative values positive)
         result = np.abs(result)
         return result if isinstance(s, np.ndarray) else float(result)
@@ -250,7 +253,7 @@ class GlobalWaypointsTrackHandler:
         if self._d_coords is None:
             return 0.0
 
-        return float(np.interp(s, self._s_coords, self._d_coords, period=self._track_length))
+        return float(interpolate_with_period(s, self._s_coords, self._d_coords, self._track_length))
 
     def sn2cartesian(self, s: float, n: float) -> Tuple[float, float]:
         """
@@ -277,12 +280,12 @@ class GlobalWaypointsTrackHandler:
                 "Track handler not initialized with coordinate data")
 
         # Interpolate centerline position and heading at s
-        x_cl = np.interp(s, self._s_coords, self._x_coords,
-                         period=self._track_length)
-        y_cl = np.interp(s, self._s_coords, self._y_coords,
-                         period=self._track_length)
-        psi = np.interp(s, self._s_coords, self._psi_coords,
-                        period=self._track_length)
+        x_cl = interpolate_with_period(s, self._s_coords, self._x_coords,
+                                       self._track_length)
+        y_cl = interpolate_with_period(s, self._s_coords, self._y_coords,
+                                       self._track_length)
+        psi = interpolate_with_period(s, self._s_coords, self._psi_coords,
+                                      self._track_length)
 
         # Calculate normal vector (points to the left of centerline)
         normal_x = -np.sin(psi)  # Perpendicular to heading, pointing left
@@ -411,8 +414,8 @@ class GlobalWaypointsTrackHandler:
             return 0.0
 
         # Get track tangent angle at position s
-        track_heading = np.interp(
-            s, self._s_coords, self._psi_coords, period=self._track_length)
+        track_heading = interpolate_with_period(
+            s, self._s_coords, self._psi_coords, self._track_length)
 
         # Chi is the difference between vehicle heading and track heading
         chi = psi_2d - track_heading
@@ -447,8 +450,8 @@ class GlobalWaypointsTrackHandler:
         # Return curvature at position s
         # Note: omega_z = kappa * s_dot, but since we don't have s_dot here,
         # we return just curvature and let the caller multiply by velocity
-        result = np.interp(s, self._s_coords,
-                           self._kappa_coords, period=self._track_length)
+        result = interpolate_with_period(s, self._s_coords,
+                                         self._kappa_coords, self._track_length)
 
         return result if isinstance(s, np.ndarray) else float(result)
 
@@ -476,18 +479,18 @@ class GlobalWaypointsTrackHandler:
 
         waypoint = {}
         waypoint['s_m'] = s
-        waypoint['x_m'] = np.interp(
-            s, self._s_coords, self._x_coords, period=self._track_length)
-        waypoint['y_m'] = np.interp(
-            s, self._s_coords, self._y_coords, period=self._track_length)
-        waypoint['d_m'] = np.interp(
-            s, self._s_coords, self._d_coords, period=self._track_length)
+        waypoint['x_m'] = interpolate_with_period(
+            s, self._s_coords, self._x_coords, self._track_length)
+        waypoint['y_m'] = interpolate_with_period(
+            s, self._s_coords, self._y_coords, self._track_length)
+        waypoint['d_m'] = interpolate_with_period(
+            s, self._s_coords, self._d_coords, self._track_length)
         waypoint['d_left'] = self.trackwidth_left(s)
         waypoint['d_right'] = self.trackwidth_right(s)
-        waypoint['psi_rad'] = np.interp(
-            s, self._s_coords, self._psi_coords, period=self._track_length)
-        waypoint['kappa_radpm'] = np.interp(
-            s, self._s_coords, self._kappa_coords, period=self._track_length)
+        waypoint['psi_rad'] = interpolate_with_period(
+            s, self._s_coords, self._psi_coords, self._track_length)
+        waypoint['kappa_radpm'] = interpolate_with_period(
+            s, self._s_coords, self._kappa_coords, self._track_length)
 
         return waypoint
 
@@ -614,28 +617,35 @@ class GlobalWaypointsTrackHandler:
 
         return ax_hat, ay_hat
 
-    def d_omega_z(self, s: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    def d_omega_z(self, s: Union[float, np.ndarray] = None) -> Union[float, np.ndarray]:
         """
         Get derivative of angular velocity (rate of change of curvature) with respect to s.
 
         Args:
-            s: Arc length position(s) [m]
+            s: Arc length position(s) [m]. If None, returns entire array. Can be scalar or array.
 
         Returns:
             float or np.ndarray: d(omega_z)/ds [rad/m²]
         """
         if self._kappa_coords is None:
+            if s is None:
+                return np.zeros(len(self._s_coords) if self._s_coords is not None else 1)
             if isinstance(s, np.ndarray):
                 return np.zeros_like(s)
             return 0.0
 
         # Calculate derivative using finite differences
+        d_kappa = np.gradient(self._kappa_coords, self._s_coords)
+
+        if s is None:
+            # Return full array
+            return d_kappa.copy()
+
+        # Interpolate at specific s positions
         if isinstance(s, np.ndarray):
-            d_kappa = np.gradient(self._kappa_coords, self._s_coords)
-            return np.interp(s, self._s_coords, d_kappa, period=self._track_length)
+            return interpolate_with_period(s, self._s_coords, d_kappa, self._track_length)
         else:
-            d_kappa = np.gradient(self._kappa_coords, self._s_coords)
-            return float(np.interp(s, self._s_coords, d_kappa, period=self._track_length))
+            return float(interpolate_with_period(s, self._s_coords, d_kappa, self._track_length))
 
     def omega_x(self, s: Union[float, np.ndarray] = None) -> Union[float, np.ndarray]:
         """
@@ -728,14 +738,14 @@ class GlobalWaypointsTrackHandler:
 
         # Get track tangent angle at position s
         if isinstance(s, np.ndarray):
-            track_heading = np.interp(
-                s, self._s_coords, self._psi_coords, period=self._track_length)
+            track_heading = interpolate_with_period(
+                s, self._s_coords, self._psi_coords, self._track_length)
             psi_2d = track_heading + chi
             # Normalize to [-pi, pi]
             return np.arctan2(np.sin(psi_2d), np.cos(psi_2d))
         else:
-            track_heading = np.interp(
-                s, self._s_coords, self._psi_coords, period=self._track_length)
+            track_heading = interpolate_with_period(
+                s, self._s_coords, self._psi_coords, self._track_length)
             psi_2d = track_heading + chi
             # Normalize to [-pi, pi]
             return float(np.arctan2(np.sin(psi_2d), np.cos(psi_2d)))

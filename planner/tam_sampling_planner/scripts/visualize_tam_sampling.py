@@ -31,9 +31,16 @@ class TAMSamplingVisualizer:
         self.current_position = None
         self.tam_trajectories = None
         self.all_sampled_trajectories = None  # NEW: Store all sampled trajectories
+        self.start_finish_drawn = False  # Track if start/finish line has been drawn
 
-        # Create figure with subplots
-        self.fig, self.axes = plt.subplots(2, 2, figsize=(15, 12))
+        # Get update rate parameter (default 80 Hz)
+        self.update_rate_hz = rospy.get_param('~update_rate_hz', 80.0)
+        self.update_interval_ms = int(1000.0 / self.update_rate_hz)
+        rospy.loginfo(
+            f"Visualization update rate: {self.update_rate_hz} Hz ({self.update_interval_ms} ms)")
+
+        # Create figure with subplots (removed velocity profile, now 1x3)
+        self.fig, self.axes = plt.subplots(1, 3, figsize=(18, 6))
         self.fig.suptitle('TAM Sampling Planner Visualization', fontsize=16)
 
         # Subscribe to topics
@@ -54,6 +61,7 @@ class TAMSamplingVisualizer:
         """Store global waypoints"""
         if len(msg.wpnts) > 0:
             self.global_waypoints = msg
+            self.start_finish_drawn = False  # Reset flag to redraw start/finish line
             rospy.loginfo_once("Received global waypoints")
 
     def state_callback(self, msg):
@@ -85,6 +93,10 @@ class TAMSamplingVisualizer:
 
         x = np.array([wp.x_m for wp in self.global_waypoints.wpnts])
         y = np.array([wp.y_m for wp in self.global_waypoints.wpnts])
+
+        # Draw start/finish line EVERY frame (since ax.clear() removes it)
+        if len(self.global_waypoints.wpnts) > 0:
+            self.draw_start_finish_line(ax)
 
         # Get track boundaries
         try:
@@ -233,7 +245,68 @@ class TAMSamplingVisualizer:
         ax.set_title('Track Layout with All Sampled Trajectories')
         ax.legend(loc='best', fontsize=8)
         ax.grid(True, alpha=0.3)
-        ax.axis('equal')
+
+        # Set fixed axis limits based on track boundaries with margin
+        if self.global_waypoints is not None:
+            try:
+                # Get track boundary extremes
+                margin = 2.0  # meters of margin around track
+
+                # Use boundary points if available, otherwise use centerline
+                if 'x_left' in locals() and 'x_right' in locals():
+                    x_min = min(np.min(x_left), np.min(x_right)) - margin
+                    x_max = max(np.max(x_left), np.max(x_right)) + margin
+                    y_min = min(np.min(y_left), np.min(y_right)) - margin
+                    y_max = max(np.max(y_left), np.max(y_right)) + margin
+                else:
+                    x_min = np.min(x) - margin
+                    x_max = np.max(x) + margin
+                    y_min = np.min(y) - margin
+                    y_max = np.max(y) + margin
+
+                ax.set_xlim(x_min, x_max)
+                ax.set_ylim(y_min, y_max)
+
+                # Ensure equal aspect ratio
+                ax.set_aspect('equal', adjustable='box')
+            except Exception as e:
+                rospy.logwarn_throttle(
+                    10.0, f"Could not set fixed axis limits: {e}")
+                ax.axis('equal')
+
+    def draw_start_finish_line(self, ax):
+        """Draw start/finish line at s=0 across the track width"""
+        start_wpnt = self.global_waypoints.wpnts[0]
+
+        # Get track width at start
+        track_width = start_wpnt.d_left + start_wpnt.d_right
+
+        # Calculate perpendicular direction to track (90 degrees to heading)
+        psi = start_wpnt.psi_rad
+        perp_angle = psi + np.pi / 2.0  # Perpendicular to track
+
+        # Calculate line endpoints (from left to right boundary)
+        left_x = start_wpnt.x_m + start_wpnt.d_left * np.cos(perp_angle)
+        left_y = start_wpnt.y_m + start_wpnt.d_left * np.sin(perp_angle)
+
+        right_x = start_wpnt.x_m - start_wpnt.d_right * np.cos(perp_angle)
+        right_y = start_wpnt.y_m - start_wpnt.d_right * np.sin(perp_angle)
+
+        # Draw thick white line for start/finish
+        ax.plot([left_x, right_x], [left_y, right_y],
+                color='white', linewidth=6, linestyle='-',
+                label='Start/Finish', zorder=15, solid_capstyle='butt')
+
+        # Add checkered pattern effect with black dashes
+        ax.plot([left_x, right_x], [left_y, right_y],
+                color='black', linewidth=4, linestyle='--',
+                dashes=(5, 5), zorder=16, solid_capstyle='butt')
+
+        # Log only once on first draw
+        if not self.start_finish_drawn:
+            rospy.loginfo(f"Start/finish line drawn at ({start_wpnt.x_m:.2f}, {start_wpnt.y_m:.2f}), "
+                          f"width={track_width:.2f}m, heading={np.degrees(psi):.1f}°")
+            self.start_finish_drawn = True
 
     def plot_frenet_trajectories(self, ax):
         """Plot trajectories in Frenet frame (s-n space)"""
@@ -267,6 +340,18 @@ class TAMSamplingVisualizer:
         except Exception as e:
             rospy.logwarn(f"Could not plot Frenet boundaries: {e}")
 
+        # Draw start/finish line at s=0 in Frenet frame
+        if len(s) > 0:
+            try:
+                y_limits = ax.get_ylim()
+                ax.axvline(x=0, color='white', linewidth=4,
+                           linestyle='-', label='Start/Finish (s=0)',
+                           zorder=5, alpha=0.8)
+                ax.axvline(x=0, color='black', linewidth=2,
+                           linestyle='--', dashes=(3, 3), zorder=6, alpha=0.6)
+            except:
+                pass
+
         # Plot current position
         if self.current_position:
             ax.plot(self.current_position['s'], self.current_position['n'],
@@ -285,28 +370,6 @@ class TAMSamplingVisualizer:
         ax.set_ylabel('n [m]')
         ax.set_title('Frenet Trajectories (s-n space)')
         ax.legend(loc='best', fontsize=8)
-        ax.grid(True, alpha=0.3)
-
-    def plot_velocity_profiles(self, ax):
-        """Plot velocity profiles over time"""
-        if self.global_waypoints is None:
-            return
-
-        s = [wp.s_m if hasattr(wp, 's_m') else i*0.1 for i,
-             wp in enumerate(self.global_waypoints.wpnts)]
-        v = [wp.vx_mps if hasattr(
-            wp, 'vx_mps') else 5.0 for wp in self.global_waypoints.wpnts]
-
-        ax.plot(s, v, 'b-', linewidth=2, label='Reference velocity')
-
-        if self.current_position:
-            ax.plot(self.current_position['s'], self.current_position['vel'],
-                    'go', markersize=10, label='Current velocity')
-
-        ax.set_xlabel('s [m]')
-        ax.set_ylabel('Velocity [m/s]')
-        ax.set_title('Velocity Profile')
-        ax.legend()
         ax.grid(True, alpha=0.3)
 
     def plot_sampling_stats(self, ax):
@@ -353,10 +416,9 @@ class TAMSamplingVisualizer:
         for ax in self.axes.flat:
             ax.clear()
 
-        self.plot_track(self.axes[0, 0])
-        self.plot_frenet_trajectories(self.axes[0, 1])
-        self.plot_velocity_profiles(self.axes[1, 0])
-        self.plot_sampling_stats(self.axes[1, 1])
+        self.plot_track(self.axes[0])
+        self.plot_frenet_trajectories(self.axes[1])
+        self.plot_sampling_stats(self.axes[2])
 
         plt.tight_layout()
 
@@ -365,9 +427,9 @@ class TAMSamplingVisualizer:
         # Wait for initial data
         rospy.sleep(1.0)
 
-        # Set up animation
+        # Set up animation with configurable update rate
         ani = FuncAnimation(self.fig, self.update,
-                            interval=1000, cache_frame_data=False)
+                            interval=self.update_interval_ms, cache_frame_data=False)
 
         plt.show()
 

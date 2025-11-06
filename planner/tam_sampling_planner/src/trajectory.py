@@ -30,7 +30,8 @@ class TrajectoryParams():
 class Trajectory():
     def __init__(self, debugging):
         self.params = TrajectoryParams()
-        self.load_parameters()
+        self.initialized_params = False
+        self.declare_and_update_parameters()
         self.debugging = debugging
 
         # Initialize Pacejka tire model for accurate force limits
@@ -45,40 +46,124 @@ class Trajectory():
             self.pacejka_model = None
             self.use_pacejka = False
 
-    def load_parameters(self):
-        """Load parameters from ROS parameter server (relative namespace)."""
-        self.params.tube_width = rospy.get_param(
-            '~behavior/tube_width', 0.6)  # 0.6m safety tube
-        self.params.num_samples = rospy.get_param(
-            'discretization/num_samples', 51)
-        self.params.min_trajectory_length = rospy.get_param(
-            'behavior/min_trajectory_length', 10.0)
-        self.params.extension_emergency_time_offset = rospy.get_param(
-            'behavior/extension_emergency_time_offset', 1.0)
-        self.params.extension_n_samples = rospy.get_param(
-            'behavior/extension_n_samples', 10)
-        self.params.extension_point_distance = rospy.get_param(
-            'behavior/extension_point_distance', 2.0)
-        self.params.extension_min_resolution = rospy.get_param(
-            'behavior/extension_min_resolution', 10)
-        self.params.extension_max_s_sample = rospy.get_param(
-            'behavior/extension_max_s_sample', 300)
-        self.params.add_emergency_safety_distance_left = rospy.get_param(
-            'safety_distances/add_emergency_safety_distance_left', 0.0)
-        self.params.add_emergency_safety_distance_right = rospy.get_param(
-            'safety_distances/add_emergency_safety_distance_right', 0.0)
-        self.params.additional_const_time_emergency = rospy.get_param(
-            'behavior/additional_const_time_emergency', 0.5)
-        self.params.const_trajectory_time = rospy.get_param(
-            'behavior/const_trajectory_time', 0.3)
+    def _load_yaml_defaults(self):
+        """Load default parameters from tam_sampling_params.yaml"""
+        import rospkg
+        import yaml
+        import os
+        try:
+            rospack = rospkg.RosPack()
+            pkg_path = rospack.get_path('tam_sampling_planner')
+            config_file = os.path.join(
+                pkg_path, 'config', 'tam_sampling_params.yaml')
 
-        # Fallback tire limits for emergency braking (when GGGV data unavailable)
-        # These should be tuned based on your Pacejka tire model parameters
-        # Conservative defaults: racing tires typically 1.2-1.5g braking, 1.5-2.0g lateral
-        self.params.max_braking_deceleration_g = rospy.get_param(
-            'behavior/max_braking_deceleration_g', 1.0)  # Conservative: 1.0g
-        self.params.max_lateral_acceleration_g = rospy.get_param(
-            'behavior/max_lateral_acceleration_g', 1.2)  # Conservative: 1.2g
+            with open(config_file, 'r') as f:
+                yaml_params = yaml.safe_load(f)
+                return yaml_params if yaml_params else {}
+        except Exception as e:
+            rospy.logwarn(
+                f"Trajectory: Could not load YAML defaults: {e}")
+            return {}
+
+    def declare_and_update_parameters(self):
+        """Load parameters from ROS parameter server with YAML defaults as fallback."""
+        if not self.initialized_params:
+            yaml_defaults = self._load_yaml_defaults()
+
+            self.params.tube_width = yaml_defaults.get(
+                'tube_width', rospy.get_param('behavior/tube_width', 0.6))
+            rospy.set_param('behavior/tube_width', self.params.tube_width)
+            self.params.num_samples = yaml_defaults.get(
+                'num_samples', rospy.get_param('discretization/num_samples', 51))
+            rospy.set_param('discretization/num_samples',
+                            self.params.num_samples)
+            self.params.min_trajectory_length = yaml_defaults.get(
+                'min_trajectory_length', rospy.get_param('behavior/min_trajectory_length', 8.0))
+            rospy.set_param('behavior/min_trajectory_length',
+                            self.params.min_trajectory_length)
+            self.params.extension_emergency_time_offset = yaml_defaults.get(
+                'extension_emergency_time_offset', rospy.get_param('behavior/extension_emergency_time_offset', 1.0))
+            rospy.set_param('behavior/extension_emergency_time_offset',
+                            self.params.extension_emergency_time_offset)
+            self.params.extension_n_samples = yaml_defaults.get(
+                'extension_n_samples', rospy.get_param('behavior/extension_n_samples', 10))
+            rospy.set_param('behavior/extension_n_samples',
+                            self.params.extension_n_samples)
+            self.params.extension_point_distance = yaml_defaults.get(
+                'extension_point_distance', rospy.get_param('behavior/extension_point_distance', 2.0))
+            rospy.set_param('behavior/extension_point_distance',
+                            self.params.extension_point_distance)
+            self.params.extension_min_resolution = yaml_defaults.get(
+                'extension_min_resolution', rospy.get_param('behavior/extension_min_resolution', 10))
+            rospy.set_param('behavior/extension_min_resolution',
+                            self.params.extension_min_resolution)
+            self.params.extension_max_s_sample = yaml_defaults.get(
+                'extension_max_s_sample', rospy.get_param('behavior/extension_max_s_sample', 300))
+            rospy.set_param('behavior/extension_max_s_sample',
+                            self.params.extension_max_s_sample)
+            self.params.add_emergency_safety_distance_left = yaml_defaults.get(
+                'add_emergency_safety_distance_left', rospy.get_param('safety_distances/add_emergency_safety_distance_left', 0.3))
+            rospy.set_param('safety_distances/add_emergency_safety_distance_left',
+                            self.params.add_emergency_safety_distance_left)
+            self.params.add_emergency_safety_distance_right = yaml_defaults.get(
+                'add_emergency_safety_distance_right', rospy.get_param('safety_distances/add_emergency_safety_distance_right', 0.3))
+            rospy.set_param('safety_distances/add_emergency_safety_distance_right',
+                            self.params.add_emergency_safety_distance_right)
+            self.params.additional_const_time_emergency = yaml_defaults.get(
+                'additional_const_time_emergency', rospy.get_param('behavior/additional_const_time_emergency', 0.5))
+            rospy.set_param('behavior/additional_const_time_emergency',
+                            self.params.additional_const_time_emergency)
+            self.params.const_trajectory_time = yaml_defaults.get(
+                'const_trajectory_time', rospy.get_param('behavior/const_trajectory_time', 0.0))
+            rospy.set_param('behavior/const_trajectory_time',
+                            self.params.const_trajectory_time)
+
+            # Fallback tire limits for emergency braking (when GGGV data unavailable)
+            # These should be tuned based on your Pacejka tire model parameters
+            # Conservative defaults: racing tires typically 1.2-1.5g braking, 1.5-2.0g lateral
+            self.params.max_braking_deceleration_g = yaml_defaults.get(
+                'max_braking_deceleration_g', rospy.get_param('behavior/max_braking_deceleration_g', 1.0))
+            rospy.set_param('behavior/max_braking_deceleration_g',
+                            self.params.max_braking_deceleration_g)
+            self.params.max_lateral_acceleration_g = yaml_defaults.get(
+                'max_lateral_acceleration_g', rospy.get_param('behavior/max_lateral_acceleration_g', 1.2))
+            rospy.set_param('behavior/max_lateral_acceleration_g',
+                            self.params.max_lateral_acceleration_g)
+
+            self.initialized_params = True
+        else:
+            self.params.tube_width = rospy.get_param(
+                'behavior/tube_width', self.params.tube_width)
+            self.params.num_samples = rospy.get_param(
+                'discretization/num_samples', self.params.num_samples)
+            self.params.min_trajectory_length = rospy.get_param(
+                'behavior/min_trajectory_length', self.params.min_trajectory_length)
+            self.params.extension_emergency_time_offset = rospy.get_param(
+                'behavior/extension_emergency_time_offset', self.params.extension_emergency_time_offset)
+            self.params.extension_n_samples = rospy.get_param(
+                'behavior/extension_n_samples', self.params.extension_n_samples)
+            self.params.extension_point_distance = rospy.get_param(
+                'behavior/extension_point_distance', self.params.extension_point_distance)
+            self.params.extension_min_resolution = rospy.get_param(
+                'behavior/extension_min_resolution', self.params.extension_min_resolution)
+            self.params.extension_max_s_sample = rospy.get_param(
+                'behavior/extension_max_s_sample', self.params.extension_max_s_sample)
+            self.params.add_emergency_safety_distance_left = rospy.get_param(
+                'safety_distances/add_emergency_safety_distance_left', self.params.add_emergency_safety_distance_left)
+            self.params.add_emergency_safety_distance_right = rospy.get_param(
+                'safety_distances/add_emergency_safety_distance_right', self.params.add_emergency_safety_distance_right)
+            self.params.additional_const_time_emergency = rospy.get_param(
+                'behavior/additional_const_time_emergency', self.params.additional_const_time_emergency)
+            self.params.const_trajectory_time = rospy.get_param(
+                'behavior/const_trajectory_time', self.params.const_trajectory_time)
+
+            # Fallback tire limits for emergency braking (when GGGV data unavailable)
+            # These should be tuned based on your Pacejka tire model parameters
+            # Conservative defaults: racing tires typically 1.2-1.5g braking, 1.5-2.0g lateral
+            self.params.max_braking_deceleration_g = rospy.get_param(
+                'behavior/max_braking_deceleration_g', self.params.max_braking_deceleration_g)
+            self.params.max_lateral_acceleration_g = rospy.get_param(
+                'behavior/max_lateral_acceleration_g', self.params.max_lateral_acceleration_g)
 
     def __calc_ax_avail(self, s, n, chi, V, Omega_z, track_handler, gggv_handler, pitlane_mode):
         """
@@ -171,6 +256,15 @@ class Trajectory():
         msgs_logger
 
     ):
+        # Safety check: ensure trajectory has sufficient points
+        if len(trajectory.get("V", [])) == 0:
+            rospy.logerr("Emergency trajectory extension: trajectory is empty")
+            return False
+
+        if len(trajectory.get("s_dot", [])) == 0 or trajectory["s_dot"][-1] == 0:
+            rospy.logerr("Emergency trajectory extension: invalid s_dot")
+            return False
+
         points_to_reach_min_traj_points = self.params.num_samples - \
             len(trajectory)
         ds = self.params.extension_point_distance
@@ -215,6 +309,13 @@ class Trajectory():
             s_loc_loc = trajectory_extension["s_loc"] - \
                 trajectory_extension["s_loc"][0] + ds
             s_end = s_loc_loc[-1]
+
+            # Safety check: ensure s_end is large enough to avoid singular matrix
+            if s_end < 0.01:  # Less than 1cm extension is too small
+                rospy.logwarn(
+                    f"Emergency trajectory extension too short (s_end={s_end:.6f}m), skipping")
+                continue
+
             a = np.array(
                 [
                     [1, 0, 0, 0, 0, 0],
@@ -235,7 +336,12 @@ class Trajectory():
                          n_rl_end, n_prime_end, n_pprime_end])
 
             # Calculating coefficients of sample
-            c = np.linalg.solve(a=a, b=b)
+            try:
+                c = np.linalg.solve(a=a, b=b)
+            except np.linalg.LinAlgError as e:
+                rospy.logwarn(
+                    f"Emergency trajectory: Singular matrix with s_end={s_end:.6f}m, skipping this extension")
+                continue
 
             # Calculate n and derivatives regarding to s
             s_quad = s_loc_loc * s_loc_loc
@@ -350,6 +456,14 @@ class Trajectory():
         Braking limits are calculated using Pacejka tire model or simplified physics fallback.
         """
 
+        self.declare_and_update_parameters()
+
+        # Safety check: ensure performance trajectory is valid
+        if not performance_trajectory or len(performance_trajectory.get("V", [])) < 2:
+            rospy.logerr(
+                "Emergency trajectory: performance trajectory is invalid or too short")
+            return None
+
         emergency_trajectory = copy.deepcopy(performance_trajectory)
         emergency_trajectory["emergency"] = True
 
@@ -426,6 +540,14 @@ class Trajectory():
                     t_emergency_start = performance_trajectory["t"][-1] - \
                         self.params.extension_emergency_time_offset
                     mask = performance_trajectory["t"] <= t_emergency_start
+
+                    # Safety check: ensure mask has at least some True values
+                    if not np.any(mask):
+                        rospy.logwarn(
+                            "Emergency trajectory: mask filtered out all points, using full trajectory")
+                        mask = np.ones_like(
+                            performance_trajectory["t"], dtype=bool)
+
                     start_idx = np.min(
                         np.argpartition(
                             np.abs(performance_trajectory["t"] - t_emergency_start), 2)[:2]
@@ -436,9 +558,22 @@ class Trajectory():
                             emergency_trajectory[key] = emergency_trajectory[key][mask]
                         except:
                             pass
+
+                    # Safety check: ensure s_loc array is not empty after masking
+                    if len(emergency_trajectory["s_loc"]) == 0:
+                        rospy.logerr(
+                            "Emergency trajectory s_loc is empty after masking, cannot continue")
+                        return None
+
                     s_min = performance_trajectory["s_loc"][-1] - \
                         emergency_trajectory["s_loc"][-1]
                 else:
+                    # Safety check: ensure emergency trajectory has points
+                    if len(emergency_trajectory["t"]) == 0:
+                        rospy.logerr(
+                            "Emergency trajectory is empty, cannot extend")
+                        return None
+
                     t_emergency_start = emergency_trajectory["t"][-1]
                     s_min = 5.0
 
@@ -474,24 +609,42 @@ class Trajectory():
         track_handler: Track,
     ):
         # Reload parameters in case they've been updated
-        self.load_parameters()
+        self.declare_and_update_parameters()
 
+        # Calculate current trajectory length in s-coordinates
+        current_s_length = trajectory["s_loc"][-1] - trajectory["s_loc"][0]
+
+        # Check if extension is needed (with small tolerance for floating point errors)
+        tolerance = 1e-6  # 1 micrometer tolerance
+        if current_s_length >= (self.params.min_trajectory_length - tolerance):
+            # No extension needed (within tolerance)
+            return trajectory
+
+        # Calculate how much length we need to add
+        s_length_to_add = self.params.min_trajectory_length - current_s_length
+
+        # Calculate number of samples needed for extension
         ds = self.params.min_trajectory_length / self.params.num_samples
+        num_extension_samples = max(1, int(np.ceil(s_length_to_add / ds)))
+
+        # Ensure we don't add more than needed - recalculate ds for exact length
+        ds = s_length_to_add / num_extension_samples
+
         V = trajectory["V"][-1]
         n = trajectory["n"][-1]
         trajectory_extension = {}
 
         trajectory_extension["t"] = trajectory["t"][-1] + \
-            np.cumsum(ds / V * np.ones(self.params.num_samples))
-        trajectory_extension["V"] = V * np.ones(self.params.num_samples)
-        trajectory_extension["n"] = n * np.ones(self.params.num_samples)
+            np.cumsum(ds / V * np.ones(num_extension_samples))
+        trajectory_extension["V"] = V * np.ones(num_extension_samples)
+        trajectory_extension["n"] = n * np.ones(num_extension_samples)
         trajectory_extension["s"] = (
             trajectory["s"][-1] +
-            np.cumsum(ds * np.ones(self.params.num_samples))
+            np.cumsum(ds * np.ones(num_extension_samples))
         ) % track_handler.s_coord()[-1]
         trajectory_extension["s_loc"] = trajectory["s_loc"][-1] + \
-            np.cumsum(ds * np.ones(self.params.num_samples))
-        
+            np.cumsum(ds * np.ones(num_extension_samples))
+
         # Note: NumPy < 1.21 doesn't support 'period' parameter in np.interp
         # For periodic interpolation, we rely on modulo wrapping of s coordinates above
         trajectory_extension["Omega_x"] = np.interp(
@@ -520,14 +673,14 @@ class Trajectory():
             np.interp(
                 trajectory_extension["s"], track_handler.s_coord(), track_handler.omega_z())
         )
-        trajectory_extension["ax"] = np.zeros(self.params.num_samples)
-        trajectory_extension["jx"] = np.zeros(self.params.num_samples)
-        trajectory_extension["jy"] = np.zeros(self.params.num_samples)
-        trajectory_extension["epsilon_rho"] = np.zeros(self.params.num_samples)
-        trajectory_extension["epsilon_V"] = np.zeros(self.params.num_samples)
+        trajectory_extension["ax"] = np.zeros(num_extension_samples)
+        trajectory_extension["jx"] = np.zeros(num_extension_samples)
+        trajectory_extension["jy"] = np.zeros(num_extension_samples)
+        trajectory_extension["epsilon_rho"] = np.zeros(num_extension_samples)
+        trajectory_extension["epsilon_V"] = np.zeros(num_extension_samples)
         trajectory_extension["ay"] = trajectory_extension["Omega_z"] * \
             trajectory_extension["V"] ** 2
-        trajectory_extension["chi"] = np.zeros(self.params.num_samples)
+        trajectory_extension["chi"] = np.zeros(num_extension_samples)
         trajectory_extension["ax_tilde"], trajectory_extension["ay_tilde"], trajectory_extension["g_tilde"] = (
             track_handler.calc_apparent_acceleration(
                 trajectory_extension["s"],
@@ -539,22 +692,25 @@ class Trajectory():
             )
         )
 
-        trajectory_extension["ax_tilde"] = np.squeeze(
-            trajectory_extension["ax_tilde"])
-        trajectory_extension["ay_tilde"] = np.squeeze(
-            trajectory_extension["ay_tilde"])
-        trajectory_extension["g_tilde"] = np.squeeze(
-            trajectory_extension["g_tilde"])
+        # Ensure arrays maintain at least 1D shape (don't squeeze to scalars)
+        trajectory_extension["ax_tilde"] = np.atleast_1d(np.squeeze(
+            trajectory_extension["ax_tilde"]))
+        trajectory_extension["ay_tilde"] = np.atleast_1d(np.squeeze(
+            trajectory_extension["ay_tilde"]))
+        trajectory_extension["g_tilde"] = np.atleast_1d(np.squeeze(
+            trajectory_extension["g_tilde"]))
 
-        trajectory_extension["s_ddot"] = np.zeros(self.params.num_samples)
-        trajectory_extension["n_dot"] = np.zeros(self.params.num_samples)
-        trajectory_extension["n_ddot"] = np.zeros(self.params.num_samples)
+        trajectory_extension["s_ddot"] = np.zeros(num_extension_samples)
+        trajectory_extension["n_dot"] = np.zeros(num_extension_samples)
+        trajectory_extension["n_ddot"] = np.zeros(num_extension_samples)
 
-        trajectory_extension["tire_util"] = np.zeros(self.params.num_samples)
+        trajectory_extension["tire_util"] = np.zeros(num_extension_samples)
 
         for key in trajectory:
             if isinstance(trajectory[key], np.ndarray):
-                trajectory[key] = np.concatenate(
-                    (trajectory[key], trajectory_extension[key]))
+                # Ensure both arrays are 1D before concatenation
+                if key in trajectory_extension:
+                    trajectory[key] = np.concatenate(
+                        (trajectory[key], np.atleast_1d(trajectory_extension[key])))
 
         return trajectory

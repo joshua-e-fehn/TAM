@@ -475,7 +475,7 @@ public:
                         no_collision = false;
                         TTC = true;
 
-                        ROS_INFO("Collision detected");
+                        ROS_INFO_THROTTLE(2.0, "Collision detected");
                     }
                 }
             }

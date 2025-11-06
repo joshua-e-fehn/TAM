@@ -28,13 +28,8 @@ import numpy as np
 from dataclasses import dataclass
 import rospy
 
-# Try to import helper utilities, fall back to simple version if not available
-try:
-    from planning_common.helper.utils import create_trim_mask, create_trim_mask_2d, find_nearest_s_and_idx
-except ImportError:
-    from simple_helper_utils import create_trim_mask, create_trim_mask_2d, find_nearest_s_and_idx
-    # Note: rospy.logwarn will only work after rospy.init_node() is called
-    print("WARNING: Planning common utilities not available, using simple fallback utilities")
+from simple_helper_utils import create_trim_mask, create_trim_mask_2d, find_nearest_s_and_idx, interpolate_with_period
+from pacejka_tire_model import PacejkaTireModel
 
 
 @dataclass(init=False)
@@ -56,17 +51,35 @@ class LongSamplingParams():
     forward_backward_min_scale: float
     forward_backward_max_scale: float
     forward_backward_max_v_to_rl_delta: float
+    tracjectory_length: float
+    max_velocity: float
+    max_acceleration: float
+    max_lateral_acceleration: float
 
 
 class LongitudinalSampling:
     def __init__(self, debugging=False):
         self.params = LongSamplingParams()
+        self.initalized_parameters = False
         self.declare_and_update_parameters()
+
+        # Initialize Pacejka tire model for physics-based acceleration limits
+        try:
+            self.tire_model = PacejkaTireModel()
+            self.use_tire_model = True
+            rospy.loginfo(
+                "LongitudinalSampling initialized with Pacejka tire model")
+        except Exception as e:
+            rospy.logwarn(f"Failed to initialize Pacejka tire model: {e}")
+            rospy.logwarn("Falling back to fixed acceleration limits")
+            self.tire_model = None
+            self.use_tire_model = False
+
         rospy.loginfo("LongitudinalSampling initialized in SIMPLIFIED mode")
         rospy.loginfo(
             "Available methods: calc_samples() and calc_samples_s_based()")
         rospy.loginfo(
-            "Physics-based method calc_samples_s_based_forward_backward() is commented out")
+            "Physics-based method calc_samples_s_based_forward_backward() uses Pacejka tire limits")
 
     def get_available_methods(self):
         """
@@ -370,54 +383,140 @@ class LongitudinalSampling:
             return {}
 
     def declare_and_update_parameters(self):
-        yaml_defaults = self._load_yaml_defaults()
+        if not self.initalized_parameters:
+            # Initialization: Load from YAML with ROS param fallback, then set ROS params
+            yaml_defaults = self._load_yaml_defaults()
 
-        self.params.s_dot_end_min = rospy.get_param(
-            "discretization/s_dot_end_min", yaml_defaults.get('s_dot_end_min', 1.0))
-        self.params.relative_s_dot_min_percentage = rospy.get_param(
-            "behavior/relative_s_dot_min_percentage",
-            yaml_defaults.get('relative_s_dot_min_percentage', 0.5))
-        self.params.s_dot_max_positive_delta = rospy.get_param(
-            "behavior/s_dot_max_positive_delta",
-            yaml_defaults.get('s_dot_max_positive_delta', 20.0))
-        self.params.s_dot_discretization = rospy.get_param(
-            "discretization/s_dot_discretization",
-            yaml_defaults.get('s_dot_discretization', 2.0))
-        self.params.s_dot_dense_min = rospy.get_param(
-            "discretization/s_dot_dense_min",
-            yaml_defaults.get('s_dot_dense_min', -4.0))
-        self.params.s_dot_dense_max = rospy.get_param(
-            "discretization/s_dot_dense_max",
-            yaml_defaults.get('s_dot_dense_max', 1.0))
-        self.params.s_dot_dense_samples = rospy.get_param(
-            "discretization/s_dot_dense_samples",
-            yaml_defaults.get('s_dot_dense_samples', 10))
-        self.params.n_samples = rospy.get_param(
-            "discretization/n_samples", yaml_defaults.get('lateral_samples', 20))
-        self.params.n_dense_samples = rospy.get_param(
-            "discretization/n_dense_samples",
-            yaml_defaults.get('n_dense_samples', 5))
-        self.params.num_samples = rospy.get_param(
-            "discretization/num_samples", yaml_defaults.get('num_samples', 51))
-        self.params.horizon = rospy.get_param(
-            "behavior/horizon", yaml_defaults.get('planning_horizon', 4.0))
-        self.params.v_sampling_scale = rospy.get_param(
-            "behavior/v_sampling_scale", yaml_defaults.get('v_sampling_scale', 1.1))
-        self.params.forward_backward_velocities = rospy.get_param(
-            "behavior/forward_backward_velocities",
-            yaml_defaults.get('forward_backward_velocities', True))
-        self.params.samples_forward_backward = int(rospy.get_param(
-            "behavior/samples_forward_backward",
-            yaml_defaults.get('samples_forward_backward', 3)))  # F1TENTH: Convert to int for array indexing
-        self.params.forward_backward_min_scale = rospy.get_param(
-            "behavior/forward_backward_min_scale",
-            yaml_defaults.get('forward_backward_min_scale', 0.85))
-        self.params.forward_backward_max_scale = rospy.get_param(
-            "behavior/forward_backward_max_scale",
-            yaml_defaults.get('forward_backward_max_scale', 0.95))
-        self.params.forward_backward_max_v_to_rl_delta = rospy.get_param(
-            "behavior/forward_backward_max_v_to_rl_delta",
-            yaml_defaults.get('forward_backward_max_v_to_rl_delta', 0.0))
+            # Load parameters: YAML defaults with ROS param fallback
+            self.params.s_dot_end_min = yaml_defaults.get(
+                's_dot_end_min', rospy.get_param("discretization/s_dot_end_min", 1.0))
+            self.params.relative_s_dot_min_percentage = yaml_defaults.get(
+                'relative_s_dot_min_percentage', rospy.get_param("behavior/relative_s_dot_min_percentage", 0.5))
+            self.params.s_dot_max_positive_delta = yaml_defaults.get(
+                's_dot_max_positive_delta', rospy.get_param("behavior/s_dot_max_positive_delta", 20.0))
+            self.params.s_dot_discretization = yaml_defaults.get(
+                's_dot_discretization', rospy.get_param("discretization/s_dot_discretization", 2.0))
+            self.params.s_dot_dense_min = yaml_defaults.get(
+                's_dot_dense_min', rospy.get_param("discretization/s_dot_dense_min", -4.0))
+            self.params.s_dot_dense_max = yaml_defaults.get(
+                's_dot_dense_max', rospy.get_param("discretization/s_dot_dense_max", 1.0))
+            self.params.s_dot_dense_samples = yaml_defaults.get(
+                's_dot_dense_samples', rospy.get_param("discretization/s_dot_dense_samples", 10))
+            self.params.n_samples = yaml_defaults.get(
+                'lateral_samples', rospy.get_param("discretization/n_samples", 20))
+            self.params.n_dense_samples = yaml_defaults.get(
+                'n_dense_samples', rospy.get_param("discretization/n_dense_samples", 5))
+            self.params.num_samples = yaml_defaults.get(
+                'num_samples', rospy.get_param("discretization/num_samples", 51))
+            self.params.horizon = yaml_defaults.get(
+                'planning_horizon', rospy.get_param("behavior/horizon", 4.0))
+            self.params.v_sampling_scale = yaml_defaults.get(
+                'v_sampling_scale', rospy.get_param("behavior/v_sampling_scale", 1.1))
+            self.params.forward_backward_velocities = yaml_defaults.get(
+                'forward_backward_velocities', rospy.get_param("behavior/forward_backward_velocities", True))
+            self.params.samples_forward_backward = int(yaml_defaults.get(
+                'samples_forward_backward', rospy.get_param("behavior/samples_forward_backward", 3)))
+            self.params.forward_backward_min_scale = yaml_defaults.get(
+                'forward_backward_min_scale', rospy.get_param("behavior/forward_backward_min_scale", 0.85))
+            self.params.forward_backward_max_scale = yaml_defaults.get(
+                'forward_backward_max_scale', rospy.get_param("behavior/forward_backward_max_scale", 0.95))
+            self.params.forward_backward_max_v_to_rl_delta = yaml_defaults.get(
+                'forward_backward_max_v_to_rl_delta', rospy.get_param("behavior/forward_backward_max_v_to_rl_delta", 0.0))
+            self.params.tracjectory_length = yaml_defaults.get(
+                'trajectory_length', rospy.get_param("behavior/track_length", 10.0))
+            self.params.max_velocity = yaml_defaults.get(
+                'max_speed', rospy.get_param("behavior/max_velocity", 10.0))
+            self.params.max_acceleration = yaml_defaults.get(
+                'max_accel', rospy.get_param("behavior/max_acceleration", 3.0))
+            self.params.max_lateral_acceleration = yaml_defaults.get(
+                'max_lateral_accel', rospy.get_param("behavior/max_lateral_acceleration", 3.0))
+
+            # Set ROS params to loaded values
+            rospy.set_param("discretization/s_dot_end_min",
+                            self.params.s_dot_end_min)
+            rospy.set_param("behavior/relative_s_dot_min_percentage",
+                            self.params.relative_s_dot_min_percentage)
+            rospy.set_param("behavior/s_dot_max_positive_delta",
+                            self.params.s_dot_max_positive_delta)
+            rospy.set_param("discretization/s_dot_discretization",
+                            self.params.s_dot_discretization)
+            rospy.set_param("discretization/s_dot_dense_min",
+                            self.params.s_dot_dense_min)
+            rospy.set_param("discretization/s_dot_dense_max",
+                            self.params.s_dot_dense_max)
+            rospy.set_param("discretization/s_dot_dense_samples",
+                            self.params.s_dot_dense_samples)
+            rospy.set_param("discretization/n_samples", self.params.n_samples)
+            rospy.set_param("discretization/n_dense_samples",
+                            self.params.n_dense_samples)
+            rospy.set_param("discretization/num_samples",
+                            self.params.num_samples)
+            rospy.set_param("behavior/horizon", self.params.horizon)
+            rospy.set_param("behavior/v_sampling_scale",
+                            self.params.v_sampling_scale)
+            rospy.set_param("behavior/forward_backward_velocities",
+                            self.params.forward_backward_velocities)
+            rospy.set_param("behavior/samples_forward_backward",
+                            self.params.samples_forward_backward)
+            rospy.set_param("behavior/forward_backward_min_scale",
+                            self.params.forward_backward_min_scale)
+            rospy.set_param("behavior/forward_backward_max_scale",
+                            self.params.forward_backward_max_scale)
+            rospy.set_param("behavior/forward_backward_max_v_to_rl_delta",
+                            self.params.forward_backward_max_v_to_rl_delta)
+            rospy.set_param("behavior/track_length",
+                            self.params.tracjectory_length)
+            rospy.set_param("behavior/max_velocity", self.params.max_velocity)
+            rospy.set_param("behavior/max_acceleration",
+                            self.params.max_acceleration)
+            rospy.set_param("behavior/max_lateral_acceleration",
+                            self.params.max_lateral_acceleration)
+
+            self.initalized_parameters = True
+        else:
+            # Update: Use ROS params with current self.params values as fallback
+            self.params.s_dot_end_min = rospy.get_param(
+                "discretization/s_dot_end_min", self.params.s_dot_end_min)
+            self.params.relative_s_dot_min_percentage = rospy.get_param(
+                "behavior/relative_s_dot_min_percentage", self.params.relative_s_dot_min_percentage)
+            self.params.s_dot_max_positive_delta = rospy.get_param(
+                "behavior/s_dot_max_positive_delta", self.params.s_dot_max_positive_delta)
+            self.params.s_dot_discretization = rospy.get_param(
+                "discretization/s_dot_discretization", self.params.s_dot_discretization)
+            self.params.s_dot_dense_min = rospy.get_param(
+                "discretization/s_dot_dense_min", self.params.s_dot_dense_min)
+            self.params.s_dot_dense_max = rospy.get_param(
+                "discretization/s_dot_dense_max", self.params.s_dot_dense_max)
+            self.params.s_dot_dense_samples = rospy.get_param(
+                "discretization/s_dot_dense_samples", self.params.s_dot_dense_samples)
+            self.params.n_samples = rospy.get_param(
+                "discretization/n_samples", self.params.n_samples)
+            self.params.n_dense_samples = rospy.get_param(
+                "discretization/n_dense_samples", self.params.n_dense_samples)
+            self.params.num_samples = rospy.get_param(
+                "discretization/num_samples", self.params.num_samples)
+            self.params.horizon = rospy.get_param(
+                "behavior/horizon", self.params.horizon)
+            self.params.v_sampling_scale = rospy.get_param(
+                "behavior/v_sampling_scale", self.params.v_sampling_scale)
+            self.params.forward_backward_velocities = rospy.get_param(
+                "behavior/forward_backward_velocities", self.params.forward_backward_velocities)
+            self.params.samples_forward_backward = int(rospy.get_param(
+                "behavior/samples_forward_backward", self.params.samples_forward_backward))
+            self.params.forward_backward_min_scale = rospy.get_param(
+                "behavior/forward_backward_min_scale", self.params.forward_backward_min_scale)
+            self.params.forward_backward_max_scale = rospy.get_param(
+                "behavior/forward_backward_max_scale", self.params.forward_backward_max_scale)
+            self.params.forward_backward_max_v_to_rl_delta = rospy.get_param(
+                "behavior/forward_backward_max_v_to_rl_delta", self.params.forward_backward_max_v_to_rl_delta)
+            self.params.tracjectory_length = rospy.get_param(
+                "behavior/track_length", self.params.tracjectory_length)
+            self.params.max_velocity = rospy.get_param(
+                "behavior/max_velocity", self.params.max_velocity)
+            self.params.max_acceleration = rospy.get_param(
+                "behavior/max_acceleration", self.params.max_acceleration)
+            self.params.max_lateral_acceleration = rospy.get_param(
+                "behavior/max_lateral_acceleration", self.params.max_lateral_acceleration)
 
     def calc_samples(
             self,
@@ -451,7 +550,7 @@ class LongitudinalSampling:
             # F1TENTH NOTE: NumPy 1.18.1 doesn't support 'period' parameter in unwrap (added in 1.21.0)
             # Manually implement periodic unwrapping for compatibility
             s_post = postprocessed_raceline["s_post"]
-            period = track_handler.s_coord()[-1]
+            period = track_handler.get_track_length()
             discont = period / 2
 
             # Normalize to [-period/2, period/2] range before unwrapping
@@ -563,7 +662,7 @@ class LongitudinalSampling:
             if raceline_tendency:
                 # evaluate raceline s data at t_array points
                 s_rl_eval = np.mod(np.interp(
-                    t_vector, postprocessed_raceline['t_post'], s_continuous), track_handler.s_coord()[-1])
+                    t_vector, postprocessed_raceline['t_post'], s_continuous), track_handler.get_track_length())
                 s_dot_rl_eval = np.interp(
                     t_vector, postprocessed_raceline['t_post'], postprocessed_raceline['s_dot_post'])
                 s_ddot_rl_eval = np.interp(
@@ -579,7 +678,7 @@ class LongitudinalSampling:
                 s_ddot = s_ddot_sample
 
             # consider track length
-            s = np.mod(s, track_handler.s_coord()[-1])
+            s = np.mod(s, track_handler.get_track_length())
 
             # save last values
             s_end_values[i] = s[-1]
@@ -614,52 +713,22 @@ class LongitudinalSampling:
 
         self.declare_and_update_parameters()
 
-        # Fixed trajectory length: always 8.0 meters
-        s_loc_horizon = 8.0  # segment length in meters
-        # trajectory horizon in meters (handle track wraparound)
-        s_glob_end = np.mod(s_start + s_loc_horizon,
-                            track_handler.s_coord()[-1])
+        # trajectory horizon in meters
+        s_glob_end = np.mod(s_start + self.params.tracjectory_length,
+                            track_handler.get_track_length())
 
-        # construct local s vector handling track wraparound
-        track_length = track_handler.s_coord()[-1]
+        # construct local s vector so it uses only s values from the postprocessed_raceline
+        _, idx_end = find_nearest_s_and_idx(
+            postprocessed_raceline["s_post"], s_glob_end, track_handler)
 
-        # Handle case where trajectory wraps around track end
-        if s_glob_end < s_start:
-            # Trajectory wraps around: need points from s_start to end, then 0 to s_glob_end
-            _, idx_start = find_nearest_s_and_idx(
-                postprocessed_raceline["s_post"], s_start, track_handler)
+        s_glob_interval = postprocessed_raceline["s_post"][:idx_end]
 
-            # Get points from s_start to track end
-            mask_to_end = postprocessed_raceline["s_post"] >= s_start
-            s_interval_to_end = postprocessed_raceline["s_post"][mask_to_end]
-
-            # Get points from track start to s_glob_end
-            mask_from_start = postprocessed_raceline["s_post"] <= s_glob_end
-            s_interval_from_start = postprocessed_raceline["s_post"][mask_from_start]
-
-            # Concatenate, adjusting second segment by adding track_length
-            s_glob_interval = np.concatenate([
-                s_interval_to_end,
-                s_interval_from_start + track_length
-            ])
-        else:
-            # Normal case: trajectory doesn't wrap
-            _, idx_end = find_nearest_s_and_idx(
-                postprocessed_raceline["s_post"], s_glob_end, track_handler)
-            _, idx_start = find_nearest_s_and_idx(
-                postprocessed_raceline["s_post"], s_start, track_handler)
-
-            s_glob_interval = postprocessed_raceline["s_post"][idx_start:idx_end+1]
-
-        # add s_start if not in raceline
+        # add s_start in pitlane mode
         if s_start not in postprocessed_raceline["s_post"]:
             s_glob_interval = np.insert(s_glob_interval, 0, s_start)
 
-        # add s_glob_end to ensure we reach exactly 8.0m
-        s_glob_interval = np.append(s_glob_interval, s_start + s_loc_horizon)
-
-        # Local s coordinates (always starts at 0, ends at 8.0)
-        s_loc_vector = s_glob_interval - s_start
+        s_loc_vector = (s_glob_interval -
+                        s_start) % track_handler.get_track_length()
 
         # raceline end conditions
         s_dot_end_rl = np.interp(
@@ -672,23 +741,34 @@ class LongitudinalSampling:
 
         # set end conditions
         if raceline_tendency:
-            s_dot_end_max = s_dot_end_rl * self.params.v_sampling_scale
-            s_dot_end_min = self.params.relative_s_dot_min_percentage * s_dot_end_max
+            s_dot_end_max = min(
+                s_dot_end_rl * self.params.v_sampling_scale, self.params.max_velocity)
+            s_dot_end_min = max(
+                self.params.relative_s_dot_min_percentage * s_dot_end_max, self.params.s_dot_end_min)
             # Dense sampling around raceline
-            s_dot_dense_end_values = np.linspace(
-                self.params.s_dot_dense_min + s_dot_end_rl, self.params.s_dot_dense_max + s_dot_end_rl, self.params.s_dot_dense_samples)
+            s_dot_dense_end_values = np.linspace(max(self.params.s_dot_dense_min + s_dot_end_rl, self.params.s_dot_end_min), min(
+                self.params.s_dot_dense_max + s_dot_end_rl, self.params.max_velocity), self.params.s_dot_dense_samples)
             s_dot_coarse_end_values = np.arange(
                 s_dot_end_min, s_dot_end_max, self.params.s_dot_discretization)
             s_dot_end_values_tmp = np.concatenate(
                 (s_dot_dense_end_values, s_dot_coarse_end_values))
         else:
-            s_dot_end_max = s_dot_start + self.params.s_dot_max_positive_delta
+            s_dot_end_max = min(
+                s_dot_start + self.params.s_dot_max_positive_delta, self.params.max_velocity)
             s_dot_end_values_tmp = np.arange(
                 self.params.s_dot_end_min, s_dot_end_max, self.params.s_dot_discretization)
 
         # always sample raceline s_dot end and target speed
+        # CRITICAL: Clamp to respect max_velocity limit
         s_dot_end_values = np.concatenate(
             (s_dot_end_values_tmp, [max(V_target, 1.0), s_dot_end_rl]))
+        # Start | Part of neg time horizon fix
+        s_dot_end_values = np.minimum(
+            s_dot_end_values, self.params.max_velocity)
+
+        # Remove duplicates that might result from clamping
+        s_dot_end_values = np.unique(s_dot_end_values)
+        # End | Part of neg time horizon fix
 
         # assign array sizes depending on number of s_dot end values
         target_shape = (
@@ -709,11 +789,31 @@ class LongitudinalSampling:
 
             # set end acceleration between 0 and raceline acceleration dependent on sampled velocity
             s_ddot_end = np.interp(s_dot_end, [0.0, s_dot_end_rl], [
-                                   0.0, s_ddot_end_rl])
+                0.0, s_ddot_end_rl])
 
             # transform s_ddot(t) to s_ddot(s)
+            # CRITICAL: This transformation amplifies derivatives when velocity is low
+            # s_pprime = s_ddot / s_dot can become very large when s_dot is small
             s_pprime_start = s_ddot_start / s_dot_start
             s_pprime_end = s_ddot_end / s_dot_end
+
+            # Start | Part of neg time horizon fix
+            # SAFETY: Clamp derivatives to prevent polynomial overshoot
+            # A cubic polynomial with unconstrained derivatives can create negative valleys
+            # even when both endpoints are positive
+            # Rule of thumb: |s_pprime| should be less than velocity_change / distance
+            max_safe_derivative = 2.0 * \
+                abs(s_dot_end - s_dot_start) / max(s_end_loc, 1.0)
+            if abs(s_pprime_start) > max_safe_derivative or abs(s_pprime_end) > max_safe_derivative:
+                rospy.logwarn_throttle(5.0,
+                                       f"LongitudinalSampling: Large derivatives detected (s_pprime_start={s_pprime_start:.3f}, "
+                                       f"s_pprime_end={s_pprime_end:.3f}, max_safe={max_safe_derivative:.3f}). "
+                                       f"This can cause negative velocity valleys. Clamping derivatives.")
+                s_pprime_start = np.clip(
+                    s_pprime_start, -max_safe_derivative, max_safe_derivative)
+                s_pprime_end = np.clip(
+                    s_pprime_end, -max_safe_derivative, max_safe_derivative)
+            # End | Part of neg time horizon fix
 
             # do the same for the raceline
             s_pprime_start_rl = postprocessed_raceline["s_ddot_post"][0] / \
@@ -729,111 +829,222 @@ class LongitudinalSampling:
                     [0, 1, 2 * s_end_loc, 3 * s_end_loc**2],
                 ]
             )
+
+            # Start | Part of neg time horizon fix
+            # Track whether we're using absolute or relative sampling for this trajectory
+            use_absolute_sampling = False
+            # End | Part of neg time horizon fix
+
             if raceline_tendency:  # sample curves relative to raceline
-                b = np.array(
-                    [
-                        s_dot_start - postprocessed_raceline["s_dot_post"][0],
+                # Start | Part of neg time horizon fix
+                # CRITICAL: When velocities differ significantly from raceline,
+                # relative sampling creates extreme negative values that cubic
+                # polynomials can't handle (e.g., 1.0 - 8.0 = -7.0 m/s relative)
+                v_start_rel = s_dot_start - \
+                    postprocessed_raceline["s_dot_post"][0]
+                v_end_rel = s_dot_end - s_dot_end_rl
+
+                # If relative velocities are extreme (more than 70% difference),
+                # switch to absolute sampling for this trajectory
+                raceline_v_start = postprocessed_raceline["s_dot_post"][0]
+                raceline_v_end = s_dot_end_rl
+                if abs(v_start_rel) > 0.7 * raceline_v_start or abs(v_end_rel) > 0.7 * raceline_v_end:
+                    rospy.logwarn_throttle(5.0,
+                                           f"LongitudinalSampling: Large velocity difference from raceline detected "
+                                           f"(v_start={s_dot_start:.2f} vs rl={raceline_v_start:.2f}, "
+                                           f"v_end={s_dot_end:.2f} vs rl={raceline_v_end:.2f}). "
+                                           f"Switching to absolute sampling for this trajectory to avoid negative velocities.")
+                    # Use absolute sampling instead
+                    use_absolute_sampling = True
+                    b = np.array([s_dot_start,
+                                  s_pprime_start,
+                                  s_dot_end,
+                                  0.0])  # Zero end derivative for stability
+                else:
+                    # Use relative sampling
+                    b = np.array([
+                        v_start_rel,
                         s_pprime_start - s_pprime_start_rl,
-                        s_dot_end - s_dot_end_rl,
+                        v_end_rel,
                         s_pprime_end - s_pprime_end_rl,
-                    ]
-                )
+                    ])
             else:  # sample curves absolute
+                use_absolute_sampling = True
+                # End | Part of neg time horizon fix
                 b = np.array([s_dot_start,
                               s_pprime_start,
                               s_dot_end,
                               0.0])
 
-            # calculate coefficients of quartic polynomial
-            c = np.linalg.solve(a=A, b=b)
+            # Start | Part of neg time horizon fix
+            # CRITICAL FIX: If both derivatives are near zero, cubic can create negative valleys
+            # This happens because the polynomial must "connect" endpoints with flat slopes,
+            # creating an S-curve that can overshoot negatively
+            # PREVENT this by using monotonic interpolation when derivatives are zero
+            use_monotonic_interpolation = (
+                abs(b[1]) < 0.01 and abs(b[3]) < 0.01)
 
-            # sampled s dot curve with fixed spatial horizon
-            s_dot_sample = c[0] + c[1] * s_loc_vector + c[2] * \
-                s_loc_vector ** 2 + c[3] * s_loc_vector ** 3
-            s_pprime_sample = c[1] + 2 * c[2] * \
-                s_loc_vector + 3 * c[3] * s_loc_vector ** 2
+            if use_monotonic_interpolation:
+                rospy.logwarn_throttle(5.0,
+                                       f"LongitudinalSampling: Zero derivatives detected (v_start={b[0]:.2f}, v_end={b[2]:.2f}). "
+                                       f"Using monotonic interpolation to prevent negative velocity valleys.")
 
-            if raceline_tendency:
-                # Interpolate using continuous s coordinates (s_glob_interval already handles wraparound)
-                # For wrapped trajectories, s_glob_interval contains values > track_length
-                # We need to interpolate with periodic wrapping
+                # For absolute sampling: b[0] and b[2] are actual velocities
+                # For relative sampling: b[0] and b[2] are velocity differences
+                # Either way, linear interpolation between them is monotonic
+                if b[0] * b[2] >= 0:  # Same sign or one is zero
+                    # Linear interpolation guarantees no overshoot
+                    s_dot_sample = b[0] + (b[2] - b[0]) * \
+                        (s_loc_vector / s_end_loc)
+                    s_pprime_sample = (b[2] - b[0]) / \
+                        s_end_loc * np.ones_like(s_loc_vector)
+                else:
+                    # Different signs - one endpoint negative, use quadratic through zero
+                    # This ensures smooth transition through zero without undershooting
+                    t_norm = s_loc_vector / s_end_loc  # Normalize to [0, 1]
+                    s_dot_sample = b[0] * (1 - t_norm)**2 + b[2] * t_norm**2
+                    s_pprime_sample = 2 * \
+                        (b[2] * t_norm - b[0] * (1 - t_norm)) / s_end_loc
+            else:
+                # Use cubic polynomial as normal
+                # calculate coefficients of quartic polynomial
+                c = np.linalg.solve(a=A, b=b)
+            # End | Part of neg time horizon fix
 
-                # Use manual periodic interpolation to handle wraparound correctly
-                s_dot_rl_eval = np.zeros_like(s_glob_interval)
-                s_ddot_rl_eval = np.zeros_like(s_glob_interval)
+                # Start | Part of neg time horizon fix
+                # sampled s dot curve with fixed spatial horizon
+                s_dot_sample = c[0] + c[1] * s_loc_vector + c[2] * \
+                    s_loc_vector ** 2 + c[3] * s_loc_vector ** 3
+                s_pprime_sample = c[1] + 2 * c[2] * \
+                    s_loc_vector + 3 * c[3] * s_loc_vector ** 2
+            # End | Part of neg time horizon fix
 
-                for j, s_val in enumerate(s_glob_interval):
-                    # Wrap s_val to [0, track_length) for lookup
-                    s_wrapped = np.mod(s_val, track_length)
-                    s_dot_rl_eval[j] = np.interp(s_wrapped, postprocessed_raceline['s_post'],
-                                                 postprocessed_raceline['s_dot_post'])
-                    s_ddot_rl_eval[j] = np.interp(s_wrapped, postprocessed_raceline['s_post'],
-                                                  postprocessed_raceline['s_ddot_post'])
+            # Start | Part of neg time horizon fix
+            # CRITICAL FIX: Detect negative velocities from polynomial fitting
+            # This can happen when boundary conditions are poorly conditioned
+            # ROOT CAUSE: Cubic polynomials can have negative valleys even with positive endpoints
+            # when derivatives (s_pprime) are mismatched or too large
+            if np.any(s_dot_sample < 0):
+                min_velocity = np.min(s_dot_sample)
+                min_idx = np.argmin(s_dot_sample)
+                rospy.logerr(
+                    f"LongitudinalSampling: Polynomial fitting produced negative velocity {min_velocity:.3f} m/s at s={s_loc_vector[min_idx]:.2f}m. "
+                    f"Boundary conditions: s_dot_start={s_dot_start:.2f} m/s, s_dot_end={s_dot_end:.2f} m/s, distance={s_end_loc:.2f}m. "
+                    f"Derivatives: s_pprime_start={s_pprime_start:.3f}, s_pprime_end={s_pprime_end:.3f}. "
+                    f"This indicates derivative mismatch (s_ddot/s_dot transformation amplifies at low velocities). "
+                    f"Clamping to minimum 0.5 m/s.")
+                # Clamp to safe minimum
+                s_dot_sample = np.maximum(s_dot_sample, 0.5)
 
-                # Calculate s_pprime from s_ddot
-                s_pprime_rl_eval = s_ddot_rl_eval / s_dot_rl_eval
+            # Add raceline values only if we used relative sampling
+            if raceline_tendency and not use_absolute_sampling:
+                # End | Part of neg time horizon fix
+                s_dot_rl_eval = interpolate_with_period(
+                    s_glob_interval, postprocessed_raceline['s_post'], postprocessed_raceline['s_dot_post'], period=track_handler.get_track_length())
+                s_pprime_rl_eval = interpolate_with_period(
+                    s_glob_interval, postprocessed_raceline['s_post'], postprocessed_raceline['s_ddot_post'], period=track_handler.get_track_length()) / s_dot_rl_eval
 
                 # add raceline s data to sampled relative s curve
                 s_dot = s_dot_sample + s_dot_rl_eval
                 s_ddot = s_pprime_sample + s_pprime_rl_eval
             else:
+                # Absolute sampling - use values directly
                 s_dot = s_dot_sample
                 s_ddot = s_pprime_sample
 
-            # Keep continuous s coordinates for internal calculations
-            s_vals_continuous = s_loc_vector + s_start
+            # consider track length
+            s_vals = s_loc_vector + s_start
 
-            # postprocessing 1: calculate time vector using continuous coordinates
-            # Use continuous s coordinates for time calculation to handle wraparound
-            # For calc_time_vector, we need wrapped coordinates for track_handler lookups
-            s_vals_wrapped_for_time = np.mod(s_vals_continuous, track_length)
+            # postprocessing 1: omit everything that is not in the spatial horizon
+            # Use distance-based cutoff (s_glob_end) instead of time-based cutoff
+            # s_glob_end was calculated at line 716: s_start + self.params.tracjectory_length
+
             t = self.calc_time_vector(
-                track_handler, s_vals_wrapped_for_time, np.zeros_like(s_vals_wrapped_for_time), s_dot)
+                track_handler, s_glob_interval, np.zeros_like(s_glob_interval), s_dot)
 
             # transform s_ddot(s) back to s_ddot(t)
             s_ddot = s_ddot * s_dot
 
-            # Ensure trajectory ends at exactly 8.0m from start
-            # Find index where we've traveled 8.0m
-            s_distance_traveled = s_loc_vector
-            if len(s_distance_traveled) > 0:
-                # Find point closest to 8.0m mark
-                idx_8m = np.argmin(np.abs(s_distance_traveled - 8.0))
-                if idx_8m < len(s_vals_continuous) - 1:
-                    # Interpolate to get exact 8.0m point (use continuous coordinates)
-                    s_vals_continuous = np.append(
-                        s_vals_continuous[:idx_8m+1], s_start + 8.0)
-                    s_dot = np.append(
-                        s_dot[:idx_8m+1], np.interp(8.0, s_distance_traveled, s_dot))
-                    s_ddot = np.append(
-                        s_ddot[:idx_8m+1], np.interp(8.0, s_distance_traveled, s_ddot))
+            # Start | Part of neg time horizon fix
+            # CRITICAL: Enforce physical limits on velocity and acceleration
+            # Clamp velocity to [0, max_velocity]
+            max_vel = np.max(s_dot)
+            if max_vel > self.params.max_velocity:
+                rospy.logwarn_throttle(5.0,
+                                       f"LongitudinalSampling: Trajectory exceeds max velocity "
+                                       f"({max_vel:.2f} > {self.params.max_velocity:.2f} m/s). Clamping.")
+                s_dot = np.minimum(s_dot, self.params.max_velocity)
 
-            # postprocessing 2: trim to target number of samples (use continuous coordinates)
-            # Create wrapped version for trim_mask (which might need actual track coordinates)
-            s_vals_wrapped = np.mod(s_vals_continuous, track_length)
-            trim_mask = create_trim_mask(
-                s_vals_wrapped, self.params.num_samples)
-            s_vals_continuous = s_vals_continuous[trim_mask]
+            # Clamp acceleration to [-max_acceleration, max_acceleration]
+            max_accel = np.max(np.abs(s_ddot))
+            if max_accel > self.params.max_acceleration:
+                rospy.logwarn_throttle(5.0,
+                                       f"LongitudinalSampling: Trajectory exceeds max acceleration "
+                                       f"({max_accel:.2f} > {self.params.max_acceleration:.2f} m/s²). Clamping.")
+                s_ddot = np.clip(
+                    s_ddot, -self.params.max_acceleration, self.params.max_acceleration)
+            # End | Part of neg time horizon fix
+
+            # Cut trajectories at spatial horizon (distance-based, not time-based)
+            # Use s_glob_end which is s_start + trajectory_length
+            s_horizon = s_glob_end
+
+            # Find the corresponding velocity and acceleration at this spatial horizon
+            # Interpolate using s_vals (spatial coordinates) instead of t (time)
+            s_dot_horizon = np.interp(s_horizon, s_vals, s_dot)
+            s_ddot_horizon = np.interp(s_horizon, s_vals, s_ddot)
+
+            # adjust s values and s value at horizon by track length
+            s_vals = np.mod(s_vals, track_handler.get_track_length())
+            s_horizon = np.mod(s_horizon, track_handler.get_track_length())
+
+            _, s_idx_horizon = find_nearest_s_and_idx(
+                s_vals, s_horizon, track_handler)
+            s_vals = np.insert(s_vals, s_idx_horizon, s_horizon)
+            s_dot = np.insert(s_dot, s_idx_horizon, s_dot_horizon)
+            s_ddot = np.insert(s_ddot, s_idx_horizon, s_ddot_horizon)
+
+            s_vals = s_vals[:s_idx_horizon + 1]
+            s_dot = s_dot[:s_idx_horizon + 1]
+            s_ddot = s_ddot[:s_idx_horizon + 1]
+
+            # postprocessing 2: cut length to horizon
+            trim_mask = create_trim_mask(s_vals, self.params.num_samples)
+            s_vals = s_vals[trim_mask]
             s_dot = s_dot[trim_mask]
             s_ddot = s_ddot[trim_mask]
 
-            # postprocessing 3: interpolate to get exact number of samples
-            # Use continuous coordinates for interpolation to maintain monotonicity
-            if len(s_vals_continuous) < self.params.num_samples:
+            # postprocessing 3: interpolate to get the correct number of samples
+            if len(s_vals) < self.params.num_samples:
                 # insert points into s_vals between the current data points
-                # Interpolate in continuous space
-                s_vals_enriched = np.linspace(
-                    s_vals_continuous[0], s_vals_continuous[-1], self.params.num_samples)
-                s_dot = np.interp(s_vals_enriched, s_vals_continuous, s_dot)
-                s_ddot = np.interp(s_vals_enriched, s_vals_continuous, s_ddot)
-                s_vals_continuous = s_vals_enriched
 
-            # NOW apply modulo to get final wrapped coordinates for output
-            s_vals = np.mod(s_vals_continuous, track_length)
+                s_vals_enriched = np.linspace(
+                    s_vals[0], s_vals[-1], self.params.num_samples)
+                s_dot = np.interp(s_vals_enriched, s_vals, s_dot)
+                s_ddot = np.interp(s_vals_enriched, s_vals, s_ddot)
+                s_vals = s_vals_enriched
 
             # recalc shorter time vector
             t = self.calc_time_vector(
                 track_handler, s_vals, np.zeros_like(s_vals), s_dot)
+
+            # Start | Part of neg time horizon fix
+            # FINAL VALIDATION: Check if trajectory respects physical limits
+            # This is a final safety check after all transformations
+            max_vel_violation = np.max(s_dot) - self.params.max_velocity
+            max_accel_violation = np.max(
+                np.abs(s_ddot)) - self.params.max_acceleration
+
+            if max_vel_violation > 0.1:  # More than 0.1 m/s over limit
+                rospy.logwarn_throttle(10.0,
+                                       f"LongitudinalSampling: Trajectory {i} exceeds velocity limit by {max_vel_violation:.2f} m/s. "
+                                       f"This should have been prevented earlier - check velocity sampling.")
+
+            if max_accel_violation > 0.5:  # More than 0.5 m/s² over limit
+                rospy.logwarn_throttle(10.0,
+                                       f"LongitudinalSampling: Trajectory {i} exceeds acceleration limit by {max_accel_violation:.2f} m/s². "
+                                       f"Consider adjusting derivative constraints or using smoother velocity profiles.")
+            # End | Part of neg time horizon fix
 
             # add postprocessed values
             s_array[i * n_samples: (i + 1) * n_samples,
@@ -873,17 +1084,19 @@ class LongitudinalSampling:
         raceline_tendency: bool = False
     ):
         """
-        F1TENTH SIMPLIFIED VERSION: Forward-backward velocity sampling without GGGV.
+        F1TENTH VERSION: Forward-backward velocity sampling with Pacejka tire model.
 
-        Uses fixed kinematic acceleration limits instead of physics-based GGGV diagrams.
-        Suitable for F1TENTH planar racing (z=0, no complex vehicle dynamics).
+        Uses Pacejka tire model to calculate physics-based acceleration limits that
+        account for lateral acceleration from cornering (friction circle model).
+
+        Key features:
+        - Velocity-dependent limits based on track curvature
+        - Combined slip modeling (lateral + longitudinal forces)
+        - Weight transfer considerations (front/rear axle loads)
+        - Falls back to fixed limits if tire model unavailable
+
+        Suitable for F1TENTH planar racing with realistic tire dynamics.
         """
-
-        # F1TENTH: Fixed acceleration limits (replace GGGV-based limits)
-        # Maximum acceleration [m/s^2]
-        ax_max_accel = rospy.get_param('max_accel', 3.0)
-        # Maximum deceleration [m/s^2]
-        ax_max_decel = rospy.get_param('max_decel', 3.0)
 
         # only generate forward integration samples when below target speed
         if (s_dot_start < V_target):  # or True
@@ -899,8 +1112,8 @@ class LongitudinalSampling:
         # make s_arr_ref monotonically increasing
         if s_arr_ref[0] > s_arr_ref[-1]:
             multiplier = np.abs(
-                np.floor((2*s_arr_ref[0]) / track_handler.s_coord()[-1])-1)
-            s_arr_ref = s_arr_ref + multiplier * track_handler.s_coord()[-1]
+                np.floor((2*s_arr_ref[0]) / track_handler.get_track_length())-1)
+            s_arr_ref = s_arr_ref + multiplier * track_handler.get_track_length()
 
         # add s_start to s_arr_ref if not in raceline
         if s_start < s_arr_ref[0]:
@@ -957,11 +1170,12 @@ class LongitudinalSampling:
                     s_dot_vec_local[i] = s_dot_current
                     t_vec_local[i] = t_cumulative
                     s_step = s_arr_ref[1+i] - s_arr_ref[i]
-                    if s_step > 0.5 * track_handler.s_coord()[-1]:
-                        s_step = - s_step + track_handler.s_coord()[-1]
+                    if s_step > 0.5 * track_handler.get_track_length():
+                        s_step = - s_step + track_handler.get_track_length()
 
-                    # F1TENTH: Use fixed acceleration limits instead of GGGV
-                    ax_avail_max_tilde = ax_max_accel  # Fixed max acceleration
+                    # F1TENTH: Use Pacejka tire model for acceleration limits
+                    _, ax_avail_max_tilde = self.__calc_ax_avail_tire_limits(
+                        s_arr_ref[i+1], s_dot_current, track_handler)
                     ax_avail_scaled = ax_avail_max_tilde * \
                         scales[j-self.params.samples_forward_backward]
                     # s_dot_next = s_dot_current + ax_avail_max_tilde * scales[j-self.params.samples_forward_backward] * (s_step/s_dot_current)  #constant vel approx not constant ax
@@ -995,7 +1209,18 @@ class LongitudinalSampling:
 
                     s_dot_current = s_dot_next
 
-                    if t_cumulative > self.params.horizon and i >= (self.params.num_samples-1) or i >= (np.shape(s_arr_ref)[0]-2):
+                    # Distance-based cutoff (instead of time-based) for ACCELERATION profiles
+                    # Calculate total distance traveled with wraparound handling
+                    s_distance = s_vec_local[i] - s_vec_local[0]
+                    # Handle wraparound: if distance is negative, we wrapped around
+                    if s_distance < 0:
+                        s_distance += track_handler.get_track_length()
+
+                    # Break when we've traveled trajectory_length distance AND have enough samples
+                    if s_distance >= self.params.tracjectory_length and i >= (self.params.num_samples-1):
+                        break
+                    # Also break if we run out of reference data
+                    if i >= (np.shape(s_arr_ref)[0]-2):
                         break
 
                 rel_long_sampling_array[j *
@@ -1041,12 +1266,12 @@ class LongitudinalSampling:
                     s_dot_vec_local[i] = s_dot_current
                     t_vec_local[i] = t_cumulative
                     s_step = s_arr_ref[1+i] - s_arr_ref[i]
-                    if s_step > 0.5 * track_handler.s_coord()[-1]:
-                        s_step = - s_step + track_handler.s_coord()[-1]
+                    if s_step > 0.5 * track_handler.get_track_length():
+                        s_step = - s_step + track_handler.get_track_length()
 
-                    # F1TENTH: Use fixed deceleration limits instead of GGGV
-                    # Fixed max deceleration (negative)
-                    ax_avail_min_tilde = -ax_max_decel
+                    # F1TENTH: Use Pacejka tire model for deceleration limits
+                    ax_avail_min_tilde, _ = self.__calc_ax_avail_tire_limits(
+                        s_arr_ref[i+1], s_dot_current, track_handler)
                     ax_avail_scaled = -np.abs(ax_avail_min_tilde) * scales[j]
                     # s_dot_next = s_dot_current -np.abs(ax_avail_min_tilde) * scales[j] * (s_step/s_dot_current)  #constant vel approx not constant ax
                     discriminant = s_dot_current**2 + 2 * ax_avail_scaled * s_step
@@ -1076,7 +1301,18 @@ class LongitudinalSampling:
 
                     s_dot_current = s_dot_next
 
-                    if t_cumulative > self.params.horizon and i >= (self.params.num_samples-1) or i >= (np.shape(s_arr_ref)[0]-2):
+                    # Distance-based cutoff (instead of time-based) for DECELERATION profiles
+                    # Calculate total distance traveled with wraparound handling
+                    s_distance = s_vec_local[i] - s_vec_local[0]
+                    # Handle wraparound: if distance is negative, we wrapped around
+                    if s_distance < 0:
+                        s_distance += track_handler.get_track_length()
+
+                    # Break when we've traveled trajectory_length distance AND have enough samples
+                    if s_distance >= self.params.tracjectory_length and i >= (self.params.num_samples-1):
+                        break
+                    # Also break if we run out of reference data
+                    if i >= (np.shape(s_arr_ref)[0]-2):
                         break
 
                 rel_long_sampling_array[j *
@@ -1117,14 +1353,122 @@ class LongitudinalSampling:
             V: np.ndarray,
 
     ):
-        # calculate approximate time vector of racing line
-        rl_xyz = track_handler.sn2cartesian(s, n)
-        rl_ds = np.sqrt(np.diff(rl_xyz[:, 0]) **
-                        2 + np.diff(rl_xyz[:, 1]) ** 2)
+        """
+        Calculate time vector from arc length and velocity arrays.
+
+        CRITICAL: Uses arc length differences (not Cartesian distance) to handle
+        lap wraparound correctly. Clamps velocities to prevent division by zero.
+
+        Args:
+            track_handler: Track handler for wraparound detection
+            s: Arc length array [m]
+            n: Lateral offset array [m] (not used in distance calculation)
+            V: Velocity array [m/s]
+
+        Returns:
+            t_vector: Time array [s] with t[0] = 0
+        """
+        if len(s) < 2:
+            return np.array([0.0])
+
+        # Use arc length differences instead of Cartesian distance
+        # This correctly handles lap wraparound
+        ds = np.diff(s)
+
+        # Handle wraparound: if ds is very negative, we wrapped around the track
+        track_length = track_handler.get_track_length()
+        wraparound_mask = ds < -track_length / 2.0
+        if np.any(wraparound_mask):
+            ds[wraparound_mask] += track_length
+
+        # Calculate mean velocity between points
         V_mean = (V[:-1] + V[1:]) / 2.0
-        t_vector = np.concatenate((np.array([0.0]), np.cumsum(rl_ds / V_mean)))
+
+        # CRITICAL: Clamp velocities to prevent division by zero or negative values
+        # If polynomial fitting produced bad velocities, this prevents catastrophic failure
+        V_mean_safe = np.maximum(V_mean, 0.1)  # Minimum 0.1 m/s
+
+        # Check if we had to clamp any velocities (indicates upstream problem)
+        if np.any(V_mean < 0.1):
+            num_clamped = np.sum(V_mean < 0.1)
+            min_v = np.min(V_mean)
+            rospy.logwarn_throttle(5.0,
+                                   f"LongitudinalSampling.calc_time_vector: Clamped {num_clamped} velocity values "
+                                   f"(min={min_v:.3f} m/s). This indicates polynomial fitting produced invalid velocities.")
+
+        # Calculate time increments: dt = ds / v_mean
+        dt = ds / V_mean_safe
+
+        # Cumulative sum to get absolute time array
+        t_vector = np.concatenate(([0.0], np.cumsum(dt)))
+
+        # Validate monotonicity (should always be true with positive ds and V)
+        if not np.all(np.diff(t_vector) >= 0):
+            rospy.logerr(
+                "LongitudinalSampling.calc_time_vector: Time array not monotonically increasing!")
+            rospy.logerr(
+                f"  Time jumps backward at indices: {np.where(np.diff(t_vector) < 0)[0]}")
+            rospy.logerr(f"  ds range: [{np.min(ds):.3f}, {np.max(ds):.3f}]")
+            rospy.logerr(
+                f"  V_mean range: [{np.min(V_mean):.3f}, {np.max(V_mean):.3f}]")
 
         return t_vector
+
+    def __calc_ax_avail_tire_limits(self, s: float, V: float, track_handler: Track) -> tuple:
+        """
+        Calculate acceleration limits using Pacejka tire model with friction circle.
+
+        Args:
+            s: Arc length position [m]
+            V: Current velocity [m/s]
+            track_handler: Track handler for curvature information
+
+        Returns:
+            (ax_avail_min, ax_avail_max): Available acceleration limits [m/s²]
+        """
+        if not self.use_tire_model or self.tire_model is None:
+            # Fallback to fixed limits if tire model unavailable
+            return -self.params.max_acceleration, self.params.max_acceleration
+
+        try:
+            # Calculate lateral acceleration from track curvature
+            # ay = V² * κ (centripetal acceleration)
+            kappa = track_handler.omega_z(s)  # Curvature [1/m]
+            ay_current = V**2 * kappa  # [m/s²]
+
+            # Get normal loads considering static weight distribution
+            # (simplified - no pitch dynamics in F1TENTH)
+            g = 9.81
+            Fz_front_static = self.tire_model.mass * g * self.tire_model.l_r / \
+                (self.tire_model.l_f + self.tire_model.l_r)
+            Fz_rear_static = self.tire_model.mass * g * self.tire_model.l_f / \
+                (self.tire_model.l_f + self.tire_model.l_r)
+
+            # Calculate available longitudinal force considering lateral usage
+            Fx_available, _ = self.tire_model.calc_combined_limits(
+                Fz_front_static, Fz_rear_static, ay_current
+            )
+
+            # Convert force to acceleration
+            ax_available = Fx_available / self.tire_model.mass
+
+            # Return symmetric limits (braking and acceleration)
+            # In reality, braking is often stronger, but simplified here
+            ax_avail_max = ax_available
+            ax_avail_min = -ax_available
+
+            # Clamp to reasonable bounds to prevent numerical issues
+            ax_avail_max = min(
+                ax_avail_max, self.params.max_acceleration * 2.0)
+            ax_avail_min = max(
+                ax_avail_min, -self.params.max_acceleration * 2.0)
+
+            return ax_avail_min, ax_avail_max
+
+        except Exception as e:
+            rospy.logwarn_throttle(
+                5.0, f"Error calculating tire limits: {e}, using fallback")
+            return -self.params.max_acceleration, self.params.max_acceleration
 
     # def __calc_ax_avail(self, s, n, chi, V, Omega_z, track_handler, gggv_handler, pitlane_mode):
     #     ay_hat = V**2 * track_handler.omega_z(s)

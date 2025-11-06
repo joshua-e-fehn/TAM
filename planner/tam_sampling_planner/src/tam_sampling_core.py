@@ -13,6 +13,7 @@ from calculation_costs import CalculationCosts
 from trajectory import Trajectory
 
 import numpy as np
+from simple_helper_utils import interpolate_with_period, unwrap_periodic_coordinates, slice_trajectory_dict
 from typing import Tuple
 import rospy
 
@@ -29,7 +30,8 @@ class LocalSamplingPlanner:
     ):
 
         # Load parameters from ROS parameter server
-        self.load_parameters()
+        self.initialized_params = False
+        self.declare_and_update_parameters()
 
         self.longitudinal_sampling = LongitudinalSampling(debugging=debugging)
         self.lateral_sampling = LateralSampling(debugging=debugging)
@@ -100,177 +102,110 @@ class LocalSamplingPlanner:
 
     def postprocess_raceline(self, raw_raceline: dict, s_start: float, horizon: float, track_handler) -> dict:
         """
-        Postprocess the raw raceline (F1TENTH global waypoints) to extract relevant segment for planning.
+        Extract distance-bounded raceline segment for local planning.
 
-        F1TENTH waypoint format:
-        - s_m: arc length position
-        - d_m: lateral offset (0.0 for raceline)
-        - x_m, y_m: global position
-        - vx_mps: velocity
-        - kappa_radpm: curvature
-        - d_left, d_right: track boundaries
+        Purpose: Get raceline waypoints from current position forward for 2×trajectory_length meters,
+                 handling track wraparound (e.g., s: 74, 75, 76, 0, 1, 2...).
 
         Args:
-            raw_raceline: Dictionary with 'wpnts' key containing list of waypoint dicts,
-                         or legacy list format for backward compatibility
-            s_start: Starting s-coordinate for planning
-            horizon: Planning time horizon (seconds)
-            track_handler: Track handler object (GlobalWaypointsTrackHandler)
+            raw_raceline: Global waypoints with 'wpnts' list or legacy list format
+            s_start: Current arc length position on track [m]
+            horizon: Planning time horizon [s] (unused, kept for API compatibility)
+            track_handler: Track handler with get_track_length()
 
         Returns:
-            Dictionary with postprocessed raceline segment
+            Dictionary with extracted segment containing s_post, x_post, y_post, v_post, etc.
         """
-        # Handle both new dict format {'wpnts': [...]} and legacy list format
+        # Extract waypoints from input format
         if isinstance(raw_raceline, dict) and 'wpnts' in raw_raceline:
             waypoints = raw_raceline['wpnts']
         elif isinstance(raw_raceline, list):
             waypoints = raw_raceline
         else:
-            waypoints = []
+            rospy.logwarn("Empty raceline in postprocess_raceline")
+            return self._empty_raceline_dict()
 
-        # If raceline is empty or invalid, return empty
-        if not waypoints or len(waypoints) == 0:
-            rospy.logwarn(
-                "Empty or invalid raceline provided to postprocess_raceline")
-            return {
-                's_post': np.array([]),
-                'n_post': np.array([]),
-                's_dot_post': np.array([]),
-                's_ddot_post': np.array([]),
-                'n_dot_post': np.array([]),
-                'n_ddot_post': np.array([]),
-                'v_post': np.array([]),
-                'chi_post': np.array([]),
-                'ax_post': np.array([]),
-                'ay_post': np.array([]),
-                't_post': np.array([]),
-                'kappa_post': np.array([]),
-                'x_post': np.array([]),
-                'y_post': np.array([])
-            }
+        # Extract arrays from waypoints (handle both ROS messages and dicts)
+        def get_attr(wp, attr, default=0.0):
+            if hasattr(wp, attr):
+                return getattr(wp, attr)
+            elif isinstance(wp, dict):
+                return wp.get(attr, default)
+            else:
+                return default
 
-        # Extract data from F1TENTH global waypoint format
-        # Handle both attribute access (ROS messages) and dict access
-        s_rl = np.array([wp.s_m if hasattr(wp, 's_m') else wp['s_m']
-                        for wp in waypoints])
-        # d_m is lateral offset (0 for raceline)
-        n_rl = np.array([wp.d_m if hasattr(wp, 'd_m')
-                        else wp.get('d_m', 0.0) for wp in waypoints])
-        x_rl = np.array([wp.x_m if hasattr(wp, 'x_m') else wp['x_m']
-                        for wp in waypoints])
-        y_rl = np.array([wp.y_m if hasattr(wp, 'y_m') else wp['y_m']
-                        for wp in waypoints])
-        v_rl = np.array([wp.vx_mps if hasattr(wp, 'vx_mps')
-                        else wp['vx_mps'] for wp in waypoints])
-        kappa_rl = np.array([wp.kappa_radpm if hasattr(
-            wp, 'kappa_radpm') else wp['kappa_radpm'] for wp in waypoints])
-
-        # Calculate longitudinal velocity (s_dot) - for F1TENTH, vx_mps is the velocity along the path
-        s_dot_rl = v_rl.copy()
-
-        # Calculate time array from distance and velocity
-        N = len(s_rl)
-        t_rl = np.zeros(N)
-        if N > 1:
-            for i in range(1, N):
-                ds = s_rl[i] - s_rl[i-1]
-                if ds < 0:  # Handle wraparound
-                    ds += s_rl[-1]
-                v_avg = 0.5 * (v_rl[i-1] + v_rl[i])
-                if v_avg > 1e-6:
-                    t_rl[i] = t_rl[i-1] + ds / v_avg
-                else:
-                    t_rl[i] = t_rl[i-1] + ds / 1e-6  # Avoid division by zero
-
-        # Calculate heading angle (chi) from position gradient
-        chi_rl = np.zeros(N)
-        if N > 1:
-            dx = np.gradient(x_rl)
-            dy = np.gradient(y_rl)
-            chi_rl = np.arctan2(dy, dx)
-
-        # Calculate accelerations using finite differences
-        s_ddot_rl = np.zeros(N)
-        ax_rl = np.zeros(N)
-        ay_rl = np.zeros(N)
-        if N > 1:
-            # Longitudinal acceleration
-            s_ddot_rl = np.gradient(s_dot_rl, t_rl)
-            ax_rl = s_ddot_rl.copy()  # Simplified: ax ≈ s_ddot for raceline
-
-            # Lateral acceleration from curvature: ay = v^2 * kappa
-            ay_rl = v_rl**2 * kappa_rl
-
-        # Calculate lateral velocity components (should be ~0 for raceline)
-        n_dot_rl = np.zeros(N)
-        n_ddot_rl = np.zeros(N)
-
-        # Find starting index where s >= s_start
-        idx_start = np.searchsorted(s_rl, s_start, side='left')
-
+        s_rl = np.array([get_attr(wp, 's_m') for wp in waypoints])
+        x_rl = np.array([get_attr(wp, 'x_m') for wp in waypoints])
+        y_rl = np.array([get_attr(wp, 'y_m') for wp in waypoints])
+        v_rl = np.array([get_attr(wp, 'vx_mps') for wp in waypoints])
+        kappa_rl = np.array([get_attr(wp, 'kappa_radpm') for wp in waypoints])
+        # Handle track wraparound - create extended segment
+        n_rl = np.array([get_attr(wp, 'd_m', 0.0) for wp in waypoints])
+        track_length = track_handler.get_track_length()
+        s_start_norm = s_start % track_length
+        idx_start = np.searchsorted(s_rl, s_start_norm, side='left')
         if idx_start >= len(s_rl):
-            # s_start is beyond the raceline, handle wraparound or take last point
-            idx_start = len(s_rl) - 1
+            idx_start = 0
 
-        # Remove all points before idx_start
-        if idx_start > 0:
-            s_rl = s_rl[idx_start:]
-            n_rl = n_rl[idx_start:]
-            x_rl = x_rl[idx_start:]
-            y_rl = y_rl[idx_start:]
-            t_rl = t_rl[idx_start:]
-            s_dot_rl = s_dot_rl[idx_start:]
-            s_ddot_rl = s_ddot_rl[idx_start:]
-            n_dot_rl = n_dot_rl[idx_start:]
-            n_ddot_rl = n_ddot_rl[idx_start:]
-            v_rl = v_rl[idx_start:]
-            chi_rl = chi_rl[idx_start:]
-            ax_rl = ax_rl[idx_start:]
-            ay_rl = ay_rl[idx_start:]
-            kappa_rl = kappa_rl[idx_start:]
+        # Concatenate: [from start_idx to end] + [full track for wraparound]
+        # s values naturally wrap: [..., 74, 75, 76, 0, 1, 2, ...]
+        s_rl = np.concatenate([s_rl[idx_start:], s_rl])
+        x_rl = np.concatenate([x_rl[idx_start:], x_rl])
+        y_rl = np.concatenate([y_rl[idx_start:], y_rl])
+        v_rl = np.concatenate([v_rl[idx_start:], v_rl])
+        kappa_rl = np.concatenate([kappa_rl[idx_start:], kappa_rl])
+        n_rl = np.concatenate([n_rl[idx_start:], n_rl])
 
-        # Shift time array so first element is 0
-        if len(t_rl) > 0:
-            t_rl = t_rl - t_rl[0]
+        # Trim to distance limit (2×trajectory_length from current position)
+        s_limit = 2.0 * self.trajectory_length
+        s_distances = np.zeros(len(s_rl))
+        for i in range(1, len(s_rl)):
+            ds = s_rl[i] - s_rl[i-1]
+            if ds < -track_length / 2:  # Handle wraparound
+                ds += track_length
+            s_distances[i] = s_distances[i-1] + ds
 
-        # Remove points beyond 2*horizon, but keep first out-of-bounds point
-        time_limit = 2.0 * horizon
-        out_of_bounds_indices = np.where(t_rl > time_limit)[0]
+        # Find index where distance exceeds limit
+        idx_limit = np.searchsorted(s_distances, s_limit, side='right')
+        if idx_limit < len(s_rl):
+            s_rl = s_rl[:idx_limit]
+            x_rl = x_rl[:idx_limit]
+            y_rl = y_rl[:idx_limit]
+            v_rl = v_rl[:idx_limit]
+            kappa_rl = kappa_rl[:idx_limit]
+            n_rl = n_rl[:idx_limit]
 
-        if len(out_of_bounds_indices) > 1:
-            # Keep the first out-of-bounds point, remove the rest
-            keep_idx = out_of_bounds_indices[0] + 1
-            s_rl = s_rl[:keep_idx]
-            n_rl = n_rl[:keep_idx]
-            x_rl = x_rl[:keep_idx]
-            y_rl = y_rl[:keep_idx]
-            t_rl = t_rl[:keep_idx]
-            s_dot_rl = s_dot_rl[:keep_idx]
-            s_ddot_rl = s_ddot_rl[:keep_idx]
-            n_dot_rl = n_dot_rl[:keep_idx]
-            n_ddot_rl = n_ddot_rl[:keep_idx]
-            v_rl = v_rl[:keep_idx]
-            chi_rl = chi_rl[:keep_idx]
-            ax_rl = ax_rl[:keep_idx]
-            ay_rl = ay_rl[:keep_idx]
-            kappa_rl = kappa_rl[:keep_idx]
+        # Calculate derived quantities
+        chi_rl = np.arctan2(np.gradient(y_rl), np.gradient(x_rl))
 
-        # Return postprocessed raceline
+        # Return processed segment
         return {
             's_post': s_rl,
-            'n_post': n_rl,
-            's_dot_post': s_dot_rl,
-            's_ddot_post': s_ddot_rl,
-            'n_dot_post': n_dot_rl,
-            'n_ddot_post': n_ddot_rl,
-            'v_post': v_rl,
-            'chi_post': chi_rl,
-            'ax_post': ax_rl,
-            'ay_post': ay_rl,
-            't_post': t_rl,
-            'kappa_post': kappa_rl,
             'x_post': x_rl,
-            'y_post': y_rl
+            'y_post': y_rl,
+            'n_post': n_rl,
+            'v_post': v_rl,
+            's_dot_post': v_rl,
+            'kappa_post': kappa_rl,
+            'chi_post': chi_rl,
+            # Time not needed for distance-based sampling
+            't_post': np.zeros_like(s_rl),
+            # Not needed for raceline reference
+            'ax_post': np.zeros_like(v_rl),
+            'ay_post': v_rl**2 * kappa_rl,
+            's_ddot_post': np.zeros_like(v_rl),
+            'n_dot_post': np.zeros_like(v_rl),
+            'n_ddot_post': np.zeros_like(v_rl)
+        }
+
+    def _empty_raceline_dict(self):
+        """Return empty raceline dictionary for error cases."""
+        empty = np.array([])
+        return {
+            's_post': empty, 'x_post': empty, 'y_post': empty, 'n_post': empty,
+            'v_post': empty, 's_dot_post': empty, 'kappa_post': empty,
+            'chi_post': empty, 't_post': empty, 'ax_post': empty, 'ay_post': empty,
+            's_ddot_post': empty, 'n_dot_post': empty, 'n_ddot_post': empty
         }
 
     def postprocess_prediction(self, raw_prediction: dict, state_estimate: dict, track_handler,
@@ -354,9 +289,9 @@ class LocalSamplingPlanner:
 
             closest_idx = np.argmin(np.abs(s_diff))
 
-            # Extract relevant segment: from ego position forward through 2x planning horizon
-            # Calculate time horizon to determine segment length
-            time_horizon = 2.0 * self.horizon  # 2x planning horizon like postprocess_raceline
+            # Extract relevant segment: from ego position forward through 2x trajectory length
+            # Use same distance limit as postprocess_raceline for consistency
+            time_horizon = 2.0 * self.horizon  # 2x planning horizon for time-based prediction
 
             # Start from closest point to ego
             start_idx = closest_idx
@@ -508,119 +443,96 @@ class LocalSamplingPlanner:
         """
         Match previous trajectory to current state and hold initial portion constant.
 
+        This enables smooth trajectory warm-starting:
+        1. Match: Find current vehicle position on previous trajectory
+        2. Trim: Remove trajectory points that are in the past
+        3. Hold: Keep first const_trajectory_time seconds as control output
+        4. Extract: Use end of constant segment as initial conditions for replanning
+        5. Return: Constant segment (for execution) + live segment (for replanning)
+
         Args:
             performance_trajectory: Previous performance trajectory
             track_handler: Track handler object
             state_estimate: Current vehicle state estimate
-            const_trajectory_time: Time to hold trajectory constant
-            s_dot_min: Minimum longitudinal velocity
+            const_trajectory_time: Time to hold trajectory constant [s]
+            s_dot_min: Minimum longitudinal velocity [m/s]
 
         Returns:
             Tuple of (aligned_trajectory, s_start, s_dot_start, s_ddot_start, 
                      n_start, n_dot_start, n_ddot_start, const_part_trajectory, t_start, s_loc_start)
         """
-        # Initialize return values
-        aligned_traj = {}
-        const_part_traj = {}
+        track_length = track_handler.get_track_length()
 
-        # Get track length
-        track_length = track_handler.s_coord(
-        )[-1] if hasattr(track_handler, 's_coord') else 100.0
+        # Initialize default return values (used when no previous trajectory exists)
+        default_state = {
+            's_start': state_estimate.get('s', 0.0),
+            's_dot_start': max(s_dot_min, state_estimate.get('vel_current', s_dot_min)),
+            's_ddot_start': 0.0,
+            'n_start': state_estimate.get('n', 0.0),
+            'n_dot_start': 0.0,
+            'n_ddot_start': 0.0,
+            't_start': 0.0,
+            's_loc_start': 0.0
+        }
 
-        # Initialize with safe defaults
-        s_start = state_estimate.get('s', 0.0)
-        s_dot_start = max(s_dot_min, state_estimate.get(
-            'vel_current', s_dot_min))
-        s_ddot_start = 0.0
-        n_start = state_estimate.get('n', 0.0)
-        n_dot_start = 0.0
-        n_ddot_start = 0.0
-        t_start = 0.0
-        s_loc_start = 0.0
+        # Case 1: No previous trajectory - return current state estimates
+        if not performance_trajectory or 's' not in performance_trajectory or len(performance_trajectory['s']) == 0 or self.const_trajectory_time == 0.0:
+            return ({}, default_state['s_start'], default_state['s_dot_start'], default_state['s_ddot_start'],
+                    default_state['n_start'], default_state['n_dot_start'], default_state['n_ddot_start'],
+                    {}, default_state['t_start'], default_state['s_loc_start'])
 
-        # First call: no prior trajectory available
-        if not performance_trajectory or 's' not in performance_trajectory or len(performance_trajectory['s']) == 0:
-            # Return defaults with current state
-            n_start = state_estimate.get('n', 0.0)
-
-            # Find nearest track discretization point
-            if hasattr(track_handler, 's_coord'):
-                s_coord = track_handler.s_coord()
-                idx = np.searchsorted(s_coord, state_estimate.get('s', 0.0))
-                if idx >= len(s_coord):
-                    idx = len(s_coord) - 1
-                s_start = s_coord[idx] if idx > 0 else s_coord[0]
-
-            return aligned_traj, s_start, s_dot_start, s_ddot_start, n_start, n_dot_start, n_ddot_start, const_part_traj, t_start, s_loc_start
-
-        # Copy the incoming trajectory
+        # Case 2: Previous trajectory exists - perform matching and splitting
         aligned_traj = copy.deepcopy(performance_trajectory)
         N = len(aligned_traj['s'])
 
-        # Unwrap s coordinates to handle track wraparound
-        # Note: NumPy < 1.21 doesn't support 'period' parameter, use manual wrapping
-        s_wrapped = aligned_traj['s'].copy()
-        # Manually unwrap by detecting jumps > track_length/2
-        s_unwrapped = s_wrapped.copy()
-        for i in range(1, len(s_unwrapped)):
-            diff = s_unwrapped[i] - s_unwrapped[i-1]
-            if diff > 0.5 * track_length:
-                s_unwrapped[i:] -= track_length
-            elif diff < -0.5 * track_length:
-                s_unwrapped[i:] += track_length
+        # Step 1: Unwrap s-coordinates to handle track wraparound
+        s_unwrapped = unwrap_periodic_coordinates(
+            aligned_traj['s'], track_length)
 
-        # Bring unwrapped axis close to current vehicle position
+        # Align unwrapped coordinates to current vehicle position
         if state_estimate.get('s', 0.0) < s_unwrapped[0]:
             s_unwrapped = s_unwrapped - track_length
 
-        # Find match index (last point with s <= state_estimate.s)
+        # Step 2: Find match point (where vehicle currently is on previous trajectory)
         match_idx = np.searchsorted(
             s_unwrapped, state_estimate.get('s', 0.0), side='right') - 1
         match_idx = max(match_idx, 0)  # Clamp to valid range
 
-        # Capture reference time and local s at match point
-        t_match = aligned_traj['t'][match_idx] if 't' in aligned_traj else 0.0
-        s_loc_match = aligned_traj.get('s_loc', np.zeros(N))[match_idx]
-
-        # Drop everything before the match point
+        # Step 3: Trim trajectory - remove everything before match point
         if match_idx > 0:
-            for key in aligned_traj:
-                if isinstance(aligned_traj[key], np.ndarray) or isinstance(aligned_traj[key], list):
-                    aligned_traj[key] = aligned_traj[key][match_idx:]
+            t_match = aligned_traj.get('t', np.zeros(N))[match_idx]
+            s_loc_match = aligned_traj.get('s_loc', np.zeros(N))[match_idx]
 
-        # Re-zero the remaining trajectory (t = 0 at match)
-        if 't' in aligned_traj and len(aligned_traj['t']) > 0:
-            aligned_traj['t'] = aligned_traj['t'] - t_match
+            # Slice all trajectory arrays
+            aligned_traj = slice_trajectory_dict(
+                aligned_traj, start_idx=match_idx)
 
-        if 's_loc' in aligned_traj and len(aligned_traj['s_loc']) > 0:
-            aligned_traj['s_loc'] = np.mod(
-                aligned_traj['s_loc'] - s_loc_match, track_length)
+            # Re-zero time and s_local (match point becomes t=0)
+            if 't' in aligned_traj and len(aligned_traj['t']) > 0:
+                aligned_traj['t'] = aligned_traj['t'] - t_match
+            if 's_loc' in aligned_traj and len(aligned_traj['s_loc']) > 0:
+                aligned_traj['s_loc'] = np.mod(
+                    aligned_traj['s_loc'] - s_loc_match, track_length)
 
-        # Determine where the constant segment ends
+        # Step 4: Split into constant segment (held) and live segment (for replanning)
         new_N = len(aligned_traj.get('s', []))
         const_end_idx = 0
 
         if new_N > 0 and 't' in aligned_traj:
+            # Find where constant segment ends
             const_end_idx = np.searchsorted(
                 aligned_traj['t'], const_trajectory_time, side='right')
-            if const_end_idx > 0:
-                const_end_idx -= 1
-            if const_end_idx >= new_N:
-                const_end_idx = new_N - 1
+            const_end_idx = min(max(const_end_idx - 1, 0), new_N - 1)
 
-        # Export the constant slice
+        # Step 5: Extract constant part (this will be executed by controller)
+        const_part_traj = {}
         if const_end_idx > 0:
-            const_part_traj = {}
-            for key in aligned_traj:
-                if isinstance(aligned_traj[key], np.ndarray):
-                    const_part_traj[key] = aligned_traj[key][:const_end_idx].copy()
-                elif isinstance(aligned_traj[key], list):
-                    const_part_traj[key] = aligned_traj[key][:const_end_idx]
+            const_part_traj = slice_trajectory_dict(
+                aligned_traj, end_idx=const_end_idx)
 
-        # Update initial state from end of constant segment OR current state estimate
-        # If const_trajectory_time == 0 or const_end_idx == 0, use current state estimate instead of old trajectory
+        # Step 6: Extract initial conditions from end of constant segment
         if new_N > 0 and const_end_idx > 0:
-            # Use old trajectory (warm-starting enabled)
+            # Warm-starting: Use trajectory state at end of constant segment
             s_start = aligned_traj['s'][const_end_idx]
             s_dot_start = max(s_dot_min, aligned_traj.get(
                 's_dot', [s_dot_min] * new_N)[const_end_idx])
@@ -635,34 +547,28 @@ class LocalSamplingPlanner:
             s_loc_start = aligned_traj.get(
                 's_loc', [0.0] * new_N)[const_end_idx]
         else:
-            # Use current state estimate (no warm-starting or const_trajectory_time == 0)
-            s_start = state_estimate.get('s', 0.0)
-            s_dot_start = max(s_dot_min, state_estimate.get(
-                'vel_current', s_dot_min))
-            s_ddot_start = 0.0
-            n_start = state_estimate.get('n', 0.0)
-            n_dot_start = 0.0
-            n_ddot_start = 0.0
-            t_start = 0.0
-            s_loc_start = 0.0
+            # No warm-starting: Use current state estimate
+            s_start = default_state['s_start']
+            s_dot_start = default_state['s_dot_start']
+            s_ddot_start = default_state['s_ddot_start']
+            n_start = default_state['n_start']
+            n_dot_start = default_state['n_dot_start']
+            n_ddot_start = default_state['n_ddot_start']
+            t_start = default_state['t_start']
+            s_loc_start = default_state['s_loc_start']
 
-        # Erase the constant part from aligned trajectory
+        # Step 7: Remove constant part from aligned trajectory (keep only "live" part for replanning)
         if const_end_idx > 0 and const_end_idx < new_N:
-            for key in aligned_traj:
-                if isinstance(aligned_traj[key], np.ndarray):
-                    aligned_traj[key] = aligned_traj[key][const_end_idx:]
-                elif isinstance(aligned_traj[key], list):
-                    aligned_traj[key] = aligned_traj[key][const_end_idx:]
+            aligned_traj = slice_trajectory_dict(
+                aligned_traj, start_idx=const_end_idx)
 
-        # Re-zero time and s_local so the live part starts at 0 again
-        if len(aligned_traj.get('t', [])) > 0:
-            t0 = aligned_traj['t'][0]
-            aligned_traj['t'] = aligned_traj['t'] - t0
-
-        if len(aligned_traj.get('s_loc', [])) > 0:
-            s0 = aligned_traj['s_loc'][0]
-            aligned_traj['s_loc'] = np.mod(
-                aligned_traj['s_loc'] - s0, track_length)
+            # Re-zero time and s_local so live part starts at 0
+            if len(aligned_traj.get('t', [])) > 0:
+                aligned_traj['t'] = aligned_traj['t'] - aligned_traj['t'][0]
+            if len(aligned_traj.get('s_loc', [])) > 0:
+                s0 = aligned_traj['s_loc'][0]
+                aligned_traj['s_loc'] = np.mod(
+                    aligned_traj['s_loc'] - s0, track_length)
 
         return aligned_traj, s_start, s_dot_start, s_ddot_start, n_start, n_dot_start, n_ddot_start, const_part_traj, t_start, s_loc_start
 
@@ -688,90 +594,209 @@ class LocalSamplingPlanner:
                 f"Could not load YAML defaults: {e}. Using hardcoded defaults.")
             return {}
 
-    def load_parameters(self):
+    def declare_and_update_parameters(self):
         """Load required parameters from ROS parameter server with defaults from YAML"""
 
-        # Load default values from YAML configuration file
-        yaml_defaults = self._load_yaml_defaults()
+        if not self.initialized_params:
+            # Load default values from YAML configuration file
+            yaml_defaults = self._load_yaml_defaults()
 
-        # Core behavior parameters
-        self.hybrid_long_sampling = rospy.get_param(
-            'hybrid_long_sampling', yaml_defaults.get('hybrid_long_sampling', True))
-        self.sampling_mode = rospy.get_param(
-            'sampling_mode', yaml_defaults.get('sampling_mode', "spatial"))
-        self.horizon = rospy.get_param(
-            'horizon', yaml_defaults.get('planning_horizon', 4.0))
-        self.const_trajectory_time = rospy.get_param(
-            'const_trajectory_time', yaml_defaults.get('const_trajectory_time', 0.3))
-        self.min_trajectory_length = rospy.get_param(
-            'min_trajectory_length', yaml_defaults.get('min_trajectory_length', 10.0))
-        self.s_dot_min = rospy.get_param(
-            's_dot_min', yaml_defaults.get('s_dot_end_min', 1.0))
-        self.V_thr_stillstand = rospy.get_param(
-            'V_thr_stillstand', yaml_defaults.get('V_thr_stillstand', 2.0))
-        self.perception_offset_threshold = rospy.get_param(
-            'perception_offset_threshold', yaml_defaults.get('perception_offset_threshold', 2.0))
-        self.relative_long_sampling_threshold = rospy.get_param(
-            'relative_long_sampling_threshold', yaml_defaults.get('relative_long_sampling_threshold', 0.7))
-        self.following_distance_factor_pos = rospy.get_param(
-            'following_distance_factor_pos', yaml_defaults.get('following_distance_factor_pos', 100.0))
-        self.following_distance_factor_neg = rospy.get_param(
-            'following_distance_factor_neg', yaml_defaults.get('following_distance_factor_neg', 40.0))
+            # Core behavior parameters
+            self.hybrid_long_sampling = yaml_defaults.get(
+                'hybrid_long_sampling', rospy.get_param('hybrid_long_sampling', True))
+            rospy.set_param('hybrid_long_sampling', self.hybrid_long_sampling)
+            self.sampling_mode = yaml_defaults.get(
+                'sampling_mode', rospy.get_param('sampling_mode', "spatial"))
+            rospy.set_param('sampling_mode', self.sampling_mode)
+            self.horizon = yaml_defaults.get(
+                'planning_horizon', rospy.get_param('horizon', 4.0))
+            rospy.set_param('horizon', self.horizon)
+            self.trajectory_length = yaml_defaults.get(
+                'trajectory_length', rospy.get_param('trajectory_length', 10.0))
+            rospy.set_param('trajectory_length', self.trajectory_length)
+            self.const_trajectory_time = yaml_defaults.get(
+                'const_trajectory_time', rospy.get_param('const_trajectory_time', 0.3))
+            rospy.set_param('const_trajectory_time',
+                            self.const_trajectory_time)
+            self.min_trajectory_length = yaml_defaults.get(
+                'min_trajectory_length', rospy.get_param('min_trajectory_length', 8.0))
+            rospy.set_param('min_trajectory_length',
+                            self.min_trajectory_length)
+            self.s_dot_min = yaml_defaults.get(
+                's_dot_end_min', rospy.get_param('s_dot_min', 1.0))
+            rospy.set_param('s_dot_min', self.s_dot_min)
+            self.V_thr_stillstand = yaml_defaults.get(
+                'V_thr_stillstand', rospy.get_param('V_thr_stillstand', 2.0))
+            rospy.set_param('V_thr_stillstand', self.V_thr_stillstand)
+            self.perception_offset_threshold = yaml_defaults.get(
+                'perception_offset_threshold', rospy.get_param('perception_offset_threshold', 2.0))
+            rospy.set_param('perception_offset_threshold',
+                            self.perception_offset_threshold)
+            self.relative_long_sampling_threshold = yaml_defaults.get(
+                'relative_long_sampling_threshold', rospy.get_param('relative_long_sampling_threshold', 0.7))
+            rospy.set_param('relative_long_sampling_threshold',
+                            self.relative_long_sampling_threshold)
+            self.following_distance_factor_pos = yaml_defaults.get(
+                'following_distance_factor_pos', rospy.get_param('following_distance_factor_pos', 100.0))
+            rospy.set_param('following_distance_factor_pos',
+                            self.following_distance_factor_pos)
+            self.following_distance_factor_neg = yaml_defaults.get(
+                'following_distance_factor_neg', rospy.get_param('following_distance_factor_neg', 40.0))
+            rospy.set_param('following_distance_factor_neg',
+                            self.following_distance_factor_neg)
 
-        # Vehicle and track configuration
-        self.vehicle_name = rospy.get_param(
-            'vehicle_name', yaml_defaults.get('vehicle_name', 'f1tenth'))
-        self.track_name = rospy.get_param(
-            'track_name', yaml_defaults.get('track_name', 'levine'))
-        self.pitlane_name = rospy.get_param(
-            'pitlane_name', yaml_defaults.get('pitlane_name', 'levine_pitlane'))
-        self.gggv_mode = rospy.get_param(
-            'gggv_mode', yaml_defaults.get('gggv_mode', 'diamond'))
-        self.gg_scale = rospy.get_param(
-            'gg_scale', yaml_defaults.get('gg_scale', 0.9))
+            # Vehicle and track configuration
+            self.vehicle_name = yaml_defaults.get(
+                'vehicle_name', rospy.get_param('vehicle_name', 'f1tenth'))
+            rospy.set_param('vehicle_name', self.vehicle_name)
+            self.track_name = yaml_defaults.get(
+                'track_name', rospy.get_param('track_name', 'levine'))
+            rospy.set_param('track_name', self.track_name)
+            self.pitlane_name = yaml_defaults.get(
+                'pitlane_name', rospy.get_param('pitlane_name', 'levine_pitlane'))
+            rospy.set_param('pitlane_name', self.pitlane_name)
+            self.gggv_mode = yaml_defaults.get(
+                'gggv_mode', rospy.get_param('gggv_mode', 'diamond'))
+            rospy.set_param('gggv_mode', self.gggv_mode)
+            self.gg_scale = yaml_defaults.get(
+                'gg_scale', rospy.get_param('gg_scale', 0.9))
+            rospy.set_param('gg_scale', self.gg_scale)
 
-        # Debug and Logging Parameters
-        self.logging_sp = rospy.get_param(
-            'logging_sp', yaml_defaults.get('logging_sp', False))
-        self.log_console_level = rospy.get_param(
-            'log_console_level', yaml_defaults.get('log_console_level', "INFO"))
-        self.log_file_level = rospy.get_param(
-            'log_file_level', yaml_defaults.get('log_file_level', "DEBUG"))
+            # Debug and Logging Parameters
+            self.logging_sp = yaml_defaults.get(
+                'logging_sp', rospy.get_param('logging_sp', False))
+            rospy.set_param('logging_sp', self.logging_sp)
+            self.log_console_level = yaml_defaults.get(
+                'log_console_level', rospy.get_param('log_console_level', "INFO"))
+            rospy.set_param('log_console_level', self.log_console_level)
+            self.log_file_level = yaml_defaults.get(
+                'log_file_level', rospy.get_param('log_file_level', "DEBUG"))
+            rospy.set_param('log_file_level', self.log_file_level)
 
-        # Vehicle parameter overwrites
-        self.overwrite_vehicle_params = rospy.get_param(
-            'overwrite_vehicle_params', yaml_defaults.get('overwrite_vehicle_params', True))
-        self.ax_machine_limit_overwrites = rospy.get_param(
-            'ax_machine_limit_overwrites',
-            yaml_defaults.get('ax_machine_limit_overwrites', [8.0, 7.0, 7.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]))
-        self.gg_exponent_ax_pos = rospy.get_param(
-            'gg_exponent_ax_pos', yaml_defaults.get('gg_exponent_ax_pos', 1.0))
-        self.gg_exponent_ax_neg = rospy.get_param(
-            'gg_exponent_ax_neg', yaml_defaults.get('gg_exponent_ax_neg', 1.0))
-        self.ax_min_scale = rospy.get_param(
-            'ax_min_scale', yaml_defaults.get('ax_min_scale', 1.0))
-        self.ax_max_scale = rospy.get_param(
-            'ax_max_scale', yaml_defaults.get('ax_max_scale', 1.0))
-        self.ay_scale = rospy.get_param(
-            'ay_scale', yaml_defaults.get('ay_scale', 1.0))
-        self.Iz = rospy.get_param(
-            'Iz', yaml_defaults.get('Iz', 1.0))
-        self.total_width = rospy.get_param(
-            'width', yaml_defaults.get('width', 0.20))
-        self.total_length = rospy.get_param(
-            'length', yaml_defaults.get('length', 0.50))
-        # F1TENTH NOTE: Forward-backward sampling now available with simplified kinematics (no GGGV required)
-        self.add_forward_backward_samples = rospy.get_param(
-            'add_forward_backward_samples', yaml_defaults.get('forward_backward_velocities', False))
+            # Vehicle parameter overwrites
+            self.overwrite_vehicle_params = yaml_defaults.get(
+                'overwrite_vehicle_params', rospy.get_param('overwrite_vehicle_params', True))
+            rospy.set_param('overwrite_vehicle_params',
+                            self.overwrite_vehicle_params)
+            self.ax_machine_limit_overwrites = yaml_defaults.get(
+                'ax_machine_limit_overwrites',
+                rospy.get_param('ax_machine_limit_overwrites', [8.0, 7.0, 7.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]))
+            rospy.set_param('ax_machine_limit_overwrites',
+                            self.ax_machine_limit_overwrites)
+            self.gg_exponent_ax_pos = yaml_defaults.get(
+                'gg_exponent_ax_pos', rospy.get_param('gg_exponent_ax_pos', 1.0))
+            rospy.set_param('gg_exponent_ax_pos',
+                            self.gg_exponent_ax_pos)
+            self.gg_exponent_ax_neg = yaml_defaults.get(
+                'gg_exponent_ax_neg', rospy.get_param('gg_exponent_ax_neg', 1.0))
+            rospy.set_param('gg_exponent_ax_neg',
+                            self.gg_exponent_ax_neg)
+            self.ax_min_scale = yaml_defaults.get(
+                'ax_min_scale', rospy.get_param('ax_min_scale', 1.0))
+            rospy.set_param('ax_min_scale', self.ax_min_scale)
+            self.ax_max_scale = yaml_defaults.get(
+                'ax_max_scale', rospy.get_param('ax_max_scale', 1.0))
+            rospy.set_param('ax_max_scale', self.ax_max_scale)
+            self.ay_scale = yaml_defaults.get(
+                'ay_scale', rospy.get_param('ay_scale', 1.0))
+            rospy.set_param('ay_scale', self.ay_scale)
+            self.Iz = yaml_defaults.get(
+                'Iz', rospy.get_param('Iz', 1.0))
+            rospy.set_param('Iz', self.Iz)
+            self.total_width = yaml_defaults.get(
+                'width', rospy.get_param('width', 0.20))
+            rospy.set_param('width', self.total_width)
+            self.total_length = yaml_defaults.get(
+                'length', rospy.get_param('length', 0.50))
+            rospy.set_param('length', self.total_length)
+            # F1TENTH NOTE: Forward-backward sampling now available with simplified kinematics (no GGGV required)
+            self.add_forward_backward_samples = yaml_defaults.get(
+                'forward_backward_velocities', rospy.get_param('add_forward_backward_samples', False))
+            rospy.set_param('add_forward_backward_samples',
+                            self.add_forward_backward_samples)
 
-        rospy.loginfo(
-            "Loaded TAM sampling planner parameters from parameter server")
-        if self.add_forward_backward_samples:
             rospy.loginfo(
-                "F1TENTH mode: Forward-backward sampling ENABLED (using fixed acceleration limits)")
+                "Loaded TAM sampling planner parameters from parameter server")
+            if self.add_forward_backward_samples:
+                rospy.loginfo(
+                    "F1TENTH mode: Forward-backward sampling ENABLED (using fixed acceleration limits)")
+            else:
+                rospy.loginfo(
+                    "F1TENTH mode: Forward-backward sampling DISABLED")
+
+            self.initialized_params = True
         else:
-            rospy.loginfo(
-                "F1TENTH mode: Forward-backward sampling DISABLED")
+            # Core behavior parameters
+            self.hybrid_long_sampling = rospy.get_param(
+                'hybrid_long_sampling', self.hybrid_long_sampling)
+            self.sampling_mode = rospy.get_param(
+                'sampling_mode', self.sampling_mode)
+            self.horizon = rospy.get_param(
+                'horizon', self.horizon)
+            self.trajectory_length = rospy.get_param(
+                'trajectory_length', self.trajectory_length)
+            self.const_trajectory_time = rospy.get_param(
+                'const_trajectory_time', self.const_trajectory_time)
+            self.min_trajectory_length = rospy.get_param(
+                'min_trajectory_length', self.min_trajectory_length)
+            self.s_dot_min = rospy.get_param(
+                's_dot_min', self.s_dot_min)
+            self.V_thr_stillstand = rospy.get_param(
+                'V_thr_stillstand', self.V_thr_stillstand)
+            self.perception_offset_threshold = rospy.get_param(
+                'perception_offset_threshold', self.perception_offset_threshold)
+            self.relative_long_sampling_threshold = rospy.get_param(
+                'relative_long_sampling_threshold', self.relative_long_sampling_threshold)
+            self.following_distance_factor_pos = rospy.get_param(
+                'following_distance_factor_pos', self.following_distance_factor_pos)
+            self.following_distance_factor_neg = rospy.get_param(
+                'following_distance_factor_neg', self.following_distance_factor_neg)
+
+            # Vehicle and track configuration
+            self.vehicle_name = rospy.get_param(
+                'vehicle_name', self.vehicle_name)
+            self.track_name = rospy.get_param(
+                'track_name', self.track_name)
+            self.pitlane_name = rospy.get_param(
+                'pitlane_name', self.pitlane_name)
+            self.gggv_mode = rospy.get_param(
+                'gggv_mode', self.gggv_mode)
+            self.gg_scale = rospy.get_param(
+                'gg_scale', self.gg_scale)
+
+            # Debug and Logging Parameters
+            self.logging_sp = rospy.get_param(
+                'logging_sp', self.logging_sp)
+            self.log_console_level = rospy.get_param(
+                'log_console_level', self.log_console_level)
+            self.log_file_level = rospy.get_param(
+                'log_file_level', self.log_file_level)
+
+            # Vehicle parameter overwrites
+            self.overwrite_vehicle_params = rospy.get_param(
+                'overwrite_vehicle_params', self.overwrite_vehicle_params)
+            self.ax_machine_limit_overwrites = rospy.get_param(
+                'ax_machine_limit_overwrites',
+                self.ax_machine_limit_overwrites)
+            self.gg_exponent_ax_pos = rospy.get_param(
+                'gg_exponent_ax_pos', self.gg_exponent_ax_pos)
+            self.gg_exponent_ax_neg = rospy.get_param(
+                'gg_exponent_ax_neg', self.gg_exponent_ax_neg)
+            self.ax_min_scale = rospy.get_param(
+                'ax_min_scale', self.ax_min_scale)
+            self.ax_max_scale = rospy.get_param(
+                'ax_max_scale', self.ax_max_scale)
+            self.ay_scale = rospy.get_param(
+                'ay_scale', self.ay_scale)
+            self.Iz = rospy.get_param(
+                'Iz', self.Iz)
+            self.total_width = rospy.get_param(
+                'width', self.total_width)
+            self.total_length = rospy.get_param(
+                'length', self.total_length)
+            # F1TENTH NOTE: Forward-backward sampling now available with simplified kinematics (no GGGV required)
+            self.add_forward_backward_samples = rospy.get_param(
+                'add_forward_backward_samples', self.add_forward_backward_samples)
 
     def calc_trajectory(
             self,
@@ -780,6 +805,18 @@ class LocalSamplingPlanner:
             prediction: dict,
             planning_requests: dict,
     ):
+        # rospy.loginfo("="*80)
+        # rospy.loginfo("🚗 calc_trajectory: STARTING trajectory calculation")
+        # rospy.loginfo(
+        #     f"  State: s={state_estimate.get('s', 0.0):.2f}, n={state_estimate.get('n', 0.0):.3f}, vel={state_estimate.get('vel_current', 0.0):.2f}")
+        # rospy.loginfo(
+        #     f"  Planning requests: V_max={planning_requests.get('V_max', 0.0):.2f}, following_dist={planning_requests.get('following_distance', 0.0):.2f}")
+        # rospy.loginfo(
+        #     f"  Status: {self.status} (stillstand={self.status_dict['stillstand']}, driving={self.status_dict['driving']})")
+
+        self.declare_and_update_parameters()
+        # rospy.loginfo("✓ Step 1: Parameters loaded")
+
         following_distance_target = planning_requests["following_distance"]
 
         # Initialize return values to safe defaults in case of error
@@ -790,6 +827,8 @@ class LocalSamplingPlanner:
         s_loc_start = 0.0
 
         try:
+            # rospy.loginfo(
+            #     "▶ Step 2: Starting state projection to Frenet coordinates...")
             # project state estimation of x and y into s and n
             state_estimate_sn = self.track_handler.project_2d_point_on_track_global(
                 state_estimate["x_current"], state_estimate["y_current"], state_estimate["z_current"], 6.0)
@@ -799,6 +838,8 @@ class LocalSamplingPlanner:
                 state_estimate['s'],
                 state_estimate["psi_current"],
             )
+            # rospy.loginfo(
+            #     f"✓ Step 2: State projected - s={state_estimate['s']:.2f}, n={state_estimate['n']:.3f}, chi={state_estimate['chi']:.3f}")
 
             # F1TENTH NOTE: Lap counter not used in F1TENTH mode (designed for endurance racing)
             # Original TAM code: lap_update_bool = self.lap_counter.check_lapupdate(...)
@@ -808,7 +849,12 @@ class LocalSamplingPlanner:
             # delete previous trajectory to plan from current state estimate in stillstand mode
             # CRITICAL: Clear BEFORE match_and_hold_constant so we don't advance along old trajectory
             if self.status == self.status_dict["stillstand"]:
+                # rospy.loginfo(
+                #     "  Clearing previous trajectory (stillstand mode)")
                 self.performance_trajectory.clear()
+
+            # rospy.loginfo(
+            #     "▶ Step 3: Matching and holding constant trajectory...")
 
             # match on previous trajectory (if existing)
             (self.performance_trajectory,
@@ -828,14 +874,20 @@ class LocalSamplingPlanner:
                 const_trajectory_time=self.const_trajectory_time,
                 s_dot_min=self.s_dot_min,
             )
+            # rospy.loginfo(
+            #     f"✓ Step 3: Trajectory matched - s_start={s_start:.2f}, s_dot_start={s_dot_start:.2f}, n_start={n_start:.3f}")
 
+            # rospy.loginfo("▶ Step 4: Handling state transitions...")
             self.handle_state_transitions(
                 planning_requests=planning_requests,
                 state_estimate=state_estimate,
                 V_thr_stillstand=self.V_thr_stillstand,
             )
+            # rospy.loginfo(
+            #     f"✓ Step 4: State transitions handled - current status={self.status}")
 
             # postprocess prediction
+            # rospy.loginfo("▶ Step 5: Postprocessing prediction data...")
             postprocessed_prediction, self.following_vel, self.vehicle_ahead = self.postprocess_prediction(
                 raw_prediction=prediction,
                 state_estimate=state_estimate,
@@ -852,21 +904,31 @@ class LocalSamplingPlanner:
                 node_monitor=self.node_monitor,
                 msgs_logger=self.msgs_logger,
                 debugging=self.debugging
-
             )
+            # rospy.loginfo(
+            #     f"✓ Step 5: Prediction processed - following_vel={self.following_vel:.2f}, vehicle_ahead={self.vehicle_ahead}, num_predictions={len(postprocessed_prediction)}")
 
             # set target speed
             # F1TENTH NOTE: No GGGV handler, use planning_requests["V_max"] as absolute max
+            # rospy.loginfo("▶ Step 6: Setting target velocities...")
             V_target = min(
                 planning_requests["V_max"], self.following_vel)
 
             # for ruling out trajectories that exceed the allowed maximum velocity
             V_target_rules = planning_requests["V_max"]
+            # rospy.loginfo(
+            #     f"✓ Step 6: Target velocities set - V_target={V_target:.2f}, V_target_rules={V_target_rules:.2f}")
 
             # postprocess raceline
+            # rospy.loginfo("▶ Step 7: Postprocessing raceline...")
             postprocessed_raceline = self.postprocess_raceline(
                 raw_raceline=raceline, s_start=s_start, horizon=self.horizon, track_handler=self.track_handler,
             )
+
+            raceline_points = len(postprocessed_raceline.get('s_post', []))
+
+            # rospy.loginfo(
+            #     f"✓ Step 7: Raceline processed - {raceline_points} points extracted")
 
             # raceline velocity to determine if relative sampling required
             s_dot_raceline_cur = postprocessed_raceline["s_dot_post"][0]
@@ -877,8 +939,12 @@ class LocalSamplingPlanner:
                  s_dot_start > self.relative_long_sampling_threshold * s_dot_raceline_cur) or
                 self.status != self.status_dict['stopping']
             )
+            # rospy.loginfo(
+            #     f"  Sampling mode: enable_relative={enable_relative_sampling}, s_dot_raceline={s_dot_raceline_cur:.2f}")
 
             # generate frenet curves
+            # rospy.loginfo(
+            #     "▶ Step 8: Performing trajectory sampling (CRITICAL STEP)...")
             s_array, s_dot_array, s_ddot_array, n_array, n_dot_array, n_ddot_array, rel_long_sampling_array, t_array = self.perform_trajectory_sampling(
                 track_handler=self.track_handler,
                 s_start=s_start,
@@ -895,6 +961,7 @@ class LocalSamplingPlanner:
             )
 
             # transform frenet curves to velocity frame
+            # rospy.loginfo("▶ Step 9: Transforming to velocity frame...")
             V_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array, kappa_vf_array = self.coordinate_transformation.transform_to_velocity_frame(
                 track_handler=self.track_handler,
                 s_array=s_array,
@@ -905,12 +972,17 @@ class LocalSamplingPlanner:
                 n_ddot_array=n_ddot_array,
                 postprocessed_raceline=postprocessed_raceline,
             )
+            # rospy.loginfo(
+            #     f"✓ Step 9: Transform complete - V_array shape={V_array.shape}, chi_array shape={chi_array.shape}")
 
             if self.status == self.status_dict["stillstand"]:
+                # rospy.loginfo(
+                #     "  Overriding velocity to near-zero (stillstand mode)")
                 V_array[:] = 0.0001
                 ax_vf_array[:] = 0.0
 
             # perform all trajectory checks
+            # rospy.loginfo("▶ Step 10: Performing trajectory safety checks...")
             # Note: kappa_vf_array contains path curvature (rad/m), not yaw rate
             valid_array, ax_tilde, ay_tilde, g_tilde, tire_util_array, invalid_array_info, track_bound = self.trajectory_checks.mandatory_checks_trajectory(
                 Omega_z_vf_array=kappa_vf_array,
@@ -933,6 +1005,10 @@ class LocalSamplingPlanner:
                 gggv_handler=self.gggv_handler,
                 postprocessed_raceline=postprocessed_raceline,
             )
+            num_valid = np.sum(valid_array)
+            num_total = len(valid_array)
+            # rospy.loginfo(
+            #     f"✓ Step 10: Safety checks complete - {num_valid}/{num_total} trajectories valid")
 
             # Store raw sampled trajectories for visualization (before filtering)
             self.last_s_array = s_array.copy() if s_array is not None else None
@@ -944,14 +1020,15 @@ class LocalSamplingPlanner:
 
             # Check if we have any valid trajectories before cost calculation
             if np.sum(valid_array) == 0:
-                rospy.logwarn_throttle(
-                    2.0, f"No valid trajectories found - all {len(valid_array)} trajectories failed safety checks")
+                rospy.logerr(
+                    "[Sampling Core] ⚠️⚠️⚠️ CRITICAL: No valid trajectories found!")
                 self.performance_trajectory.clear()
                 self.emergency_trajectory.clear()
                 # Return None to indicate no valid trajectory
                 return None
 
             # choose best trajectory
+            # rospy.loginfo("▶ Step 11: Calculating trajectory costs...")
             cost_array, cost_terms, cost_extensive_array = self.calculation_costs.calc_costs(
                 valid_array=valid_array,
                 rel_long_sampling_array=rel_long_sampling_array,
@@ -972,10 +1049,17 @@ class LocalSamplingPlanner:
                 emergency_brake=self.emergency_brake,
                 vehicle_params=self.vehicle_params,
             )
+            min_cost = np.min(cost_array[valid_array]) if np.sum(
+                valid_array) > 0 else float('inf')
+            # rospy.loginfo(
+            #     f"✓ Step 11: Costs calculated - min_cost={min_cost:.2f}")
 
+            # rospy.loginfo("▶ Step 12: Sorting trajectories by cost...")
             sorted_idx = self.calculation_costs.sort_trajectories_by_cost(
                 valid_array=valid_array, cost_array=cost_array)
+            # rospy.loginfo(f"✓ Step 12: Trajectories sorted")
 
+            # rospy.loginfo("▶ Step 13: Selecting optimal trajectory...")
             # Ensure trajectories are dictionaries before clearing
             if not isinstance(self.performance_trajectory, dict):
                 self.performance_trajectory = {}
@@ -989,13 +1073,18 @@ class LocalSamplingPlanner:
                 # set index of best trajectory
                 optimal_idx = np.arange(s_array.shape[0])[
                     valid_array][sorted_idx][0]
+                # rospy.loginfo(
+                #     f"  Selected optimal trajectory index: {optimal_idx} (cost={cost_array[optimal_idx]:.2f})")
 
-                # TODO: Handle stillstand state
                 # correct values if in stillstand
                 if self.status == self.status_dict["stillstand"]:
+                    # rospy.loginfo(
+                    #     "  Correcting trajectory for stillstand mode")
                     V_array[:] = 0.0001
                     ax_tilde[:] = 0.0
 
+                # rospy.loginfo(
+                #     "▶ Step 14: Building performance trajectory structure...")
                 # frenet values
                 self.performance_trajectory["pitlane_mode"] = self.pitlane_mode
                 self.performance_trajectory["emergency"] = False
@@ -1015,10 +1104,13 @@ class LocalSamplingPlanner:
                 self.performance_trajectory["ay_tilde"] = ay_tilde[optimal_idx]
                 self.performance_trajectory["g_tilde"] = g_tilde[optimal_idx]
                 self.performance_trajectory["tire_util"] = tire_util_array[optimal_idx]
+                # rospy.loginfo(
+                #     f"✓ Step 14: Performance trajectory built - {len(self.performance_trajectory['s'])} points")
 
+                # rospy.loginfo("▶ Step 15: Unwrapping s_loc coordinates...")
                 # Unwrap s_loc (compatible with NumPy < 1.21 which lacks 'period' parameter)
                 s_traj = self.performance_trajectory["s"]
-                track_length = self.track_handler.s_coord()[-1]
+                track_length = self.track_handler.get_track_length()
                 s_unwrapped = s_traj.copy()
                 for i in range(1, len(s_unwrapped)):
                     diff = s_unwrapped[i] - s_unwrapped[i-1]
@@ -1028,23 +1120,28 @@ class LocalSamplingPlanner:
                         s_unwrapped[i:] += track_length
                 self.performance_trajectory["s_loc"] = s_unwrapped - \
                     s_unwrapped[0] + s_loc_start
+                # rospy.loginfo(
+                #     f"✓ Step 15: s_loc unwrapped - s_loc range=[{self.performance_trajectory['s_loc'][0]:.2f}, {self.performance_trajectory['s_loc'][-1]:.2f}]")
 
                 # throw warning if selected trajectory exceeds 100 % of tire utilization
                 # include tolerance and only throw warning when friction violation occurs on first 30 points of trajectory
                 last_check_idx = min(30, self.trajectory.params.num_samples)
                 if np.max(self.performance_trajectory["tire_util"][:last_check_idx] > 1.01):
                     rospy.logwarn(
-                        f'Trajectory ID {self.traj_cnt}: Max. tire utilization at index {np.argmax(self.performance_trajectory["tire_util"])} is {np.max(self.performance_trajectory["tire_util"])}')
+                        f'[Sampling Core] Trajectory ID {self.traj_cnt}: Max. tire utilization at index {np.argmax(self.performance_trajectory["tire_util"])} is {np.max(self.performance_trajectory["tire_util"])}')
 
                 # extend trajectory if necessary
                 # checks are omitted since this succeeds the planning (time) horizon
                 if self.performance_trajectory["s_loc"][-1] < self.min_trajectory_length:
+                    rospy.logerr(
+                        f"[Sampling Core] Extending trajectory because it is {self.performance_trajectory['s_loc'][-1]} instead of {self.min_trajectory_length} m long.")
 
                     self.performance_trajectory = self.trajectory.extend_performance_trajectory(
                         trajectory=self.performance_trajectory,
                         track_handler=self.track_handler
                     )
 
+                # rospy.loginfo("▶ Step 16: Calculating emergency trajectory...")
                 self.emergency_trajectory = self.trajectory.calc_emergency_trajectory(
                     track_handler=self.track_handler,
                     performance_trajectory=self.performance_trajectory,
@@ -1057,21 +1154,33 @@ class LocalSamplingPlanner:
                 # Handle case where emergency trajectory calculation fails
                 if self.emergency_trajectory is None:
                     rospy.logwarn(
-                        "Emergency trajectory calculation failed, using performance trajectory as fallback")
+                        "[Sampling Core] Emergency trajectory calculation failed, using performance trajectory as fallback")
                     self.emergency_trajectory = copy.deepcopy(
                         self.performance_trajectory)
                     self.emergency_trajectory["emergency"] = True
+                    # rospy.loginfo(
+                    #     "✓ Step 16: Using performance trajectory as emergency fallback")
+                # else:
+                    # rospy.loginfo(
+                    #     f"✓ Step 16: Emergency trajectory calculated (length={len(self.emergency_trajectory.get('s', []))} points)")
 
                 if constant_part_trajectory:
+                    # rospy.loginfo(
+                    #     "▶ Step 17: Concatenating constant trajectory part...")
+                    const_len = len(constant_part_trajectory.get('s', []))
                     for trajectory in [self.performance_trajectory, self.emergency_trajectory]:
                         for key in trajectory:
                             if isinstance(trajectory[key], np.ndarray):
                                 trajectory[key] = np.concatenate(
                                     (constant_part_trajectory[key], trajectory[key]))
+                    # rospy.loginfo(
+                    #     f"✓ Step 17: Added {const_len} constant points to both trajectories")
 
                 # F1TENTH: Add Cartesian coordinates for controller compatibility
                 # The trajectories already have Frenet (s, n, chi) and velocity frame (V, ax, ay) fields
                 # We just need to add global Cartesian fields (x, y, psi, kappa) for Wpnt messages
+                # rospy.loginfo(
+                #     "▶ Step 18: Converting to Cartesian coordinates for F1TENTH controller...")
                 for trajectory in [self.performance_trajectory, self.emergency_trajectory]:
                     # Convert Frenet to Cartesian using track handler
                     xyz_array = self.track_handler.sn2cartesian(
@@ -1086,22 +1195,44 @@ class LocalSamplingPlanner:
                     )
 
                     # Get curvature from track (already available in track handler)
-                    # Note: NumPy < 1.21 doesn't support 'period' parameter
-                    # Trajectory s values should already be within valid range
-                    trajectory["kappa"] = np.interp(
+                    # Use periodic interpolation for smooth wraparound handling
+                    trajectory["kappa"] = interpolate_with_period(
                         trajectory['s'],
                         self.track_handler.s_coord(),
-                        self.track_handler.omega_z()
+                        self.track_handler.omega_z(),
+                        self.track_handler.get_track_length()
                     )
 
                     # Add trajectory counter for debugging
                     trajectory["traj_cnt"] = self.traj_cnt
+                # rospy.loginfo(
+                #     f"✓ Step 18: Cartesian conversion complete (x, y, psi, kappa added to both trajectories)")
 
                 # Note: For F1TENTH, we don't need trajectory_N or complex GGGV calculations
                 # The tam_sampling_node.py will convert these trajectories to OTWpntArray directly
 
-        except:
-            traceback.print_exc()
+                # Final success message
+                perf_pts = len(self.performance_trajectory.get('s', []))
+                emerg_pts = len(self.emergency_trajectory.get('s', []))
+                # rospy.loginfo("="*80)
+                # rospy.loginfo(f"✅ calc_trajectory COMPLETED SUCCESSFULLY")
+                # rospy.loginfo(f"   Performance trajectory: {perf_pts} points")
+                # rospy.loginfo(f"   Emergency trajectory: {emerg_pts} points")
+                # rospy.loginfo(f"   Trajectory counter: {self.traj_cnt}")
+                # rospy.loginfo("="*80)
+
+        except Exception as e:
+            rospy.logerr("="*80)
+            rospy.logerr("⚠️⚠️⚠️ CRITICAL ERROR in calc_trajectory ⚠️⚠️⚠️")
+            rospy.logerr(f"Exception type: {type(e).__name__}")
+            rospy.logerr(f"Exception message: {str(e)}")
+            rospy.logerr("Full traceback:")
+            rospy.logerr(traceback.format_exc())
+            rospy.logerr("="*80)
+            raise  # Re-raise to ensure error is not silently swallowed
+
+        rospy.loginfo(
+            f"[Sampling Core]🚗 calc_trajectory: Finished trajectory calculation")
 
         if not self.debugging:
             return self.performance_trajectory, self.emergency_trajectory, s_start, n_start, V_target,
@@ -1200,7 +1331,12 @@ class LocalSamplingPlanner:
         ) / (
             1.0
             - self.performance_trajectory["n"]
-            * np.interp(self.performance_trajectory["s"], self.track_handler.s_coord(), self.track_handler.omega_z())
+            * interpolate_with_period(
+                self.performance_trajectory["s"],
+                self.track_handler.s_coord(),
+                self.track_handler.omega_z(),
+                self.track_handler.get_track_length()
+            )
         )
         self.performance_trajectory["s_ddot"] = np.zeros_like(
             self.performance_trajectory["s"])  # TODO
@@ -1234,71 +1370,26 @@ class LocalSamplingPlanner:
         s_end_values = np.array([])
         rel_long_sampling_array = np.array([])
 
-        # rospy.logerr("="*80)
-        # rospy.logerr("TRAJECTORY SAMPLING DEBUG - START")
-        # rospy.logerr(f"Initial conditions:")
-        # rospy.logerr(
-        #     f"  s_start={s_start:.3f}, s_dot_start={s_dot_start:.3f}, s_ddot_start={s_ddot_start:.3f}")
-        # rospy.logerr(
-        #     f"  n_start={n_start:.3f}, n_dot_start={n_dot_start:.3f}, n_ddot_start={n_ddot_start:.3f}")
-        # rospy.logerr(
-        #     f"  V_target={V_target:.3f}, sampling_mode={sampling_mode}")
-        # rospy.logerr(
-        #     f"  enable_relative_sampling={enable_relative_sampling}, hybrid_long_sampling={hybrid_long_sampling}")
-
         # determine sampling strategy
         if hybrid_long_sampling and enable_relative_sampling:
             relative_sampling = [True, False]
-            # rospy.logerr(
-            #     f"Using hybrid sampling: [relative=True, relative=False]")
         else:
             relative_sampling = [False]
-            # rospy.logerr(
-            #     f"Using single sampling strategy: relative={relative_sampling[0]}")
 
         for idx, tendency in enumerate(relative_sampling):
-            # rospy.logerr(
-            #     f"\n--- Longitudinal Sampling Pass {idx+1}/{len(relative_sampling)} (relative={tendency}) ---")
+            s_part, s_dot_part, s_ddot_part, s_dot_end_part, s_end_part, rel_long_sampling_part, t_array_part = self.longitudinal_sampling.calc_samples_s_based(
+                s_start=s_start,
+                s_dot_start=s_dot_start,
+                s_ddot_start=s_ddot_start,
+                V_target=V_target,
+                postprocessed_raceline=postprocessed_raceline,
+                track_handler=track_handler,
+                raceline_tendency=tendency
+            )
 
-            # use s based sampling
-            if sampling_mode == "spatial" and s_dot_start > 10.0:
-                # rospy.logerr(
-                #     f"  Using SPATIAL sampling (s_dot_start={s_dot_start:.3f} > 10.0)")
-                s_part, s_dot_part, s_ddot_part, s_dot_end_part, s_end_part, rel_long_sampling_part, t_array_part = self.longitudinal_sampling.calc_samples_s_based(
-                    s_start=s_start,
-                    s_dot_start=s_dot_start,
-                    s_ddot_start=s_ddot_start,
-                    V_target=V_target,
-                    postprocessed_raceline=postprocessed_raceline,
-                    track_handler=track_handler,
-                    raceline_tendency=tendency
-                )
-            # sample with fixed time horizon (traditional way)
-            else:
-                # rospy.logerr(
-                #     f"  Using TEMPORAL sampling (s_dot_start={s_dot_start:.3f} <= 10.0 or not spatial mode)")
-                # F1TENTH NOTE: No GGGV handler, use V_target as V_max
-                s_part, s_dot_part, s_ddot_part, s_dot_end_part, s_end_part, rel_long_sampling_part, t_array_part = self.longitudinal_sampling.calc_samples(
-                    s_start=s_start,
-                    s_dot_start=s_dot_start,
-                    s_ddot_start=s_ddot_start,
-                    V_target=V_target,
-                    V_max=V_target,  # No GGGV, use V_target as max
-                    postprocessed_raceline=postprocessed_raceline,
-                    track_handler=track_handler,
-                    raceline_tendency=tendency
-                )
-
-            # rospy.logerr(f"  Longitudinal sampling produced:")
-            # rospy.logerr(f"    s_part shape: {s_part.shape}")
-            # rospy.logerr(f"    s_dot_part shape: {s_dot_part.shape}")
-            # rospy.logerr(
-            #     f"    s_dot_end_part: {len(s_dot_end_part)} values, range [{np.min(s_dot_end_part):.2f}, {np.max(s_dot_end_part):.2f}]")
-            # rospy.logerr(
-            #     f"    s_end_part: {len(s_end_part)} values, range [{np.min(s_end_part):.2f}, {np.max(s_end_part):.2f}]")
-
-            # concstruct longitudinal sample arrays
-            if s_array.shape[0] == 0:
+            # Concatenate longitudinal samples (first iteration uses assignment, rest use concatenate)
+            if idx == 0:
+                # First iteration: direct assignment
                 s_array = s_part
                 s_dot_array = s_dot_part
                 s_ddot_array = s_ddot_part
@@ -1306,25 +1397,19 @@ class LocalSamplingPlanner:
                 s_end_values = s_end_part
                 rel_long_sampling_array = rel_long_sampling_part
                 t_array = t_array_part
-
             else:
-                # rospy.logerr(
-                #     f"  Concatenating with existing arrays (previous size: {s_array.shape[0]})")
-                s_array = np.concatenate((s_array, s_part))
-                s_dot_array = np.concatenate((s_dot_array, s_dot_part))
-                s_ddot_array = np.concatenate((s_ddot_array, s_ddot_part))
+                # Subsequent iterations: concatenate along axis 0 (trajectory dimension)
+                s_array = np.concatenate((s_array, s_part), axis=0)
+                s_dot_array = np.concatenate((s_dot_array, s_dot_part), axis=0)
+                s_ddot_array = np.concatenate(
+                    (s_ddot_array, s_ddot_part), axis=0)
                 s_dot_end_values = np.concatenate(
-                    (s_dot_end_values, s_dot_end_part))
-                s_end_values = np.concatenate((s_end_values, s_end_part))
+                    (s_dot_end_values, s_dot_end_part), axis=0)
+                s_end_values = np.concatenate(
+                    (s_end_values, s_end_part), axis=0)
                 rel_long_sampling_array = np.concatenate(
-                    (rel_long_sampling_array, rel_long_sampling_part))
-                t_array = np.concatenate((t_array, t_array_part))
-
-        # rospy.logerr(f"\n--- After Standard Longitudinal Sampling ---")
-        # rospy.logerr(f"  Total longitudinal samples: {s_array.shape[0]}")
-        # rospy.logerr(f"  s_array shape: {s_array.shape}")
-        # rospy.logerr(f"  s_dot_end_values: {len(s_dot_end_values)} values")
-        # rospy.logerr(f"  s_end_values: {len(s_end_values)} values")
+                    (rel_long_sampling_array, rel_long_sampling_part), axis=0)
+                t_array = np.concatenate((t_array, t_array_part), axis=0)
 
         # Forward backward integrated velocity profiles
         if self.add_forward_backward_samples:
@@ -1341,14 +1426,8 @@ class LocalSamplingPlanner:
                 track_handler=track_handler,
                 gggv_handler=self.gggv_handler,
                 pitlane_mode=self.pitlane_mode,
-                raceline_tendency=False
+                raceline_tendency=True
             )
-
-            # rospy.logerr(f"  Forward-backward produced:")
-            # rospy.logerr(
-            #     f"    s_part shape: {s_part.shape if s_part is not None else 'None'}")
-            # rospy.logerr(
-            #     f"    s_dot_part shape: {s_dot_part.shape if s_dot_part is not None else 'None'}")
 
             s_array = np.concatenate((s_array, s_part))
             s_dot_array = np.concatenate((s_dot_array, s_dot_part))
@@ -1360,29 +1439,7 @@ class LocalSamplingPlanner:
                 (rel_long_sampling_array, rel_long_sampling_part))
             t_array = np.concatenate((t_array, t_array_part))
         else:
-            # rospy.logerr(f"\n--- Forward-Backward Sampling ---")
-            # rospy.logerr(
-            #     f"  add_forward_backward_samples=False, skipping forward-backward integration")
             pass
-
-        # rospy.logerr(
-        #     f"\n--- Final Longitudinal Arrays (before lateral sampling) ---")
-        # rospy.logerr(f"  Total longitudinal samples: {s_array.shape[0]}")
-        # rospy.logerr(f"  s_array shape: {s_array.shape}")
-        # rospy.logerr(f"  s_dot_array shape: {s_dot_array.shape}")
-        # rospy.logerr(f"  s_ddot_array shape: {s_ddot_array.shape}")
-        # rospy.logerr(f"  t_array shape: {t_array.shape}")
-        # rospy.logerr(
-        #     f"  s_dot_end_values: {len(s_dot_end_values)} unique velocity targets")
-        # rospy.logerr(
-        #     f"  s_end_values: {len(s_end_values)} unique arc length endpoints")
-
-        # lateral sampling mode is temporal
-        # rospy.logerr(f"\n--- Starting Lateral Sampling ---")
-        # rospy.logerr(f"  Input: {s_array.shape[0]} longitudinal trajectories")
-        # rospy.logerr(f"  s_dot_end_values length: {len(s_dot_end_values)}")
-        # rospy.logerr(
-        #     f"  Expected to expand to: {s_array.shape[0]} * n_lateral_samples")
 
         n_array, n_dot_array, n_ddot_array = self.lateral_sampling.calc_samples(
             s_start=s_start,
@@ -1401,50 +1458,5 @@ class LocalSamplingPlanner:
             track_handler=track_handler,
             vehicle_params=self.vehicle_params,
         )
-
-        # rospy.logerr(f"\n--- After Lateral Sampling ---")
-        # rospy.logerr(f"  n_array shape: {n_array.shape}")
-        # rospy.logerr(f"  n_dot_array shape: {n_dot_array.shape}")
-        # rospy.logerr(f"  n_ddot_array shape: {n_ddot_array.shape}")
-
-        # if n_array.shape[0] > 0:
-        #     # Check for lateral variation at END points (not start - all start at current position!)
-        #     # Check LAST point of each trajectory
-        #     n_end_points = n_array[:, -1]
-        #     unique_n_end = np.unique(np.round(n_end_points, 6))
-        #
-        #     # Also check middle point for additional verification
-        #     mid_idx = n_array.shape[1] // 2
-        #     n_mid_points = n_array[:, mid_idx]
-        #     unique_n_mid = np.unique(np.round(n_mid_points, 6))
-        #
-        #     rospy.logerr(f"  Lateral position variation:")
-        #     rospy.logerr(
-        #         f"    Start point n: {n_array[0, 0]:.3f} (all should be identical - current car position)")
-        #     rospy.logerr(
-        #         f"    Unique n values (END point): {len(unique_n_end)}")
-        #     rospy.logerr(
-        #         f"    Unique n values (MID point): {len(unique_n_mid)}")
-        #     rospy.logerr(
-        #         f"    n range (end): [{np.min(n_end_points):.3f}, {np.max(n_end_points):.3f}]")
-        #     rospy.logerr(f"    n mean (end): {np.mean(n_end_points):.3f}")
-        #
-        #     if len(unique_n_end) == 1:
-        #         rospy.logerr(
-        #             f"  ⚠️  WARNING: All trajectories have IDENTICAL end n = {unique_n_end[0]:.6f}")
-        #         rospy.logerr(
-        #             f"  ⚠️  Lateral sampling failed to produce variation!")
-        #     else:
-        #         rospy.logerr(
-        #             f"  ✓ Lateral variation detected: {len(unique_n_end)} unique end positions")
-
-        # rospy.logerr(f"\n--- Final Trajectory Arrays ---")
-        # rospy.logerr(f"  Total trajectories: {n_array.shape[0]}")
-        # rospy.logerr(
-        #     f"  Points per trajectory: {n_array.shape[1] if len(n_array.shape) > 1 else 0}")
-        # rospy.logerr(
-        #     f"  rel_long_sampling_array shape: {rel_long_sampling_array.shape}")
-        # rospy.logerr("TRAJECTORY SAMPLING DEBUG - END")
-        # rospy.logerr("="*80 + "\n")
 
         return s_array, s_dot_array, s_ddot_array, n_array, n_dot_array, n_ddot_array, rel_long_sampling_array, t_array
