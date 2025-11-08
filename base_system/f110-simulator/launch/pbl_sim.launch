@@ -21,7 +21,13 @@
 
   <!-- Launch a map from the maps folder-->
   <arg name="map_name" default="hangar"/>
-  <!-- Note: Map server now launched globally in multi_car.launch -->
+  
+  <!-- Launch map server (only if frame_prefix is empty, meaning single-car mode) -->
+  <!-- In multi-car mode, map server is launched globally in multi_car.launch -->
+  <group unless="$(eval arg('frame_prefix') != '')">
+    <node pkg="map_server" name="map_server" type="map_server" 
+          args="$(arg base_map_dir)/maps/$(arg map_name)/$(arg map_name).yaml"/>
+  </group>
 
   <!-- Launch the racecar model with modified frame names -->
   <include file="$(find f1tenth_simulator)/launch/racecar_model.launch">
@@ -89,7 +95,13 @@
     <rosparam ns="map_params" command="load" file="$(arg base_map_dir)/maps/$(arg map_name)/speed_scaling.yaml"/>
     <rosparam ns="ot_map_params" command="load" file="$(arg base_map_dir)/maps/$(arg map_name)/ot_sectors.yaml"/>
   
-    <!--  Note: Global republisher now launched globally in multi_car.launch -->
+    <!-- Launch global trajectory publisher (only if frame_prefix is empty, meaning single-car mode) -->
+    <!-- In multi-car mode, global republisher is launched globally in multi_car.launch -->
+    <group unless="$(eval arg('frame_prefix') != '')">
+      <node name="global_republisher" pkg="gb_optimizer" type="global_trajectory_publisher.py" output="screen">
+        <param name="global_republisher/map_name" value="$(arg map_name)"/>
+      </node>
+    </group>
   </group>
 
   <!-- Begin the simulator with the parameters from params.yaml -->
@@ -107,6 +119,35 @@
     <param name="front_left_hinge_frame" value="$(arg frame_prefix)front_left_hinge" if="$(eval arg('frame_prefix') != '')" />
     <param name="front_right_hinge_frame" value="$(arg frame_prefix)front_right_hinge" if="$(eval arg('frame_prefix') != '')" />
   </node>
+
+  <!-- Topic relays for single-car mode (simulator topics to expected topics) -->
+  <!-- In multi-car mode, these relays are handled in multi_car.launch -->
+  <group unless="$(eval arg('frame_prefix') != '')">
+    <!-- Simulator output relays -->
+    <node pkg="topic_tools" type="relay" name="car_state_odom_relay" 
+          args="f1tenth_simulator/car_state/odom car_state/odom" />
+    <node pkg="topic_tools" type="relay" name="car_state_pose_relay" 
+          args="f1tenth_simulator/car_state/pose car_state/pose" />
+    <node pkg="topic_tools" type="relay" name="scan_relay" 
+          args="f1tenth_simulator/scan scan" />
+    
+    <!-- Behavior controller relays (for mux control signals and sensor data) -->
+    <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
+          args="behavior_controller/mux mux_controller/mux" />
+    <node pkg="topic_tools" type="relay" name="behavior_odom_relay" 
+          args="car_state/odom behavior_controller/car_state/odom" />
+    <node pkg="topic_tools" type="relay" name="behavior_scan_relay" 
+          args="scan behavior_controller/scan" />
+    
+    <!-- Control pipeline relays (controller -> mux -> simulator) -->
+    <node pkg="topic_tools" type="relay" name="controller_to_mux_relay" 
+          args="nav_drive mux_controller/nav_drive" />
+    <node pkg="topic_tools" type="relay" name="mux_to_simulator_relay" 
+          args="mux_controller/vesc/high_level/ackermann_cmd_mux/input/nav_1 f1tenth_simulator/vesc/high_level/ackermann_cmd_mux/input/nav_1" />
+    
+    <!-- Auto-enable navigation mux (ensures relays are ready before enabling) -->
+    <node pkg="f1tenth_simulator" type="auto_enable_nav_mux.py" name="auto_enable_nav_mux" output="screen" />
+  </group>
 
   <!-- Launch RVIZ -->
   <group if="$(arg rviz)">

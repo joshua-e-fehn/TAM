@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="car_name" default="car1" />
+    <!-- CRITICAL: car_name defaults to empty string for single-car mode -->
+    <!-- When used in multi_car.launch, this will be overridden to "car1", "car2", etc. -->
+    <arg name="car_name" default="" />
     <arg name="racecar_version" default="NUC2" /> <!--  JETx / NUCx ... -->
     <!-- Added to satisfy graph_based planner param passing in multi-car launches -->
     <arg name="map_name" default="" />

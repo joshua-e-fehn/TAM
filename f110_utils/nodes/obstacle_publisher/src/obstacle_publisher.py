@@ -77,6 +77,20 @@ class ObstaclePublisher:
                 else:
                     rospy.logwarn("Using static parameters from launch file")
 
+        # Update dynamic reconfigure server with launch file parameters
+        if self.dyn_client is not None:
+            try:
+                rospy.loginfo("Updating dynamic reconfigure with launch file parameters...")
+                self.dyn_client.update_configuration({
+                    'speed_scaler': self.speed_scaler,
+                    'path_amplitude': self.path_amplitude,
+                    'path_frequency': self.path_frequency,
+                    'path_phase': self.path_phase
+                })
+                rospy.loginfo(f"Dynamic reconfigure updated: speed_scaler={self.speed_scaler}, path_amplitude={self.path_amplitude}")
+            except Exception as e:
+                rospy.logwarn(f"Failed to update dynamic reconfigure: {e}")
+
         # choose trajectory
         self.waypoints_type = rospy.get_param(
             '~trajectory', rospy.get_param('obstacle_publisher/trajectory', 'min_curv'))
