@@ -113,7 +113,7 @@ class StateMachine:
             'state_machine/lateral_width_ot_m', 0.3)
         self.splini_hyst_timer_sec = rospy.get_param(
             'state_machine/splini_hyst_timer_sec', 0.75)
-        self.emergency_break_horizon = 1.1
+        self.emergency_break_horizon = 5.0
         self.emergency_break_d = 0.12
 
         # Graph Based / Frenet
@@ -171,6 +171,14 @@ class StateMachine:
                 StateType.TRAILING: state_transitions.PSTrailingTransition,
                 StateType.OVERTAKE: state_transitions.PSOvertakingTransition,
                 StateType.FTGONLY: state_transitions.PSFTGOnlyTransition,
+            }
+        elif self.ot_planner == "predictive_sampler":
+            self.state_transitions = {
+                StateType.READY: state_transitions.PSAMPReadyTransition,
+                StateType.GB_TRACK: state_transitions.PSSAMPGlobalTrackingTransition,
+                StateType.TRAILING: state_transitions.PSSAMPTrailingTransition,
+                StateType.OVERTAKE: state_transitions.PSSAMPSamplingTransition,
+                StateType.FTGONLY: state_transitions.PSSAMPFTGOnlyTransition,
             }
         elif self.ot_planner == "tam_sampling":
             self.state_transitions = {
@@ -237,10 +245,10 @@ class StateMachine:
                          self.obstacle_perception_cb)
         rospy.Subscriber("collision_prediction/obstacles",
                          ObstacleArray, self.obstacle_prediction_cb)
-        if self.ot_planner in ("spliner", "predictive_spliner", "tam_sampling"):
+        if self.ot_planner in ("spliner", "predictive_spliner", "tam_sampling", "predictive_sampler"):
             rospy.Subscriber("planner/avoidance/otwpnts",
                              OTWpntArray, self.avoidance_cb, queue_size=1)
-        if self.ot_planner == "predictive_spliner":
+        if self.ot_planner in ["predictive_spliner", "predictive_sampler"]:
             rospy.Subscriber("planner/avoidance/merger",
                              Float32MultiArray, self.merger_cb)
             rospy.Subscriber("collision_prediction/force_trailing",
@@ -324,11 +332,11 @@ class StateMachine:
         # Reject stale messages (older than 200ms) to prevent using outdated trajectories
         # At 20Hz planning rate, 200ms = 4 planning cycles is reasonable tolerance
         if msg_age > 0.6:
-            rospy.logwarn_throttle(5.0,  # Only log every 5 seconds to avoid spam
-                                   f"[{self.name}] 🕐 REJECTING STALE MESSAGE | "
-                                   f"msg_age={msg_age*1000:.1f}ms | "
-                                   f"wpnts={len(data.wpnts)} | "
-                                   f"Ignoring outdated trajectory")
+            # rospy.logwarn_throttle(5.0,  # Only log every 5 seconds to avoid spam
+            #                        f"[{self.name}] 🕐 REJECTING STALE MESSAGE | "
+            #                        f"msg_age={msg_age*1000:.1f}ms | "
+            #                        f"wpnts={len(data.wpnts)} | "
+            #                        f"Ignoring outdated trajectory")
             return
 
         # Additional check: Only accept messages newer than the last one we processed
@@ -359,10 +367,10 @@ class StateMachine:
             # Clear avoidance_wpnts to trigger fallback in states.py
             self.avoidance_wpnts = None
             callback_time = (rospy.Time.now() - callback_start).to_sec()
-            rospy.logwarn(
-                f"[{self.name}] ⚠️ Received EMPTY avoidance waypoints - setting to None | "
-                f"msg_age={msg_age*1000:.1f}ms | callback_time={callback_time*1000:.1f}ms | "
-                f"(published at {data.header.stamp.to_sec():.3f}, received at {callback_start.to_sec():.3f})")
+            # rospy.logwarn(
+            #     f"[{self.name}] ⚠️ Received EMPTY avoidance waypoints - setting to None | "
+            #     f"msg_age={msg_age*1000:.1f}ms | callback_time={callback_time*1000:.1f}ms | "
+            #     f"(published at {data.header.stamp.to_sec():.3f}, received at {callback_start.to_sec():.3f})")
 
     def frenet_pose_cb(self, data: Odometry):
         self.cur_s = data.pose.pose.position.x
@@ -479,7 +487,7 @@ class StateMachine:
         self.splini_hyst_timer_sec = rospy.get_param(
             "dynamic_statemachine_server/splini_hyst_timer_sec", 0.75)
         self.emergency_break_horizon = rospy.get_param(
-            "dynamic_statemachine_server/emergency_break_horizon", 1.1)
+            "dynamic_statemachine_server/emergency_break_horizon", 5.0)  # Must be > trailing_gap for safety
         self.ftg_speed_mps = rospy.get_param(
             "dynamic_statemachine_server/ftg_speed_mps", 1.0)
         self.ftg_timer_sec = rospy.get_param(
@@ -593,14 +601,14 @@ class StateMachine:
         o_free = True
 
         # Slightly different for spliner and TAM sampling (both use avoidance waypoints)
-        if self.ot_planner == "spliner" or self.ot_planner == "predictive_spliner" or self.ot_planner == "tam_sampling":
+        if self.ot_planner == "spliner" or self.ot_planner == "predictive_spliner" or self.ot_planner == "tam_sampling" or self.ot_planner == "predictive_sampler":
             if not self.timetrials_only and self.last_valid_avoidance_wpnts is not None:
                 # Horizon in front of cur_s [m]
                 horizon = self.overtaking_horizon_m
 
                 # Use frenet conversion service to convert (s, d) wrt min curv trajectory to (x, y) in map
                 for obs in self.obstacles:
-                    if self.ot_planner == "spliner" or (self.ot_planner == "predictive_spliner" and obs.is_static == True) or self.ot_planner == "tam_sampling":
+                    if self.ot_planner == "spliner" or (self.ot_planner == "predictive_spliner" and obs.is_static == True) or self.ot_planner == "tam_sampling" or self.ot_planner == "predictive_sampler":
                         obs_s = obs.s_center
                         # Wrapping madness to check if infront
                         dist_to_obj = (obs_s - self.cur_s) % self.max_s
@@ -711,17 +719,18 @@ class StateMachine:
     def _check_availability_splini_wpts(self) -> bool:
 
         if self.avoidance_wpnts is None:
-            rospy.logwarn_throttle(2.0,
-                                   f"[{self.name}] _check_availability: avoidance_wpnts is None -> returning False")
+            # rospy.logwarn_throttle(2.0,
+            #                        f"[{self.name}] _check_availability: avoidance_wpnts is None -> returning False")
             return False
         elif len(self.avoidance_wpnts.wpnts) == 0:
-            rospy.logwarn(
-                f"[{self.name}] _check_availability: avoidance_wpnts has 0 waypoints -> returning False")
+            # rospy.logwarn(
+            #     f"[{self.name}] _check_availability: avoidance_wpnts has 0 waypoints -> returning False")
             return False
 
         # TAM sampling planner: Skip hysteresis check (doesn't switch between discrete sides)
         # TAM continuously optimizes trajectories, no need for side-switching debouncing
-        if self.ot_planner == "tam_sampling":
+        # Predictive Sampler also uses TAM's continuous optimization
+        if self.ot_planner == "tam_sampling" or self.ot_planner == "predictive_sampler":
             self.last_valid_avoidance_wpnts = self.avoidance_wpnts.wpnts.copy()
             rospy.loginfo_throttle(2.0,
                                    f"[{self.name}] ✓✓✓ TAM: Skipping hysteresis, updating last_valid with {len(self.last_valid_avoidance_wpnts)} waypoints | "
@@ -766,7 +775,7 @@ class StateMachine:
 
     def _check_emergency_break(self) -> bool:
         emergency_break = False
-        if self.ot_planner == "predictive_spliner":
+        if self.ot_planner == "predictive_spliner" or self.ot_planner == "predictive_sampler":
             if not self.timetrials_only:
                 obstacles = self.obstacles_perception.copy()
                 if obstacles != []:
@@ -807,9 +816,9 @@ class StateMachine:
                             if abs(ot_obs_dist) < self.emergency_break_d:
                                 emergency_break = True
                                 obstacle_type = "STATIC" if obs.is_static else "DYNAMIC"
-                                rospy.logwarn_throttle(5.0, f"[{car_name}] STATE MACHINE EMERGENCY BRAKE TRIGGERED! "
-                                                       f"Obstacle {obs.id} ({obstacle_type}): lateral_distance={abs(ot_obs_dist):.3f}m < threshold={self.emergency_break_d:.3f}m, "
-                                                       f"longitudinal_distance={dist_to_obj:.2f}m < horizon={horizon:.2f}m")
+                                # rospy.logwarn_throttle(1.0, f"[{car_name}] STATE MACHINE EMERGENCY BRAKE TRIGGERED! "
+                                #                        f"Obstacle {obs.id} ({obstacle_type}): lateral_distance={abs(ot_obs_dist):.3f}m < threshold={self.emergency_break_d:.3f}m, "
+                                #                        f"longitudinal_distance={dist_to_obj:.2f}m < horizon={horizon:.2f}m, {self.cur_state}")
             else:
                 emergency_break = False
             return emergency_break
@@ -1244,10 +1253,10 @@ class StateMachine:
             end = time.perf_counter()
             self.latency_pub.publish(end - start)
 
-        # Detect state transitions to/from OVERTAKE for spliner and predictive_spliner
+        # Detect state transitions to/from OVERTAKE for spliner, predictive_spliner, and predictive_sampler
         if self.cur_state != self.previous_state:
-            # Only log for spliner and predictive_spliner (not tam_sampling)
-            if self.ot_planner in ["spliner", "predictive_spliner"]:
+            # Only log for spliner, predictive_spliner, and predictive_sampler (not tam_sampling)
+            if self.ot_planner in ["spliner", "predictive_spliner", "predictive_sampler"]:
                 if self.cur_state == StateType.OVERTAKE or self.previous_state == StateType.OVERTAKE:
                     transition_msg = f"{self.previous_state.value} -> {self.cur_state.value}"
                     self.state_transition_pub.publish(transition_msg)
@@ -1353,7 +1362,7 @@ class StateMachine:
                 self.last_valid_avoidance_wpnts = None
                 self.avoidance_wpnts = WpntArray()
                 self.splini_ttl_counter = -1
-        elif self.ot_planner == "predictive_spliner":
+        elif self.ot_planner in ["predictive_spliner", "predictive_sampler"]:
             self.splini_ttl_counter -= 1
             # Once ttl has reached 0 we overwrite the avoidance waypoints with the empty waypoints
             if self.splini_ttl_counter <= 0:

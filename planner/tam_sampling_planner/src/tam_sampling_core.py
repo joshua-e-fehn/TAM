@@ -1020,8 +1020,8 @@ class LocalSamplingPlanner:
 
             # Check if we have any valid trajectories before cost calculation
             if np.sum(valid_array) == 0:
-                rospy.logerr(
-                    "[Sampling Core] ⚠️⚠️⚠️ CRITICAL: No valid trajectories found!")
+                # rospy.logerr(
+                #     "[Sampling Core] ⚠️⚠️⚠️ CRITICAL: No valid trajectories found!")
                 self.performance_trajectory.clear()
                 self.emergency_trajectory.clear()
                 # Return None to indicate no valid trajectory
@@ -1133,8 +1133,8 @@ class LocalSamplingPlanner:
                 # extend trajectory if necessary
                 # checks are omitted since this succeeds the planning (time) horizon
                 if self.performance_trajectory["s_loc"][-1] < self.min_trajectory_length:
-                    rospy.logerr(
-                        f"[Sampling Core] Extending trajectory because it is {self.performance_trajectory['s_loc'][-1]} instead of {self.min_trajectory_length} m long.")
+                    # rospy.logerr(
+                    #     f"[Sampling Core] Extending trajectory because it is {self.performance_trajectory['s_loc'][-1]} instead of {self.min_trajectory_length} m long.")
 
                     self.performance_trajectory = self.trajectory.extend_performance_trajectory(
                         trajectory=self.performance_trajectory,
@@ -1231,8 +1231,8 @@ class LocalSamplingPlanner:
             rospy.logerr("="*80)
             raise  # Re-raise to ensure error is not silently swallowed
 
-        rospy.loginfo(
-            f"[Sampling Core]🚗 calc_trajectory: Finished trajectory calculation")
+        # rospy.loginfo(
+        #     f"[Sampling Core]🚗 calc_trajectory: Finished trajectory calculation")
 
         if not self.debugging:
             return self.performance_trajectory, self.emergency_trajectory, s_start, n_start, V_target,

@@ -849,11 +849,11 @@ class LongitudinalSampling:
                 raceline_v_start = postprocessed_raceline["s_dot_post"][0]
                 raceline_v_end = s_dot_end_rl
                 if abs(v_start_rel) > 0.7 * raceline_v_start or abs(v_end_rel) > 0.7 * raceline_v_end:
-                    rospy.logwarn_throttle(5.0,
-                                           f"LongitudinalSampling: Large velocity difference from raceline detected "
-                                           f"(v_start={s_dot_start:.2f} vs rl={raceline_v_start:.2f}, "
-                                           f"v_end={s_dot_end:.2f} vs rl={raceline_v_end:.2f}). "
-                                           f"Switching to absolute sampling for this trajectory to avoid negative velocities.")
+                    # rospy.logwarn_throttle(5.0,
+                    #                        f"LongitudinalSampling: Large velocity difference from raceline detected "
+                    #                        f"(v_start={s_dot_start:.2f} vs rl={raceline_v_start:.2f}, "
+                    #                        f"v_end={s_dot_end:.2f} vs rl={raceline_v_end:.2f}). "
+                    #                        f"Switching to absolute sampling for this trajectory to avoid negative velocities.")
                     # Use absolute sampling instead
                     use_absolute_sampling = True
                     b = np.array([s_dot_start,
@@ -885,9 +885,9 @@ class LongitudinalSampling:
                 abs(b[1]) < 0.01 and abs(b[3]) < 0.01)
 
             if use_monotonic_interpolation:
-                rospy.logwarn_throttle(5.0,
-                                       f"LongitudinalSampling: Zero derivatives detected (v_start={b[0]:.2f}, v_end={b[2]:.2f}). "
-                                       f"Using monotonic interpolation to prevent negative velocity valleys.")
+                # rospy.logwarn_throttle(5.0,
+                #                        f"LongitudinalSampling: Zero derivatives detected (v_start={b[0]:.2f}, v_end={b[2]:.2f}). "
+                #                        f"Using monotonic interpolation to prevent negative velocity valleys.")
 
                 # For absolute sampling: b[0] and b[2] are actual velocities
                 # For relative sampling: b[0] and b[2] are velocity differences
@@ -927,12 +927,12 @@ class LongitudinalSampling:
             if np.any(s_dot_sample < 0):
                 min_velocity = np.min(s_dot_sample)
                 min_idx = np.argmin(s_dot_sample)
-                rospy.logerr(
-                    f"LongitudinalSampling: Polynomial fitting produced negative velocity {min_velocity:.3f} m/s at s={s_loc_vector[min_idx]:.2f}m. "
-                    f"Boundary conditions: s_dot_start={s_dot_start:.2f} m/s, s_dot_end={s_dot_end:.2f} m/s, distance={s_end_loc:.2f}m. "
-                    f"Derivatives: s_pprime_start={s_pprime_start:.3f}, s_pprime_end={s_pprime_end:.3f}. "
-                    f"This indicates derivative mismatch (s_ddot/s_dot transformation amplifies at low velocities). "
-                    f"Clamping to minimum 0.5 m/s.")
+                # rospy.logerr(
+                #     f"LongitudinalSampling: Polynomial fitting produced negative velocity {min_velocity:.3f} m/s at s={s_loc_vector[min_idx]:.2f}m. "
+                #     f"Boundary conditions: s_dot_start={s_dot_start:.2f} m/s, s_dot_end={s_dot_end:.2f} m/s, distance={s_end_loc:.2f}m. "
+                #     f"Derivatives: s_pprime_start={s_pprime_start:.3f}, s_pprime_end={s_pprime_end:.3f}. "
+                #     f"This indicates derivative mismatch (s_ddot/s_dot transformation amplifies at low velocities). "
+                #     f"Clamping to minimum 0.5 m/s.")
                 # Clamp to safe minimum
                 s_dot_sample = np.maximum(s_dot_sample, 0.5)
 
@@ -970,17 +970,17 @@ class LongitudinalSampling:
             # Clamp velocity to [0, max_velocity]
             max_vel = np.max(s_dot)
             if max_vel > self.params.max_velocity:
-                rospy.logwarn_throttle(5.0,
-                                       f"LongitudinalSampling: Trajectory exceeds max velocity "
-                                       f"({max_vel:.2f} > {self.params.max_velocity:.2f} m/s). Clamping.")
+                # rospy.logwarn_throttle(5.0,
+                #                        f"LongitudinalSampling: Trajectory exceeds max velocity "
+                #                        f"({max_vel:.2f} > {self.params.max_velocity:.2f} m/s). Clamping.")
                 s_dot = np.minimum(s_dot, self.params.max_velocity)
 
             # Clamp acceleration to [-max_acceleration, max_acceleration]
             max_accel = np.max(np.abs(s_ddot))
             if max_accel > self.params.max_acceleration:
-                rospy.logwarn_throttle(5.0,
-                                       f"LongitudinalSampling: Trajectory exceeds max acceleration "
-                                       f"({max_accel:.2f} > {self.params.max_acceleration:.2f} m/s²). Clamping.")
+                # rospy.logwarn_throttle(5.0,
+                #                        f"LongitudinalSampling: Trajectory exceeds max acceleration "
+                #                        f"({max_accel:.2f} > {self.params.max_acceleration:.2f} m/s²). Clamping.")
                 s_ddot = np.clip(
                     s_ddot, -self.params.max_acceleration, self.params.max_acceleration)
             # End | Part of neg time horizon fix

@@ -343,11 +343,11 @@ class RaceEventMonitor:
             from_state, to_state = transition.split(" -> ")
 
             # Only log transitions involving OVERTAKE state
-            if "OVERTAKE" in transition:
-                details = f"{car_name} state transition: {transition}"
-                self.log_event('state_transition', car1_name=car_name,
-                               details=details)
-                rospy.loginfo(f"[Race Monitor] {details}")
+            # if "OVERTAKE" in transition:
+            details = f"{car_name} state transition: {transition}"
+            self.log_event('state_transition', car1_name=car_name,
+                           details=details)
+            rospy.loginfo(f"[Race Monitor] {details}")
 
     def calculate_distance(self, pose1, pose2):
         """Calculate Euclidean distance between two poses"""

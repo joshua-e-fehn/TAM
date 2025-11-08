@@ -50,22 +50,22 @@ class MarkerColorModifier:
 
         # Opponent prediction colors (darker, more transparent)
         self.opponent_colors = {
-            # Orange - Car1's opponent prediction
-            'car1': ColorRGBA(0.8, 0.4, 0.0, 0.6),
-            # Purple - Car2's opponent prediction
-            'car2': ColorRGBA(0.6, 0.0, 0.8, 0.6),
-            # Cyan - Car3's opponent prediction
-            'car3': ColorRGBA(0.0, 0.6, 0.6, 0.6),
-            # Dark Yellow - Car4's opponent prediction
-            'car4': ColorRGBA(0.8, 0.6, 0.0, 0.6),
+            # Red - Car1's opponent prediction
+            'car1': ColorRGBA(1.0, 0.0, 0.0, 0.5),
+            # Blue - Car2's opponent prediction
+            'car2': ColorRGBA(0.0, 0.5, 1.0, 0.5),
+            # Green - Car3's opponent prediction
+            'car3': ColorRGBA(0.0, 1.0, 0.0, 0.5),
+            # Yellow - Car4's opponent prediction
+            'car4': ColorRGBA(1.0, 1.0, 0.0, 0.5),
         }
 
         # Collision prediction colors (warning colors)
         self.collision_colors = {
-            'car1': ColorRGBA(1.0, 0.0, 0.0, 0.9),  # Red - Car1 collision
-            'car2': ColorRGBA(1.0, 0.5, 0.0, 0.9),  # Orange - Car2 collision
-            'car3': ColorRGBA(1.0, 0.0, 0.5, 0.9),  # Pink - Car3 collision
-            'car4': ColorRGBA(1.0, 1.0, 0.0, 0.9),  # Yellow - Car4 collision
+            'car1': ColorRGBA(1.0, 0.0, 0.0, 0.5),  # Red - Car1 collision
+            'car2': ColorRGBA(0.0, 0.5, 1.0, 0.5),  # Blue - Car2 collision
+            'car3': ColorRGBA(0.0, 1.0, 0.0, 0.5),  # Green - Car3 collision
+            'car4': ColorRGBA(1.0, 1.0, 0.0, 0.5),  # Yellow - Car4 collision
         }
 
         # Default colors for unknown cars
@@ -260,7 +260,7 @@ class MarkerColorModifier:
         try:
             # Convert single marker to MarkerArray for consistency
             marker_array = MarkerArray()
-            modified_marker = self.modify_marker(msg, "collision_begin", 1000)
+            modified_marker = self.modify_marker(msg, "collision", 1000)
             marker_array.markers = [modified_marker]
             self.collision_pub.publish(marker_array)
         except Exception as e:
@@ -272,7 +272,7 @@ class MarkerColorModifier:
         try:
             # Convert single marker to MarkerArray for consistency
             marker_array = MarkerArray()
-            modified_marker = self.modify_marker(msg, "collision_end", 2000)
+            modified_marker = self.modify_marker(msg, "collision", 2000)
             marker_array.markers = [modified_marker]
             self.collision_pub.publish(marker_array)
         except Exception as e:

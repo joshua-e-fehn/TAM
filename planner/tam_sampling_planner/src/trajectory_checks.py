@@ -558,11 +558,11 @@ class TrajectoryChecks():
                     best_idx = np.argmin(max_violations)
                     valid_tmp[best_idx] = True
 
-                    rospy.logwarn(
-                        f"Trajectory ID {traj_cnt}: All trajectories exceed friction limits. "
-                        f"Keeping best with max tire util={max_violations[best_idx]:.3f} "
-                        f"(threshold={effective_threshold:.3f}, relaxation={self.params.tire_util_relaxation:.2f})"
-                    )
+                    # rospy.logwarn(
+                    #     f"Trajectory ID {traj_cnt}: All trajectories exceed friction limits. "
+                    #     f"Keeping best with max tire util={max_violations[best_idx]:.3f} "
+                    #     f"(threshold={effective_threshold:.3f}, relaxation={self.params.tire_util_relaxation:.2f})"
+                    # )
 
                 # Store trajectories that failed this check for visualizer (only if not already marked)
                 if self.debugging:
@@ -700,84 +700,84 @@ class TrajectoryChecks():
         valid_percentage = (
             num_valid_final / total_trajectories * 100) if total_trajectories > 0 else 0
 
-        if num_valid_final == 0 or valid_percentage < 5.0:
-            rospy.logerr("\n" + "="*80)
+        # if num_valid_final == 0 or valid_percentage < 5.0:
+        #     rospy.logerr("\n" + "="*80)
+        #     rospy.logerr(
+        #         f"⚠️  TRAJECTORY VALIDATION SUMMARY - Trajectory ID {traj_cnt}")
+        #     rospy.logerr("="*80)
+        #     rospy.logerr(
+        #         f"Final valid trajectories: {num_valid_final}/{total_trajectories} ({valid_percentage:.1f}%)")
+        #     rospy.logerr("\nFailure breakdown:")
+
+        #     # Count failures by type
+        #     failure_counts = {}
+        #     for reason in ["curvature", "vehicle_capability", "path_collision", "friction", ""]:
+        #         count = np.sum(invalid_array_info == reason)
+        #         if count > 0 or reason == "":
+        #             failure_counts[reason] = count
+
+        #     # Curvature check failures
+        #     curvature_failures = failure_counts.get("curvature", 0)
+        #     curvature_pct = (
+        #         curvature_failures / total_trajectories * 100) if total_trajectories > 0 else 0
+        #     rospy.logerr(
+        #         f"  📐 Curvature check:      {curvature_failures:3d}/{total_trajectories} failed ({curvature_pct:5.1f}%)"
+        #     )
+
+        #     # # Vehicle capability check failures
+        #     # capability_failures = failure_counts.get("vehicle_capability", 0)
+        #     # capability_pct = (
+        #     #     capability_failures / total_trajectories * 100) if total_trajectories > 0 else 0
+        #     # rospy.logerr(
+        #     #     f"  🚗 Vehicle capability:   {capability_failures:3d}/{total_trajectories} failed ({capability_pct:5.1f}%)"
+        #     # )
+
+        #     # # Show detailed breakdown of which capability limits were exceeded
+        #     # if capability_failures > 0 and 'valid_speed' in locals():
+        #     #     num_speed_violations = np.sum(~valid_speed)
+        #     #     num_ax_violations = np.sum(~valid_ax)
+
+        #     #     if num_speed_violations > 0:
+        #     #         rospy.logerr(
+        #     #             f"      └─ Speed exceeded:     {num_speed_violations:3d} trajectories "
+        #     #             f"(max={self.params.max_speed:.1f} m/s)"
+        #     #         )
+        #     #     if num_ax_violations > 0:
+        #     #         rospy.logerr(
+        #     #             f"      └─ Longitudinal accel: {num_ax_violations:3d} trajectories "
+        #     #             f"(max={self.params.max_accel:.1f} m/s²)"
+        #     #         )
+        #     #     # Note: Lateral accel not checked here - handled by Pacejka friction check
+
+        #     # Path collision check failures
+        #     collision_failures = failure_counts.get("path_collision", 0)
+        #     collision_pct = (
+        #         collision_failures / total_trajectories * 100) if total_trajectories > 0 else 0
+        #     rospy.logerr(
+        #         f"  🚧 Path collision check: {collision_failures:3d}/{total_trajectories} failed ({collision_pct:5.1f}%)"
+        #     )
+
+        #     # Friction check failures
+        #     friction_failures = failure_counts.get("friction", 0)
+        #     friction_pct = (friction_failures / total_trajectories *
+        #                     100) if total_trajectories > 0 else 0
+        #     rospy.logerr(
+        #         f"  🛞 Friction check:       {friction_failures:3d}/{total_trajectories} failed ({friction_pct:5.1f}%)"
+        #     )
+
+        #     # Unknown/not labeled
+        #     unknown_failures = failure_counts.get("", 0)
+        #     if unknown_failures > 0:
+        #         unknown_pct = (unknown_failures / total_trajectories *
+        #                        100) if total_trajectories > 0 else 0
+        #         rospy.logerr(
+        #             f"  ❓ Other/Unknown:        {unknown_failures:3d}/{total_trajectories} failed ({unknown_pct:5.1f}%) ❓"
+        #         )
+
+        #     rospy.logerr("="*80 + "\n")
+
+        if not valid_sum_tmp:
             rospy.logerr(
-                f"⚠️  TRAJECTORY VALIDATION SUMMARY - Trajectory ID {traj_cnt}")
-            rospy.logerr("="*80)
-            rospy.logerr(
-                f"Final valid trajectories: {num_valid_final}/{total_trajectories} ({valid_percentage:.1f}%)")
-            rospy.logerr("\nFailure breakdown:")
-
-            # Count failures by type
-            failure_counts = {}
-            for reason in ["curvature", "vehicle_capability", "path_collision", "friction", ""]:
-                count = np.sum(invalid_array_info == reason)
-                if count > 0 or reason == "":
-                    failure_counts[reason] = count
-
-            # Curvature check failures
-            curvature_failures = failure_counts.get("curvature", 0)
-            curvature_pct = (
-                curvature_failures / total_trajectories * 100) if total_trajectories > 0 else 0
-            rospy.logerr(
-                f"  📐 Curvature check:      {curvature_failures:3d}/{total_trajectories} failed ({curvature_pct:5.1f}%)"
-            )
-
-            # # Vehicle capability check failures
-            # capability_failures = failure_counts.get("vehicle_capability", 0)
-            # capability_pct = (
-            #     capability_failures / total_trajectories * 100) if total_trajectories > 0 else 0
-            # rospy.logerr(
-            #     f"  🚗 Vehicle capability:   {capability_failures:3d}/{total_trajectories} failed ({capability_pct:5.1f}%)"
-            # )
-
-            # # Show detailed breakdown of which capability limits were exceeded
-            # if capability_failures > 0 and 'valid_speed' in locals():
-            #     num_speed_violations = np.sum(~valid_speed)
-            #     num_ax_violations = np.sum(~valid_ax)
-
-            #     if num_speed_violations > 0:
-            #         rospy.logerr(
-            #             f"      └─ Speed exceeded:     {num_speed_violations:3d} trajectories "
-            #             f"(max={self.params.max_speed:.1f} m/s)"
-            #         )
-            #     if num_ax_violations > 0:
-            #         rospy.logerr(
-            #             f"      └─ Longitudinal accel: {num_ax_violations:3d} trajectories "
-            #             f"(max={self.params.max_accel:.1f} m/s²)"
-            #         )
-            #     # Note: Lateral accel not checked here - handled by Pacejka friction check
-
-            # Path collision check failures
-            collision_failures = failure_counts.get("path_collision", 0)
-            collision_pct = (
-                collision_failures / total_trajectories * 100) if total_trajectories > 0 else 0
-            rospy.logerr(
-                f"  🚧 Path collision check: {collision_failures:3d}/{total_trajectories} failed ({collision_pct:5.1f}%)"
-            )
-
-            # Friction check failures
-            friction_failures = failure_counts.get("friction", 0)
-            friction_pct = (friction_failures / total_trajectories *
-                            100) if total_trajectories > 0 else 0
-            rospy.logerr(
-                f"  🛞 Friction check:       {friction_failures:3d}/{total_trajectories} failed ({friction_pct:5.1f}%)"
-            )
-
-            # Unknown/not labeled
-            unknown_failures = failure_counts.get("", 0)
-            if unknown_failures > 0:
-                unknown_pct = (unknown_failures / total_trajectories *
-                               100) if total_trajectories > 0 else 0
-                rospy.logerr(
-                    f"  ❓ Other/Unknown:        {unknown_failures:3d}/{total_trajectories} failed ({unknown_pct:5.1f}%) ❓"
-                )
-
-            rospy.logerr("="*80 + "\n")
-
-            if not valid_sum_tmp:
-                rospy.logerr(
-                    f"[Trajectories Check] ❌ CRITICAL: No valid trajectories after all checks")
+                f"[Trajectories Check] ❌ CRITICAL: No valid trajectories after all checks")
 
         return valid_array, ax_tilde, ay_tilde, g_tilde, tire_util_array, invalid_array_info, (left_bound, right_bound)

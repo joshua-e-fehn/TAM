@@ -28,7 +28,7 @@ from typing import List, Dict, Optional
 import time
 import threading
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Float32, String
+from std_msgs.msg import Float32, String, Bool
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 from dynamic_reconfigure.msg import Config
@@ -97,6 +97,27 @@ class TAMSamplingPlannerNode:
 
         # State machine state tracking
         self.state_machine_state = "GB_TRACK"  # Default to racing mode
+
+        # Predictive Sampler Mode: Conditional planning (only plan when needed, like SQP)
+        # When ot_planner == "predictive_sampler", TAM only plans when obstacles nearby + in OT sector
+        # When ot_planner == "tam_sampling", TAM plans continuously (original behavior)
+        self.ot_planner = rospy.get_param(
+            'state_machine/ot_planner', 'tam_sampling')
+        self.conditional_planning_mode = (
+            self.ot_planner == "predictive_sampler")
+
+        # Conditional planning state (mirroring SQP behavior)
+        self.ot_section_check = False  # Are we in overtaking sector?
+        self.lookahead = 15.0  # meters - same as SQP
+        self.obs_traj_thresh = 2.0  # meters - same as SQP
+        self.track_length = 0.0  # Will be set from global waypoints
+
+        if self.conditional_planning_mode:
+            rospy.loginfo(
+                f"{self.log_name} Running in PREDICTIVE SAMPLER mode - conditional planning enabled (plans only when obstacles nearby + in OT sector)")
+        else:
+            rospy.loginfo(
+                f"{self.log_name} Running in TAM SAMPLING mode - continuous planning (always plans)")
 
         # Complete TAM planning parameters (from original TAM implementation)
         self.planning_params = {
@@ -211,6 +232,13 @@ class TAMSamplingPlannerNode:
         # State machine state subscriber for race start coordination
         self.state_machine_sub = rospy.Subscriber(
             "state_machine", String, self.state_machine_callback, queue_size=1)
+
+        # Conditional planning: Subscribe to ot_section_check (only used in predictive_sampler mode)
+        if self.conditional_planning_mode:
+            rospy.Subscriber("ot_section_check", Bool,
+                             self.ot_section_check_cb, queue_size=1)
+            rospy.loginfo(
+                f"{self.log_name} Subscribed to ot_section_check for conditional planning")
 
         # Publishers (topics are automatically namespaced by ROS)
         self.trajectory_pub = rospy.Publisher(
@@ -449,6 +477,13 @@ class TAMSamplingPlannerNode:
         self.global_waypoints = msg
 
         if len(msg.wpnts) > 0:
+            # Store track length for conditional planning
+            if len(msg.wpnts) > 0:
+                self.track_length = msg.wpnts[-1].s_m
+                if self.conditional_planning_mode:
+                    rospy.loginfo_once(
+                        f"{self.log_name} Track length set to {self.track_length:.2f}m for conditional planning")
+
             # Convert WpntArray to dictionary format for GlobalWaypointsTrackHandler
             try:
                 from track_handler_global_waypoints import GlobalWaypointsTrackHandler
@@ -600,6 +635,61 @@ class TAMSamplingPlannerNode:
         # Log state transitions for debugging
         # rospy.loginfo_throttle(
         #     2.0, f"{self.log_name} State machine state: {self.state_machine_state}")
+
+    def ot_section_check_cb(self, msg: Bool):
+        """Callback for overtaking section check (used in predictive_sampler mode)"""
+        self.ot_section_check = msg.data
+
+    def _check_should_plan(self) -> bool:
+        """
+        Determine if TAM should execute planning cycle.
+
+        In predictive_sampler mode: Only plan when obstacles nearby + in OT sector (mimics SQP behavior)
+        In tam_sampling mode: Always plan (original TAM behavior)
+
+        Returns:
+            True if planning should execute, False otherwise
+        """
+        # If not in conditional planning mode, always plan
+        if not self.conditional_planning_mode:
+            return True
+
+        # In predictive_sampler mode: Check conditions (same as SQP)
+        # 1. Must be in overtaking sector
+        if not self.ot_section_check:
+            return False
+
+        # 2. Must have obstacles within range
+        if len(self.obs.obstacles) == 0:
+            return False
+
+        # 3. Filter obstacles by distance and trajectory proximity (same as SQP logic)
+        cur_s = self.current_state['s']
+        considered_obs = []
+
+        for obs in self.obs.obstacles:
+            # Calculate distance to obstacle (handling wraparound)
+            dist_to_obs = (obs.s_start - cur_s) % self.track_length
+
+            # Check if obstacle is within lookahead distance
+            within_lookahead = dist_to_obs < self.lookahead
+
+            # Check if obstacle is close to trajectory (lateral distance)
+            traj_dist = abs(obs.d_center)
+            within_traj_thresh = traj_dist < self.obs_traj_thresh
+
+            if within_lookahead and within_traj_thresh:
+                considered_obs.append(obs)
+
+        # Only plan if we have obstacles that meet the criteria
+        should_plan = len(considered_obs) > 0
+
+        if not should_plan:
+            rospy.loginfo_throttle(
+                2.0, f"{self.log_name} Skipping planning: ot_sector={self.ot_section_check}, "
+                f"obstacles_total={len(self.obs.obstacles)}, obstacles_considered={len(considered_obs)}")
+
+        return should_plan
 
     def process_obstacles(self) -> List[Dict]:
         """Convert ROS obstacles to TAM format, including predictions"""
@@ -1146,6 +1236,57 @@ class TAMSamplingPlannerNode:
 
         return marker_array
 
+    def _clear_visualization_markers(self):
+        """
+        Clear all visualization markers when not in active planning states.
+
+        Publishes DELETE actions for trajectory and sample markers to remove them from RViz.
+        This is called when state_machine_state is not in ['OVERTAKE', 'TAM_PLANNING'].
+        """
+        try:
+            # Create marker array with DELETE actions
+            marker_array = MarkerArray()
+
+            # Delete main trajectory marker
+            trajectory_marker = Marker()
+            trajectory_marker.header.frame_id = "map"
+            trajectory_marker.header.stamp = rospy.Time.now()
+            trajectory_marker.ns = f"{self.car_namespace}_tam_trajectory" if self.car_namespace else "tam_trajectory"
+            trajectory_marker.id = 0
+            trajectory_marker.action = Marker.DELETE
+            marker_array.markers.append(trajectory_marker)
+
+            # Delete velocity text marker
+            velocity_marker = Marker()
+            velocity_marker.header.frame_id = "map"
+            velocity_marker.header.stamp = rospy.Time.now()
+            velocity_marker.ns = f"{self.car_namespace}_tam_velocity" if self.car_namespace else "tam_velocity"
+            velocity_marker.id = 1
+            velocity_marker.action = Marker.DELETE
+            marker_array.markers.append(velocity_marker)
+
+            # Publish deletion markers
+            self.markers_pub.publish(marker_array)
+
+            # Also clear all sample trajectory markers (up to max_viz_trajectories)
+            samples_marker_array = MarkerArray()
+            max_viz_trajectories = 600
+
+            for i in range(max_viz_trajectories):
+                sample_marker = Marker()
+                sample_marker.header.frame_id = "map"
+                sample_marker.header.stamp = rospy.Time.now()
+                sample_marker.ns = f"{self.car_namespace}_tam_samples" if self.car_namespace else "tam_samples"
+                sample_marker.id = i
+                sample_marker.action = Marker.DELETE
+                samples_marker_array.markers.append(sample_marker)
+
+            self.all_samples_pub.publish(samples_marker_array)
+
+        except Exception as e:
+            rospy.logwarn_throttle(
+                5.0, f"{self.log_name} Failed to clear visualization markers: {e}")
+
     def publish_stop_trajectory(self):
         """Publish a stop trajectory when TAM planning fails"""
         try:
@@ -1187,6 +1328,17 @@ class TAMSamplingPlannerNode:
         if self.planning_in_progress:
             rospy.logwarn_throttle(
                 2.0, f"{self.log_name} ⚠️ Skipping planning cycle - previous cycle still in progress")
+            return
+
+        # PREDICTIVE SAMPLER MODE: Check if we should plan (only when obstacles + in OT sector)
+        if not self._check_should_plan():
+            self._clear_visualization_markers()
+            # Publish empty trajectory (same as SQP does when conditions not met)
+            empty_msg = OTWpntArray()
+            empty_msg.header.stamp = rospy.Time.now()
+            empty_msg.header.frame_id = "map"
+            empty_msg.wpnts = []
+            self.trajectory_pub.publish(empty_msg)
             return
 
         # Acquire lock to prevent concurrent planning
@@ -1354,7 +1506,7 @@ class TAMSamplingPlannerNode:
                     #               f"Interpolated spacing: ~0.1m | "
                     #               f"Reason: Successful planning cycle")
 
-                    # STEP 7: Publish visualization markers (optional)
+                    # STEP 7: Publish visualization markers
                     try:
                         markers_msg = self.create_f1tenth_visualization_markers(
                             trajectory_dict, wpnt_array)
@@ -1385,8 +1537,8 @@ class TAMSamplingPlannerNode:
                     self.trajectory_pub.publish(empty_msg)
 
             else:
-                rospy.logerr(f"[Sampling Node] ⁉️ PUBLISHING EMPTY TRAJECTORY | "
-                             f"Reason: TAM planner returned None")
+                # rospy.logerr(f"[Sampling Node] ⁉️ PUBLISHING EMPTY TRAJECTORY | "
+                #              f"Reason: TAM planner returned None")
                 # Publish empty trajectory to signal state machine
                 empty_msg = OTWpntArray()
                 empty_msg.header.stamp = rospy.Time.now()
@@ -1404,8 +1556,8 @@ class TAMSamplingPlannerNode:
 
         # Log planning time to detect slow cycles
         # if planning_time > 0.05:  # Warn if planning takes more than 50ms (20Hz rate)
-        rospy.logerr_throttle(2.0,
-                              f"{self.log_name} ⏱️ Slow planning cycle: {planning_time*1000:.1f}ms (target: 50ms @ 20Hz)")
+        # rospy.logerr_throttle(2.0,
+        #                       f"{self.log_name} ⏱️ Slow planning cycle: {planning_time*1000:.1f}ms (target: 50ms @ 20Hz)")
 
         # Publish timing information if measuring
         if self.measuring:

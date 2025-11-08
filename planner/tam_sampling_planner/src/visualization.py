@@ -44,25 +44,22 @@ class TAMSamplingPlannerVisualization:
         # Color schemes for different cars
         # Planned trajectory colors (bright, solid)
         self.planned_colors = {
-            'car1': ColorRGBA(1.0, 0.0, 0.0, 1.0),  # Bright Red - Car1 planned
-            # Bright Blue - Car2 planned
-            'car2': ColorRGBA(0.0, 0.5, 1.0, 1.0),
-            # Bright Green - Car3 planned
-            'car3': ColorRGBA(0.0, 1.0, 0.0, 1.0),
-            # Bright Yellow - Car4 planned
-            'car4': ColorRGBA(1.0, 1.0, 0.0, 1.0),
+            'car1': ColorRGBA(1.0, 0.0, 0.0, 1.0),  # Bright Red - Car1 SQP
+            'car2': ColorRGBA(0.0, 0.5, 1.0, 1.0),  # Bright Blue - Car2 SQP
+            'car3': ColorRGBA(0.0, 1.0, 0.0, 1.0),  # Bright Green - Car3 SQP
+            'car4': ColorRGBA(1.0, 1.0, 0.0, 1.0),  # Bright Yellow - Car4 SQP
         }
 
         # Opponent prediction colors (darker, more transparent)
         self.opponent_colors = {
-            # Orange - Car1's opponent prediction
-            'car1': ColorRGBA(0.8, 0.4, 0.0, 0.6),
-            # Purple - Car2's opponent prediction
-            'car2': ColorRGBA(0.6, 0.0, 0.8, 0.6),
-            # Cyan - Car3's opponent prediction
-            'car3': ColorRGBA(0.0, 0.6, 0.6, 0.6),
-            # Dark Yellow - Car4's opponent prediction
-            'car4': ColorRGBA(0.8, 0.6, 0.0, 0.6),
+            # Red - Car1's opponent prediction
+            'car1': ColorRGBA(1.0, 0.0, 0.0, 0.5),
+            # Blue - Car2's opponent prediction
+            'car2': ColorRGBA(0.0, 0.5, 1.0, 0.5),
+            # Green - Car3's opponent prediction
+            'car3': ColorRGBA(0.0, 1.0, 0.0, 0.5),
+            # Yellow - Car4's opponent prediction
+            'car4': ColorRGBA(1.0, 1.0, 0.0, 0.5),
         }
 
         # Default colors for unknown cars
@@ -73,11 +70,22 @@ class TAMSamplingPlannerVisualization:
         # Track waypoint source for color coding controller waypoints
         self.waypoint_source = 'unknown'  # 'tam_planner', 'global_fallback', or 'unknown'
 
+        # Track state machine state for conditional visualization
+        self.state_machine_state = "GB_TRACK"  # Default state
+
+        # Detect if running as predictive_sampler (for dual publishing)
+        self.ot_planner = rospy.get_param(
+            'state_machine/ot_planner', 'tam_sampling')
+        self.is_predictive_sampler = (self.ot_planner == 'predictive_sampler')
+
+        if self.is_predictive_sampler:
+            rospy.loginfo(
+                f"TAM Visualization: Running in PREDICTIVE SAMPLER mode - will publish opponent traj to both namespaces")
+
         # Track data for start/finish line
         self.global_waypoints = None
-        self.start_finish_line_published = False
-
         # Initialize subscribers for car-specific topics
+        self.start_finish_line_published = False
         self.init_subscribers()
 
         # Initialize publishers for global visualization topics
@@ -88,9 +96,16 @@ class TAMSamplingPlannerVisualization:
 
     def init_subscribers(self):
         """Initialize subscribers to car-specific marker topics"""
-        # Opponent prediction markers
-        opponent_topic = f'/{self.car_name}/prediction/opponent_markerarray'
-        rospy.Subscriber(opponent_topic, MarkerArray, self.opponent_callback)
+
+        # Opponent prediction markers - from simple TAM Sampling prediction
+        opponent_tam_sampling_topic = f'/{self.car_name}/prediction/opponent_markerarray'
+        rospy.Subscriber(opponent_tam_sampling_topic,
+                         MarkerArray, self.opponent_tam_sampling_callback)
+
+        # Opponent prediction markers - from Gaussian Process trajectory prediction
+        opponent_predictive_topic = f'/{self.car_name}/opponent_traj_markerarray'
+        rospy.Subscriber(opponent_predictive_topic,
+                         MarkerArray, self.opponent_predictive_callback)
 
         # Planned trajectory markers
         planned_topic = f'/{self.car_name}/planner/avoidance/markers'
@@ -107,6 +122,11 @@ class TAMSamplingPlannerVisualization:
         source_topic = f'/{self.car_name}_state_machine/tam_waypoint_source'
         rospy.Subscriber(source_topic, String, self.waypoint_source_callback)
 
+        # State machine state - for conditional visualization logic
+        state_machine_topic = f'/{self.car_name}/state_machine'
+        rospy.Subscriber(state_machine_topic, String,
+                         self.state_machine_callback)
+
         # Global waypoints - for start/finish line (only subscribe once, not per car)
         if self.car_name == 'car1':  # Only car1 subscribes to avoid duplicate markers
             rospy.Subscriber('/global_waypoints', WpntArray,
@@ -120,6 +140,16 @@ class TAMSamplingPlannerVisualization:
             MarkerArray,
             queue_size=1
         )
+
+        # PREDICTIVE SAMPLER MODE: Also publish to predictive_spliner namespace for compatibility
+        if self.is_predictive_sampler:
+            self.opponent_pub_ps = rospy.Publisher(
+                f'/visualization/predictive_spliner/{self.car_name}/opponent_traj',
+                MarkerArray,
+                queue_size=1
+            )
+            rospy.loginfo(
+                f"TAM Visualization: Added predictive_spliner opponent_traj publisher for {self.car_name}")
 
         # Per-car planned trajectory (TAM sampling output)
         self.planned_pub = rospy.Publisher(
@@ -223,6 +253,12 @@ class TAMSamplingPlannerVisualization:
         rospy.logdebug_throttle(5.0,
                                 f"{self.car_name}: Waypoint source updated to {self.waypoint_source}")
 
+    def state_machine_callback(self, msg):
+        """Handle state machine state updates"""
+        self.state_machine_state = msg.data
+        rospy.logdebug_throttle(5.0,
+                                f"{self.car_name}: State machine state updated to {self.state_machine_state}")
+
     def global_waypoints_callback(self, msg):
         """Handle global waypoints update and create start/finish line marker"""
         if not self.start_finish_line_published and msg.wpnts:
@@ -231,18 +267,33 @@ class TAMSamplingPlannerVisualization:
             self.start_finish_line_published = True
             rospy.loginfo("Start/finish line visualization published")
 
-    def opponent_callback(self, msg):
+    def opponent_tam_sampling_callback(self, msg):
         """Handle opponent trajectory prediction markers"""
-        try:
-            # Publish immediately - don't cache to avoid lag
-            modified = self.modify_marker_array(msg, "opponent_traj")
-            if modified.markers:
-                self.opponent_pub.publish(modified)
-                rospy.logdebug_throttle(5.0,
-                                        f"{self.car_name}: Published {len(modified.markers)} opponent trajectory markers")
-        except Exception as e:
-            rospy.logwarn(
-                f"Error processing opponent trajectory markers for {self.car_name}: {e}")
+        if not self.is_predictive_sampler:
+            try:
+                # Publish immediately - don't cache to avoid lag
+                modified = self.modify_marker_array(msg, "opponent_traj")
+                if modified.markers:
+                    self.opponent_pub.publish(modified)
+                    rospy.logdebug_throttle(5.0,
+                                            f"{self.car_name}: Published {len(modified.markers)} opponent trajectory markers")
+            except Exception as e:
+                rospy.logwarn(
+                    f"Error processing opponent trajectory markers for {self.car_name}: {e}")
+
+    def opponent_predictive_callback(self, msg):
+        """Handle opponent trajectory prediction markers"""
+        if self.is_predictive_sampler:
+            try:
+                # Publish immediately - don't cache to avoid lag
+                modified = self.modify_marker_array(msg, "opponent_traj")
+                if modified.markers:
+                    self.opponent_pub.publish(modified)
+                    rospy.logdebug_throttle(5.0,
+                                            f"{self.car_name}: Published {len(modified.markers)} opponent trajectory markers")
+            except Exception as e:
+                rospy.logwarn(
+                    f"Error processing opponent trajectory markers for {self.car_name}: {e}")
 
     def planned_trajectory_callback(self, msg):
         """Handle planned trajectory markers from TAM sampling planner"""
@@ -278,7 +329,7 @@ class TAMSamplingPlannerVisualization:
             return marker_array
 
         # Choose color based on waypoint source
-        if self.waypoint_source == 'tam_planner':
+        if self.waypoint_source == 'tam_planner' or self.state_machine_state not in ['OVERTAKE', 'TAM_PLANNING']:
             # TAM planner waypoints: Use car-specific color (bright)
             marker_color = self.get_car_color('controller')
         elif self.waypoint_source == 'global_fallback':
