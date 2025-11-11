@@ -3,17 +3,33 @@
 """
 Race Event Monitor Node
 
-This node monitors multi-car races and:
+This node monitors races and:
 1. Detects race completion conditions
 2. Logs race events (collisions, near-misses, overtakes, crashes)
 3. Sets /simulation_complete when race ends
 4. Provides event data for post-race analysis
 
-Completion Conditions:
-- Car2 finishes target laps while car1 is behind
-- Collision between cars
-- Car crashes with track boundary
-- Car1 overtakes car2 by lead distance
+Modes:
+- multi_car: Two cars racing (default)
+- single_car_no_obstacle: Single car time trial
+- single_car_obstacle: Single car vs dummy obstacle
+
+Completion Conditions (mode-dependent):
+Multi-car:
+  - Car2 finishes target laps while car1 is behind
+  - Collision between cars
+  - Car crashes with track boundary
+  - Car1 overtakes car2 by lead distance
+
+Single car (no obstacle):
+  - Car completes target laps
+  - Car crashes with track boundary
+
+Single car (with obstacle):
+  - Car completes target laps
+  - Collision with obstacle
+  - Car or obstacle crashes with track boundary
+  - Car overtakes obstacle by lead distance
 
 Author: Atlas  
 Date: October 2025
@@ -36,13 +52,24 @@ class RaceEventMonitor:
     def __init__(self):
         rospy.init_node('race_event_monitor', anonymous=True)
 
+        # Race mode configuration
+        self.race_mode = rospy.get_param('~race_mode', 'multi_car')
+        # Options: 'multi_car', 'single_car_no_obstacle', 'single_car_obstacle'
+
         # Car configuration
-        car_names_param = rospy.get_param('~car_names', 'car1,car2')
-        if isinstance(car_names_param, str):
-            self.car_names = [name.strip()
-                              for name in car_names_param.split(',')]
+        if self.race_mode.startswith('single_car'):
+            # Single car mode - only one car
+            self.car_names = ['car']  # No namespace in single_car mode
+            self.monitor_obstacle = (self.race_mode == 'single_car_obstacle')
         else:
-            self.car_names = car_names_param
+            # Multi-car mode - get from parameter
+            car_names_param = rospy.get_param('~car_names', 'car1,car2')
+            if isinstance(car_names_param, str):
+                self.car_names = [name.strip()
+                                  for name in car_names_param.split(',')]
+            else:
+                self.car_names = car_names_param
+            self.monitor_obstacle = False
 
         # Monitoring parameters
         self.check_rate = rospy.get_param('/race_test/check_rate', 80.0)  # Hz
@@ -61,6 +88,8 @@ class RaceEventMonitor:
             '/race_test/overtake_lead_distance', 10.0)  # meters
         self.boundary_safety_margin = rospy.get_param(
             '/race_test/boundary_safety_margin', 0.0)  # meters - additional safety margin
+        self.boundary_violation_tolerance = rospy.get_param(
+            '/race_test/boundary_violation_tolerance', 0.05)  # meters - tolerance for minor boundary scratches
 
         # Track parameters
         try:
@@ -91,6 +120,14 @@ class RaceEventMonitor:
         self.car_laps = {}       # Lap counts
         self.car_previous_s = {}  # Previous s for lap detection
 
+        # Storage for obstacle data (single_car_obstacle mode)
+        self.obstacle_position = None
+        self.obstacle_frenet = None
+        self.obstacle_laps = 0
+        self.obstacle_previous_s = None
+        # Track obstacle state (READY, GB_TRACK, etc.)
+        self.obstacle_state = None
+
         # Race state
         self.race_complete = False
         self.race_complete_reason = None
@@ -112,15 +149,20 @@ class RaceEventMonitor:
         self.setup_global_topics()  # Subscribe to global waypoints
         self.setup_car_topics()
 
+        # Setup obstacle monitoring if needed
+        if self.monitor_obstacle:
+            self.setup_obstacle_topics()
+
         # Main monitoring timer
         self.timer = rospy.Timer(rospy.Duration(
             1.0/self.check_rate), self.monitor_race)
 
-        # rospy.loginfo(
-        #     f"Race Event Monitor initialized for cars: {self.car_names}")
-        # rospy.loginfo(
-        #     f"Target laps: {self.target_laps}, Overtake lead: {self.overtake_lead_distance}m")
-        # rospy.loginfo(f"Event log: {self.log_file_path}")
+        rospy.loginfo(
+            f"[Race Monitor] Initialized in {self.race_mode} mode")
+        rospy.loginfo(
+            f"[Race Monitor] Cars: {self.car_names}, Monitor obstacle: {self.monitor_obstacle}")
+        rospy.loginfo(
+            f"[Race Monitor] Target laps: {self.target_laps}, Event log: {self.log_file_path}")
 
     def setup_global_topics(self):
         """Setup global subscribers and publishers"""
@@ -264,30 +306,61 @@ class RaceEventMonitor:
     def setup_car_topics(self):
         """Setup subscribers and publishers for each car"""
         for car_name in self.car_names:
+            # In single-car mode, topics have no namespace prefix
+            # In multi-car mode, topics are namespaced: /car1/..., /car2/...
+            if self.race_mode.startswith('single_car'):
+                odom_topic = "/car_state/odom"
+                frenet_topic = "/car_state/odom_frenet"
+                state_transition_topic = "/state_transition"
+            else:
+                odom_topic = f"/{car_name}/car_state/odom"
+                frenet_topic = f"/{car_name}/car_state/odom_frenet"
+                state_transition_topic = f"/{car_name}/state_transition"
+
             # Subscribe to car odometry (Cartesian)
-            odom_topic = f"/{car_name}/car_state/odom"
             rospy.Subscriber(odom_topic, Odometry,
                              lambda msg, name=car_name: self.car_odom_callback(msg, name))
 
             # Subscribe to Frenet odometry (if available)
-            frenet_topic = f"/{car_name}/car_state/odom_frenet"
             rospy.Subscriber(frenet_topic, Odometry,
                              lambda msg, name=car_name: self.car_frenet_callback(msg, name))
 
             # Subscribe to state transitions (for spliner/predictive_spliner OVERTAKE logging)
-            state_transition_topic = f"/{car_name}/state_transition"
             rospy.Subscriber(state_transition_topic, String,
                              lambda msg, name=car_name: self.state_transition_callback(msg, name))
 
             # Publishers for collision warnings per car
+            if self.race_mode.startswith('single_car'):
+                collision_topic = "/collision_detected"
+                warning_topic = "/collision_warning"
+            else:
+                collision_topic = f"/{car_name}/collision_detected"
+                warning_topic = f"/{car_name}/collision_warning"
+
             self.collision_publishers[car_name] = rospy.Publisher(
-                f"/{car_name}/collision_detected", Bool, queue_size=10)
+                collision_topic, Bool, queue_size=10)
             self.warning_publishers[car_name] = rospy.Publisher(
-                f"/{car_name}/collision_warning", Bool, queue_size=10)
+                warning_topic, Bool, queue_size=10)
 
             # Initialize tracking
             self.car_laps[car_name] = 0
             self.car_previous_s[car_name] = None
+
+    def setup_obstacle_topics(self):
+        """Setup subscribers for obstacle monitoring (single_car_obstacle mode)"""
+        # Subscribe to obstacle odometry (Cartesian)
+        rospy.Subscriber("/obstacle/odom", Odometry,
+                         self.obstacle_odom_callback)
+
+        # Subscribe to obstacle Frenet odometry
+        rospy.Subscriber("/obstacle/odom_frenet", Odometry,
+                         self.obstacle_frenet_callback)
+
+        # Subscribe to obstacle state commands to know when it's ready
+        rospy.Subscriber("/state_machine_cmd", String,
+                         self.obstacle_state_callback)
+
+        rospy.loginfo("[Race Monitor] Obstacle monitoring enabled")
 
     def car_odom_callback(self, msg, car_name):
         """Store car Cartesian position from odometry"""
@@ -313,6 +386,37 @@ class RaceEventMonitor:
         # Update lap tracking
         self.update_lap_tracking(car_name, s)
 
+    def obstacle_odom_callback(self, msg):
+        """Store obstacle Cartesian position and velocity from odometry"""
+        self.obstacle_position = {
+            'pose': msg.pose.pose,
+            'twist': msg.twist.twist,
+            'timestamp': msg.header.stamp
+        }
+
+        # Calculate Frenet coordinates from Cartesian if we have a converter
+        # For now, we'll get Frenet from the obstacle publisher directly via perception/obstacles
+        # But store position for collision detection
+
+    def obstacle_frenet_callback(self, msg):
+        """Store obstacle Frenet coordinates from frenet odometry"""
+        # Frenet odom stores s in pose.position.x and d in pose.position.y
+        s = msg.pose.pose.position.x
+        d = msg.pose.pose.position.y
+
+        self.obstacle_frenet = {
+            's': s,
+            'd': d,
+            'timestamp': msg.header.stamp
+        }
+
+        # Update lap tracking for obstacle
+        self.update_obstacle_lap_tracking(s)
+
+    def obstacle_state_callback(self, msg):
+        """Track obstacle state changes"""
+        self.obstacle_state = msg.data
+
     def update_lap_tracking(self, car_name, current_s):
         """Update lap tracking for a car based on s-coordinate"""
         previous_s = self.car_previous_s.get(car_name)
@@ -333,6 +437,24 @@ class RaceEventMonitor:
                 rospy.set_param(f'/race_test/{car_name}/current_lap', lap_num)
 
         self.car_previous_s[car_name] = current_s
+
+    def update_obstacle_lap_tracking(self, current_s):
+        """Update lap tracking for obstacle based on s-coordinate"""
+        previous_s = self.obstacle_previous_s
+
+        if previous_s is not None:
+            # Detect lap completion: large negative jump in s-coordinate
+            if previous_s > (self.track_length * 0.8) and current_s < (self.track_length * 0.2):
+                self.obstacle_laps += 1
+                lap_num = self.obstacle_laps
+                rospy.loginfo(
+                    f"[Race Monitor] 🏁 obstacle completed lap, now on lap {lap_num}")
+
+                # Log lap completion event
+                self.log_event('lap_complete', car1_name='obstacle',
+                               details=f"obstacle finished lap {lap_num}")
+
+        self.obstacle_previous_s = current_s
 
     def state_transition_callback(self, msg, car_name):
         """Log state transitions to/from OVERTAKE for spliner and predictive_spliner"""
@@ -428,20 +550,28 @@ class RaceEventMonitor:
                 #     f"[Boundary Check] {car_name}: s={s:.2f}m, d={d:.2f}m, left_limit={d_left_limit:.2f}m, right_limit={d_right_limit:.2f}m")
                 self._last_boundary_log[car_name] = rospy.Time.now()
 
-            # Check if car is outside boundaries
-            # Car is off-track if: d > d_left_limit (too far left) OR d < d_right_limit (too far right)
-            if d > d_left_limit:
-                reason = f"track_boundary_crash ({car_name} off-track LEFT: d={d:.2f}m, limit={d_left_limit:.2f}m, s={s:.2f}m)"
+            # Check if car is outside boundaries (with tolerance for minor scratches)
+            # Car is off-track if: d > d_left_limit + tolerance (too far left) OR d < d_right_limit - tolerance (too far right)
+            is_out_of_bounds = False
+            violation_side = ""
+
+            if d > d_left_limit + self.boundary_violation_tolerance:
+                is_out_of_bounds = True
+                violation_side = "LEFT"
+            elif d < d_right_limit - self.boundary_violation_tolerance:
+                is_out_of_bounds = True
+                violation_side = "RIGHT"
+
+            if is_out_of_bounds:
+                # Car is currently out of bounds - check if it's been out long enough
+                reason = f"track_boundary_crash ({car_name} off-track {violation_side}: d={d:.2f}m, limit={'left=' + str(d_left_limit) if violation_side == 'LEFT' else 'right=' + str(d_right_limit)}m, s={s:.2f}m)"
                 self.log_event('track_crash', car1_name=car_name,
                                details=reason)
                 self.set_race_complete(reason)
                 return True
-            elif d < d_right_limit:
-                reason = f"track_boundary_crash ({car_name} off-track RIGHT: d={d:.2f}m, limit={d_right_limit:.2f}m, s={s:.2f}m)"
-                self.log_event('track_crash', car1_name=car_name,
-                               details=reason)
-                self.set_race_complete(reason)
-                return True
+            else:
+                # Car is within acceptable bounds (including tolerance)
+                pass
 
         return False
 
@@ -515,6 +645,76 @@ class RaceEventMonitor:
                 self.warning_publishers[car1_name].publish(Bool(warning))
                 self.warning_publishers[car2_name].publish(Bool(warning))
 
+    # ============================================
+    # Single-Car Mode Condition Checks
+    # ============================================
+
+    def check_condition_single_car_lap_completion(self):
+        """Single-car mode: Car completed target laps"""
+        car_name = self.car_names[0]  # Single car
+
+        if self.car_laps.get(car_name, 0) >= self.target_laps:
+            reason = f"single_car_lap_completion ({car_name} completed {self.target_laps} laps)"
+            self.log_event('race_complete', car1_name=car_name, details=reason)
+            self.set_race_complete(reason)
+            return True
+        return False
+
+    def check_condition_car_obstacle_collision(self):
+        """Single-car obstacle mode: Collision between car and obstacle"""
+        if not self.monitor_obstacle or self.obstacle_position is None:
+            return False
+
+        car_name = self.car_names[0]
+        if car_name not in self.car_positions:
+            return False
+
+        distance = self.calculate_distance(
+            self.car_positions[car_name]['pose'],
+            self.obstacle_position['pose']
+        )
+
+        if distance <= self.collision_distance:
+            reason = f"car_obstacle_collision (distance: {distance:.2f}m)"
+            self.log_event('collision', car1_name=car_name, car2_name='obstacle',
+                           distance=distance, details=reason)
+            self.set_race_complete(reason)
+            return True
+
+        return False
+
+    def check_condition_car_overtake_obstacle(self):
+        """Single-car obstacle mode: Car overtook obstacle by lead distance"""
+        if not self.monitor_obstacle or self.obstacle_frenet is None:
+            return False
+
+        car_name = self.car_names[0]
+        if car_name not in self.car_frenet:
+            return False
+
+        car_s = self.car_frenet[car_name]['s']
+        obstacle_s = self.obstacle_frenet['s']
+        car_lap = self.car_laps.get(car_name, 0)
+        obstacle_lap = self.obstacle_laps
+
+        # Calculate absolute position including laps
+        car_absolute_s = car_lap * self.track_length + car_s
+        obstacle_absolute_s = obstacle_lap * self.track_length + obstacle_s
+
+        # Calculate actual distance difference
+        s_diff = car_absolute_s - obstacle_absolute_s
+
+        # Check if car is ahead by the lead distance
+        # Only trigger if car is actually ahead (positive difference)
+        if s_diff >= self.overtake_lead_distance:
+            reason = f"car_overtake_obstacle ({car_name} ahead by {s_diff:.2f}m, threshold: {self.overtake_lead_distance}m, car_lap={car_lap}, obstacle_lap={obstacle_lap})"
+            self.log_event('overtake_lead', car1_name=car_name, car2_name='obstacle',
+                           distance=s_diff, details=reason)
+            self.set_race_complete(reason)
+            return True
+
+        return False
+
     def set_race_complete(self, reason):
         """Set race completion flag and reason"""
         if not self.race_complete:  # Only log first completion
@@ -535,21 +735,38 @@ class RaceEventMonitor:
 
         current_time = rospy.Time.now()
 
-        # Check all race completion conditions
-        if self.check_condition_lap_completion():
-            return
+        # Check race completion conditions based on mode
+        if self.race_mode == 'multi_car':
+            # Multi-car specific conditions
+            if self.check_condition_lap_completion():
+                return
+            if self.check_condition_collision():
+                return
+            if self.check_condition_overtake_lead():
+                return
+            # Track boundary check is common to all modes
+            if self.check_condition_track_boundary():
+                return
+            # Check for events that don't end the race
+            self.check_near_miss()
 
-        if self.check_condition_collision():
-            return
+        elif self.race_mode == 'single_car_no_obstacle':
+            # Single car time trial conditions
+            if self.check_condition_single_car_lap_completion():
+                return
+            if self.check_condition_track_boundary():
+                return
 
-        if self.check_condition_track_boundary():
-            return
-
-        if self.check_condition_overtake_lead():
-            return
-
-        # Check for events that don't end the race (near-misses, etc.)
-        self.check_near_miss()
+        elif self.race_mode == 'single_car_obstacle':
+            # Single car vs obstacle conditions
+            if self.check_condition_single_car_lap_completion():
+                return
+            if self.check_condition_car_obstacle_collision():
+                return
+            if self.check_condition_track_boundary():
+                return
+            if self.check_condition_car_overtake_obstacle():
+                return
 
         # Publish status periodically
         self.publish_race_status()

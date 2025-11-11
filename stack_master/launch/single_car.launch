@@ -112,6 +112,7 @@
     <!-- ============================================= -->
     <!-- Launches state machine, planner, and controller -->
     <!-- Note: When using dummy obstacle, perception is automatically disabled to avoid topic conflicts -->
+    <!-- Note: headtohead.launch already includes race_start_controller when enable_race_start_controller is True -->
     <include file="$(find stack_master)/launch/headtohead.launch">
         <arg name="car_name" value=""/>
         <arg name="racecar_version" value="$(arg racecar_version)"/>
@@ -129,6 +130,8 @@
         <arg name="global_waypoints_overtaking_topic" value="/global_waypoints/overtaking"/>
         <arg name="planner_output_topic" value="planner/avoidance/otwpnts"/>
         <arg name="obstacles_topic" value="/perception/obstacles"/>
+        <!-- Pass race start controller enable flag to headtohead.launch -->
+        <arg name="enable_race_start_controller" value="$(arg enable_race_start_controller)"/>
     </include>
     
     <!-- ============================================= -->

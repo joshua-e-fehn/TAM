@@ -480,7 +480,7 @@
   <!-- Enables inter-car perception and collision detection -->
   
   <group if="$(arg enable_car_interaction)">
-    <include file="$(find multi_car_interaction)/launch/multi_car_interaction.launch">
+    <include file="$(find multi_car_interaction)/launch/multi_car_event_monitor.launch">
       <arg name="car_names" value="car1, car2"/>
       <arg name="car_model" value="$(arg car_model)"/>
       <arg name="enable_collision_detection" value="$(arg enable_collision_detection)"/>

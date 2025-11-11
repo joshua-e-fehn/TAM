@@ -135,6 +135,10 @@ class ObstaclePublisher:
         self.obstacle_odom_pub = rospy.Publisher(
             'obstacle/odom', Odometry, queue_size=10)
 
+        # Publish obstacle state for test framework monitoring
+        self.obstacle_state_pub = rospy.Publisher(
+            'obstacle/state', String, queue_size=10, latch=True)
+
         # Frenet Conversion Service
         rospy.wait_for_service("convert_glob2frenet_service")
         self.glob2frenet = rospy.ServiceProxy(
@@ -172,6 +176,8 @@ class ObstaclePublisher:
             rospy.loginfo(
                 f"[Obstacle Publisher] State change: {self.current_state} -> {new_state}")
             self.current_state = new_state
+            # Publish state for monitoring
+            self.obstacle_state_pub.publish(String(self.current_state))
 
     def update_dynamic_parameters(self):
         """Update parameters from dynamic reconfigure server if available"""
@@ -342,6 +348,10 @@ class ObstaclePublisher:
         opponent_s_array = np.array(
             [wpnt.s_m for wpnt in self.opponent_wpnts.oppwpnts])
         rospy.loginfo("Dummy Obstacle Publisher ready.")
+
+        # Publish initial READY state
+        rospy.loginfo("[Obstacle Publisher] Publishing initial READY state")
+        self.obstacle_state_pub.publish(String(self.current_state))
 
         counter = 0
         while not rospy.is_shutdown():
