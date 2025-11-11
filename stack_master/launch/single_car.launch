@@ -9,11 +9,11 @@
     # Basic launch with defaults (spliner planner, no obstacles):
     roslaunch stack_master single_car.launch
     
-    # With dummy obstacle:
+    # With dummy obstacle (perception is automatically disabled to avoid conflicts):
     roslaunch stack_master single_car.launch enable_dummy_obstacle:=true
     
     # With predictive_spliner and custom obstacle speed:
-    roslaunch stack_master single_car.launch planner:=predictive_spliner enable_dummy_obstacle:=true obstacle_speed:=0.3
+    roslaunch stack_master single_car.launch planner:=predictive_spliner enable_dummy_obstacle:=true obstacle_speed:=0.2
     
     # TAM sampling planner:
     roslaunch stack_master single_car.launch planner:=tam_sampling
@@ -23,6 +23,9 @@
     
   Reset:
     rosservice call /race_control/reset_cars
+    
+  Note: When enable_dummy_obstacle is True, the perception module is automatically 
+        disabled to prevent topic conflicts (both would publish to /perception/obstacles).
 -->
 <launch>
     <!-- ============================================= -->
@@ -56,8 +59,8 @@
          doc="Lookup table for controller"/>
     <arg name="ctrl_algo" default="MAP" 
          doc="Control algorithm: MAP/PP/STMPC/KMPC"/>
-    <arg name="perception" default="True" 
-         doc="Enable perception module (disable when using only dummy obstacles)"/>
+    <arg name="perception" default="False" 
+         doc="Enable perception module (automatically disabled when enable_dummy_obstacle is True)"/>
     <arg name="measure" default="False" 
          doc="Enable performance measurements"/>
     
@@ -108,6 +111,7 @@
     <!-- HEADTOHEAD (PLANNER + CONTROLLER) LAUNCH     -->
     <!-- ============================================= -->
     <!-- Launches state machine, planner, and controller -->
+    <!-- Note: When using dummy obstacle, perception is automatically disabled to avoid topic conflicts -->
     <include file="$(find stack_master)/launch/headtohead.launch">
         <arg name="car_name" value=""/>
         <arg name="racecar_version" value="$(arg racecar_version)"/>
@@ -116,7 +120,8 @@
         <arg name="LU_table" value="$(arg LU_table)"/>
         <arg name="ctrl_algo" value="$(arg ctrl_algo)"/>
         <arg name="measure" value="$(arg measure)"/>
-        <arg name="perception" value="$(arg perception)"/>
+        <!-- Disable perception when using dummy obstacle to avoid topic conflicts -->
+        <arg name="perception" value="$(eval perception and not enable_dummy_obstacle)"/>
         <arg name="planner" value="$(arg planner)"/>
         <!-- Topic arguments (use global topics for single-car) -->
         <arg name="global_waypoints_topic" value="/global_waypoints"/>
