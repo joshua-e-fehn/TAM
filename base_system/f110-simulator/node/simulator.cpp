@@ -222,6 +222,11 @@ public:
         // Apply scaling to acceleration limits
         max_accel *= accel_multiplier;
         max_decel *= accel_multiplier;
+        
+        // Print out scaled values
+        ROS_ERROR("Max speed after scaling: %f", max_speed);
+        ROS_ERROR("Max accel after scaling: %f", max_accel);
+        ROS_ERROR("Max decel after scaling: %f", max_decel);
         max_decel = std::abs(max_decel); // since we have the min accel in the yaml
         n.getParam("/model_params/h_cg", params.h_cg);
         n.getParam("/model_params/l_r", params.l_r);

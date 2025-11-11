@@ -18,8 +18,18 @@
     <arg name="global_waypoints_scaled_topic" default="/global_waypoints_scaled" />
     <arg name="global_waypoints_overtaking_topic" default="/global_waypoints/overtaking" />
     <arg name="planner_output_topic" default="planner/avoidance/otwpnts" />
+    
+    <!-- CRITICAL: Obstacle topic selection for single-car vs multi-car mode -->
+    <!-- Override this argument when calling from multi_car.launch -->
+    <!-- Default: single-car uses /perception/obstacles -->
+    <!-- Multi-car: pass obstacles_topic:=/car1/perception/multi_car_obstacles -->
+    <arg name="obstacles_topic" default="/perception/obstacles" />
+    
     <!-- Namespaced measure flag (no leading slash) -->
     <param name="measure" value="$(arg measure)" />
+
+    <!-- Ensure race start controller is enabled globally so state machines start in READY -->
+    <param name="enable_race_start_controller" value="True" />
 
     <!-- CONTROLLER -->
     <node pkg="controller" name="controller_manager" type="controller_manager.py" output="screen">
@@ -123,8 +133,8 @@
             <!-- Remap to use car-specific topics -->
             <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
             <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
-            <!-- Remap input topics for multi-car obstacles and opponent trajectory -->
-            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap input topics - uses conditional obstacles_topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
             <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
             <!-- Remap output to car-specific namespace -->
             <remap from="/collision_prediction/obstacles" to="/$(arg car_name)/collision_prediction/obstacles"/>
@@ -142,8 +152,8 @@
             <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
             <remap from="/global_waypoints_updated" to="/$(arg car_name)/global_waypoints_updated"/>
             <remap from="/local_waypoints" to="/$(arg car_name)/local_waypoints"/>
-            <!-- Remap to use multi-car obstacles for multi-car racing -->
-            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap collision prediction and opponent trajectory to car-specific topics -->
             <remap from="/collision_prediction/obstacles" to="/$(arg car_name)/collision_prediction/obstacles"/>
             <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
@@ -178,8 +188,8 @@
             <!-- Remap global waypoints to car-specific topics -->
             <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
-            <!-- Remap to use multi-car obstacles for multi-car racing -->
-            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap to use car-specific topics -->
             <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
             <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
@@ -284,8 +294,8 @@
             <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
             <remap from="local_waypoints" to="local_waypoints"/>
-            <!-- Remap to use multi-car obstacles for multi-car racing -->
-            <remap from="perception/obstacles" to="perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap to use car-specific topics (relative paths - already in car namespace) -->
             <remap from="car_state/odom_frenet" to="car_state/odom_frenet"/>
             <remap from="car_state/odom" to="car_state/odom"/>
@@ -304,8 +314,8 @@
             <!-- Smooth prediction parameters -->
             <param name="prediction_buffer_age" value="1.0"/>  <!-- Keep predictions for 1 second -->
             <param name="marker_lifetime" value="0.8"/>  <!-- Marker lifetime in seconds -->
-            <!-- Remap to use multi-car obstacles for prediction -->
-            <remap from="perception/multi_car_obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="perception/multi_car_obstacles" to="$(arg obstacles_topic)"/>
             <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
             <!-- Remap prediction outputs to car-specific namespace -->
@@ -408,8 +418,8 @@
             <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
             <remap from="local_waypoints" to="local_waypoints"/>
-            <!-- Remap to use multi-car obstacles for multi-car racing -->
-            <remap from="perception/obstacles" to="perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap collision prediction obstacles (from Predictive Spliner nodes) -->
             <remap from="collision_prediction/obstacles" to="collision_prediction/obstacles"/>
             <!-- Remap to use car-specific topics (relative paths - already in car namespace) -->
@@ -433,8 +443,8 @@
             <!-- Remap to use car-specific topics -->
             <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
             <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
-            <!-- Remap input topics for multi-car obstacles and opponent trajectory -->
-            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap input topics - uses conditional obstacles_topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
             <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
             <!-- Remap output to car-specific namespace -->
             <remap from="/collision_prediction/obstacles" to="/$(arg car_name)/collision_prediction/obstacles"/>
@@ -449,8 +459,8 @@
             <!-- Remap global waypoints to car-specific topics -->
             <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
-            <!-- Remap to use multi-car obstacles for multi-car racing -->
-            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap to use car-specific topics -->
             <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
             <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
@@ -543,15 +553,21 @@
     <group if="$(arg perception)">
         <rosparam command="load" file="$(find stack_master)/config/opponent_tracker_params.yaml" />
         <node pkg="perception" type="detect.py" name="detect" output="screen">
-            <param name="frame_prefix" value="$(arg car_name)_" />
-            <param name="map_frame" value="$(arg car_name)_map" />
-            <param name="laser_frame" value="$(arg car_name)_laser" />
+            <!-- Conditional frame prefix: use car_name_ only if car_name is not empty -->
+            <param name="frame_prefix" value="$(arg car_name)" if="$(eval car_name != '')" />
+            <param name="frame_prefix" value="" unless="$(eval car_name != '')" />
+            <param name="map_frame" value="$(arg car_name)_map" if="$(eval car_name != '')" />
+            <param name="map_frame" value="map" unless="$(eval car_name != '')" />
+            <param name="laser_frame" value="$(arg car_name)_laser" if="$(eval car_name != '')" />
+            <param name="laser_frame" value="laser" unless="$(eval car_name != '')" />
         </node>
         <arg name="var_vs" default="2" /> <!-- var_of vs-->
         <arg name="var_vd" default="8" /> <!-- var_of vs-->
         <node pkg="perception" type="tracking.py" name="tracking" output="screen">
-            <param name="frame_prefix" value="$(arg car_name)_" />
-            <param name="map_frame" value="$(arg car_name)_map" />
+            <param name="frame_prefix" value="$(arg car_name)" if="$(eval car_name != '')" />
+            <param name="frame_prefix" value="" unless="$(eval car_name != '')" />
+            <param name="map_frame" value="$(arg car_name)_map" if="$(eval car_name != '')" />
+            <param name="map_frame" value="map" unless="$(eval car_name != '')" />
         </node>
         <node pkg="perception" type="dynamic_tracker_server.py" name="dynamic_tracker_server"
             output="screen" />
@@ -560,5 +576,23 @@
     <!-- launch cpu_monitor if measuring -->
     <group if="$(arg measure)">
         <node pkg="cpu_monitor" type="monitor.py" name="cpu_monitor" output="screen" />
+    </group>
+    
+    <!-- Speed Monitor - Always On -->
+    <!-- Displays real-time speed and acceleration in terminal -->
+    <node pkg="cpu_monitor" type="speed_monitor.py" name="speed_monitor" output="screen">
+        <param name="car_name" value="$(arg car_name)"/>
+        <param name="update_rate" value="10.0"/>
+    </node>
+    
+    <!-- ============================================= -->
+    <!-- RACE START CONTROLLER                        -->
+    <!-- ============================================= -->
+    <!-- Manual start control for single-car racing -->
+    <!-- NOTE: Use ROS services for control: rosservice call /race_control/{start_both,reset_cars,emergency_stop} -->
+    <arg name="enable_race_start_controller" default="True"/>
+    
+    <group if="$(arg enable_race_start_controller)">
+        <include file="$(find race_start_controller)/launch/race_start_single.launch"/>
     </group>
 </launch>

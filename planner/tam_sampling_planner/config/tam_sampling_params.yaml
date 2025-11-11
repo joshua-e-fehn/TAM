@@ -19,7 +19,7 @@ dt: 0.1                         # Time discretization step (seconds)
 max_speed: 10.0                 # Maximum vehicle speed (m/s)
 max_accel: 3.0                  # Maximum longitudinal acceleration (m/s²)
 max_lateral_accel: 12.0         # Maximum lateral acceleration (m/s²)                   ?????
-track_width: 3.0                # Effective track width for sampling (m)                !!!!!
+track_width: 3.0                # Effective track width for sampling (m)                !!!!! (not used)
 
 # ========================================
 # Longitudinal Sampling Parameters
@@ -124,8 +124,8 @@ max_lateral_acceleration_g: 1.2           # Maximum lateral acceleration in mult
 # Safety and Constraint Parameters
 kappa_thr: 1.0                     # Maximum allowed curvature (rad/m) - reduced from 1.5 to limit aggressive cornering
 curvature_cost_threshold: 30.0     # Curvature threshold for cost penalty
-tire_util_max_check: 0.95          # Maximum tire utilization check - reduced from 1.1 to stay well within tire limits
-tire_util_relaxation: 1.5          # Friction check relaxation factor (1.0=default, >1.0=relaxed, <1.0=strict)
+tire_util_max_check: 1.1          # Maximum tire utilization check - reduced from 1.1 to stay well within tire limits
+tire_util_relaxation: 100.0          # Friction check relaxation factor (1.0=default, >1.0=relaxed, <1.0=strict)
 
 # ========================================
 # Cost Behavior Parameters

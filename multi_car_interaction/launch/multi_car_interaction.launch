@@ -42,7 +42,12 @@
       <param name="car_length" value="$(arg car_length)"/>
       <param name="car_width" value="$(arg car_width)"/>
       <param name="safety_margin" value="$(arg safety_margin)"/>
-      <param name="max_detection_range" value="15.0"/>
+      <!-- Detection range in Frenet coordinates (along-track distance in meters) -->
+      <!-- Increased from 15.0 to 25.0 since we now use track distance instead of Cartesian -->
+      <param name="max_detection_range" value="25.0"/>
+      <!-- Maximum lateral separation (d-coordinate) for detection -->
+      <!-- Cars more than this distance apart laterally won't trigger detection -->
+      <param name="max_lateral_separation" value="5.0"/>
     </node>
   </group>
 

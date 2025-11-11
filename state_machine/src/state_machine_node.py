@@ -608,7 +608,9 @@ class StateMachine:
 
                 # Use frenet conversion service to convert (s, d) wrt min curv trajectory to (x, y) in map
                 for obs in self.obstacles:
-                    if self.ot_planner == "spliner" or (self.ot_planner == "predictive_spliner" and obs.is_static == True) or self.ot_planner == "tam_sampling" or self.ot_planner == "predictive_sampler":
+                    # FIXED: predictive_spliner should check both static AND dynamic obstacles
+                    # The Gaussian prediction handles dynamic obstacle trajectory, so we need to check if overtaking path is clear
+                    if self.ot_planner == "spliner" or self.ot_planner == "predictive_spliner" or self.ot_planner == "tam_sampling" or self.ot_planner == "predictive_sampler":
                         obs_s = obs.s_center
                         # Wrapping madness to check if infront
                         dist_to_obj = (obs_s - self.cur_s) % self.max_s
@@ -1266,6 +1268,15 @@ class StateMachine:
 
         self.state_pub.publish(self.cur_state.value)
         self.visualize_state(state=self.cur_state.value)
+
+        # Continuous state output for monitoring - print directly to terminal
+        import sys
+        print(f"\r[{self.name}] STATE: {self.cur_state.value}    ",
+              end='', file=sys.stdout, flush=True)
+
+        # Also log every 1 second for rosout
+        rospy.loginfo_throttle(
+            1.0, f"[{self.name}] STATE: {self.cur_state.value}")
 
         rospy.loginfo_throttle(
             5.0, f"[{self.name}] Current Planer: {self.ot_planner}")

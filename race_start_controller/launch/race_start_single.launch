@@ -1,0 +1,13 @@
+<launch>
+    <!-- Race Start Controller for Single-Car Mode -->
+    <node pkg="race_start_controller" 
+          type="service_race_control.py" 
+          name="race_start_controller" 
+          output="screen">
+        <param name="single_car_mode" value="true"/>
+    </node>
+    
+    <!-- Usage info -->
+    <param name="race_start_controller/usage" 
+           value="Use: rosservice call /race_control/{start_both,reset_cars,emergency_stop}"/>
+</launch>

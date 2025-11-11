@@ -151,6 +151,8 @@
       <arg name="global_waypoints_scaled_topic" value="/global_waypoints_scaled"/>
       <arg name="global_waypoints_overtaking_topic" value="/global_waypoints/overtaking"/>
       <arg name="planner_output_topic" value="planner/avoidance/otwpnts"/>
+      <!-- CRITICAL: Multi-car obstacle topic -->
+      <arg name="obstacles_topic" value="/$(arg car1)/perception/multi_car_obstacles"/>
     </include>
     
     <!-- Base System with Enhanced Remapping -->
@@ -245,6 +247,12 @@
       <node pkg="tf" type="static_transform_publisher" name="car1_global_map_link"
             args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car1)map 10" />
     </group>
+    
+    <!-- Speed Monitor for Car1 -->
+    <node pkg="cpu_monitor" type="speed_monitor.py" name="speed_monitor_car1" output="screen">
+      <param name="car_name" value="$(arg car1)"/>
+      <param name="update_rate" value="10.0"/>
+    </node>
   </group>
 
   <!-- Car 2 - Optimized Configuration (Mirror of Car 1) -->
@@ -275,6 +283,8 @@
       <arg name="global_waypoints_scaled_topic" value="/global_waypoints_scaled"/>
       <arg name="global_waypoints_overtaking_topic" value="/global_waypoints/overtaking"/>
       <arg name="planner_output_topic" value="planner/avoidance/otwpnts"/>
+      <!-- CRITICAL: Multi-car obstacle topic -->
+      <arg name="obstacles_topic" value="/$(arg car2)/perception/multi_car_obstacles"/>
     </include>
     
     <!-- Base System with Enhanced Remapping -->
@@ -353,6 +363,12 @@
       <node pkg="tf" type="static_transform_publisher" name="car2_global_map_link"
             args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car2)map 10" />
     </group>
+    
+    <!-- Speed Monitor for Car2 -->
+    <node pkg="cpu_monitor" type="speed_monitor.py" name="speed_monitor_car2" output="screen">
+      <param name="car_name" value="$(arg car2)"/>
+      <param name="update_rate" value="10.0"/>
+    </node>
   </group>
 
   <!-- ============================================= -->
@@ -369,6 +385,7 @@
       <arg name="racecar_version" value="$(arg version_car3)"/>
       <arg name="measure" value="False"/>
       <arg name="map_name" value="$(arg map_car3)"/>
+      <arg name="obstacles_topic" value="/$(arg car3)/perception/multi_car_obstacles"/>
     </include>
     <include file="$(find stack_master)/launch/base_system.launch">
       <arg name="map_name" value="$(arg map_car3)"/>
@@ -385,6 +402,12 @@
       <node pkg="tf" type="static_transform_publisher" name="car3_global_map_link"
             args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car3)map 10" />
     </group>
+    
+    <!-- Speed Monitor for Car3 -->
+    <node pkg="cpu_monitor" type="speed_monitor.py" name="speed_monitor_car3" output="screen">
+      <param name="car_name" value="$(arg car3)"/>
+      <param name="update_rate" value="10.0"/>
+    </node>
   </group>
 
   <group if="$(eval car4 != '')" ns="$(arg car4)">
@@ -395,6 +418,7 @@
       <arg name="racecar_version" value="$(arg version_car4)"/>
       <arg name="measure" value="False"/>
       <arg name="map_name" value="$(arg map_car4)"/>
+      <arg name="obstacles_topic" value="/$(arg car4)/perception/multi_car_obstacles"/>
     </include>
     <include file="$(find stack_master)/launch/base_system.launch">
       <arg name="map_name" value="$(arg map_car4)"/>
@@ -411,6 +435,12 @@
       <node pkg="tf" type="static_transform_publisher" name="car4_global_map_link"
             args="0 0 0 0 0 0 $(arg global_map_frame) $(arg frame_prefix_car4)map 10" />
     </group>
+    
+    <!-- Speed Monitor for Car4 -->
+    <node pkg="cpu_monitor" type="speed_monitor.py" name="speed_monitor_car4" output="screen">
+      <param name="car_name" value="$(arg car4)"/>
+      <param name="update_rate" value="10.0"/>
+    </node>
   </group>
 
   <!-- ============================================= -->
@@ -439,7 +469,9 @@
 
   <!-- Single consolidated RViz outside namespaces -->
   <group if="$(arg rviz)">
-    <node pkg="rviz" type="rviz" name="multi_car_rviz" args="-d $(find stack_master)/rviz/multi_car.rviz" output="screen"/>
+    <node pkg="rviz" type="rviz" name="multi_car_rviz" args="-d $(find stack_master)/rviz/multi_car.rviz" output="screen">
+      <env name="DISABLE_ROS1_EOL_WARNINGS" value="1"/>
+    </node>
   </group>
 
   <!-- ============================================= -->

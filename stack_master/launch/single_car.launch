@@ -1,0 +1,145 @@
+<?xml version="1.0"?>
+<!--
+  Single-Car Complete Launch File
+  
+  This unified launch file combines base_system, headtohead, and obstacle_publisher
+  into one convenient command with all configurable parameters.
+  
+  Usage:
+    # Basic launch with defaults (spliner planner, no obstacles):
+    roslaunch stack_master single_car.launch
+    
+    # With dummy obstacle:
+    roslaunch stack_master single_car.launch enable_dummy_obstacle:=true
+    
+    # With predictive_spliner and custom obstacle speed:
+    roslaunch stack_master single_car.launch planner:=predictive_spliner enable_dummy_obstacle:=true obstacle_speed:=0.3
+    
+    # TAM sampling planner:
+    roslaunch stack_master single_car.launch planner:=tam_sampling
+    
+  Start the race:
+    rosservice call /race_control/start_both
+    
+  Reset:
+    rosservice call /race_control/reset_cars
+-->
+<launch>
+    <!-- ============================================= -->
+    <!-- BASE SYSTEM ARGUMENTS                        -->
+    <!-- ============================================= -->
+    <arg name="sim" default="True" 
+         doc="Simulator (True) or physical car (False)"/>
+    <arg name="racecar_version" default="NUC2" 
+         doc="Physical racecar version: NUC2/JET1"/>
+    <arg name="map_name" default="f" 
+         doc="Map to load from stack_master/maps"/>
+    <arg name="tire_model" default="pacejka" 
+         doc="Simulator tire model: pacejka/linear"/>
+    <arg name="algo" default="slam" 
+         doc="Localization algorithm: slam/pf2"/>
+    <arg name="pf_covariance" default="True" 
+         doc="Propagate covariance in pf2 localization"/>
+    <arg name="scanalign" default="False" 
+         doc="Launch scan-align accuracy node"/>
+    <arg name="rviz" default="True" 
+         doc="Launch RViz visualization"/>
+    
+    <!-- ============================================= -->
+    <!-- PLANNER & CONTROL ARGUMENTS                  -->
+    <!-- ============================================= -->
+    <arg name="planner" default="spliner" 
+         doc="Planner: spliner/predictive_spliner/tam_sampling/predictive_sampler/graph_based/frenet"/>
+    <arg name="MAP_mode" default="safe" 
+         doc="Controller mode: safe/aggressive"/>
+    <arg name="LU_table" default="NUC2_pacejka" 
+         doc="Lookup table for controller"/>
+    <arg name="ctrl_algo" default="MAP" 
+         doc="Control algorithm: MAP/PP/STMPC/KMPC"/>
+    <arg name="perception" default="True" 
+         doc="Enable perception module (disable when using only dummy obstacles)"/>
+    <arg name="measure" default="False" 
+         doc="Enable performance measurements"/>
+    
+    <!-- ============================================= -->
+    <!-- DUMMY OBSTACLE ARGUMENTS                     -->
+    <!-- ============================================= -->
+    <arg name="enable_dummy_obstacle" default="False" 
+         doc="Launch dummy obstacle publisher"/>
+    <arg name="obstacle_trajectory" default="min_curv" 
+         doc="Obstacle trajectory: centerline/min_curv/shortest_path/min_time"/>
+    <arg name="obstacle_start_s" default="0" 
+         doc="Obstacle start position (s coordinate in meters)"/>
+    <arg name="obstacle_speed" default="0.5" 
+         doc="Obstacle speed scaler (0.0-1.0, where 1.0 = 100% of max trajectory speed)"/>
+    <arg name="obstacle_constant_speed" default="false" 
+         doc="Use constant speed instead of trajectory-defined speed profile"/>
+    <arg name="obstacle_path_amplitude" default="0.1" 
+         doc="Sinusoidal lateral deviation amplitude (meters)"/>
+    <arg name="obstacle_path_frequency" default="0.15" 
+         doc="Sinusoidal lateral deviation frequency"/>
+    <arg name="obstacle_path_phase" default="0.0" 
+         doc="Sinusoidal lateral deviation phase offset"/>
+    
+    <!-- ============================================= -->
+    <!-- RACE START CONTROL                           -->
+    <!-- ============================================= -->
+    <arg name="enable_race_start_controller" default="True" 
+         doc="Enable manual race start control (car waits in READY until start service called)"/>
+    
+    <!-- ============================================= -->
+    <!-- BASE SYSTEM LAUNCH                           -->
+    <!-- ============================================= -->
+    <!-- Launches simulator/hardware base, localization, frenet conversion -->
+    <include file="$(find stack_master)/launch/base_system.launch">
+        <arg name="sim" value="$(arg sim)"/>
+        <arg name="racecar_version" value="$(arg racecar_version)"/>
+        <arg name="map_name" value="$(arg map_name)"/>
+        <arg name="tire_model" value="$(arg tire_model)"/>
+        <arg name="algo" value="$(arg algo)"/>
+        <arg name="pf_covariance" value="$(arg pf_covariance)"/>
+        <arg name="scanalign" value="$(arg scanalign)"/>
+        <arg name="rviz" value="$(arg rviz)"/>
+        <arg name="frame_prefix" value=""/>
+        <arg name="include_frenet_republisher" value="True"/>
+    </include>
+    
+    <!-- ============================================= -->
+    <!-- HEADTOHEAD (PLANNER + CONTROLLER) LAUNCH     -->
+    <!-- ============================================= -->
+    <!-- Launches state machine, planner, and controller -->
+    <include file="$(find stack_master)/launch/headtohead.launch">
+        <arg name="car_name" value=""/>
+        <arg name="racecar_version" value="$(arg racecar_version)"/>
+        <arg name="map_name" value="$(arg map_name)"/>
+        <arg name="MAP_mode" value="$(arg MAP_mode)"/>
+        <arg name="LU_table" value="$(arg LU_table)"/>
+        <arg name="ctrl_algo" value="$(arg ctrl_algo)"/>
+        <arg name="measure" value="$(arg measure)"/>
+        <arg name="perception" value="$(arg perception)"/>
+        <arg name="planner" value="$(arg planner)"/>
+        <!-- Topic arguments (use global topics for single-car) -->
+        <arg name="global_waypoints_topic" value="/global_waypoints"/>
+        <arg name="global_waypoints_scaled_topic" value="/global_waypoints_scaled"/>
+        <arg name="global_waypoints_overtaking_topic" value="/global_waypoints/overtaking"/>
+        <arg name="planner_output_topic" value="planner/avoidance/otwpnts"/>
+        <arg name="obstacles_topic" value="/perception/obstacles"/>
+    </include>
+    
+    <!-- ============================================= -->
+    <!-- DUMMY OBSTACLE PUBLISHER (OPTIONAL)          -->
+    <!-- ============================================= -->
+    <!-- Launches configurable dummy opponent -->
+    <group if="$(arg enable_dummy_obstacle)">
+        <include file="$(find obstacle_publisher)/launch/obstacle_publisher.launch">
+            <arg name="trajectory" value="$(arg obstacle_trajectory)"/>
+            <arg name="start_s" value="$(arg obstacle_start_s)"/>
+            <arg name="speed_scaler" value="$(arg obstacle_speed)"/>
+            <arg name="constant_speed" value="$(arg obstacle_constant_speed)"/>
+            <arg name="path_amplitude" value="$(arg obstacle_path_amplitude)"/>
+            <arg name="path_frequency" value="$(arg obstacle_path_frequency)"/>
+            <arg name="path_phase" value="$(arg obstacle_path_phase)"/>
+        </include>
+    </group>
+    
+</launch>
