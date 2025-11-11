@@ -38,7 +38,7 @@ class MultiCarObstaclePublisher:
         else:
             self.car_names = car_names_param
         self.publish_rate = rospy.get_param(
-            '~publish_rate', 50.0)  # Hz - Updated to 50Hz
+            '~publish_rate', 8012.0)  # Hz - Updated to 50Hz
 
         # Car model and dimensions
         self.car_model = rospy.get_param('~car_model', 'NUC2')
@@ -367,10 +367,56 @@ class MultiCarObstaclePublisher:
         return obstacle
 
     def calculate_distance(self, pose1, pose2):
-        """Calculate distance between two poses"""
+        """Calculate Cartesian distance between two poses (deprecated, kept for compatibility)"""
         dx = pose1.position.x - pose2.position.x
         dy = pose1.position.y - pose2.position.y
         return math.sqrt(dx*dx + dy*dy)
+
+    def calculate_frenet_distance(self, car_name, pose1, pose2):
+        """
+        Calculate Frenet-based distance between two poses with wraparound handling.
+
+        Returns:
+            tuple: (track_distance, lateral_distance, car1_s, car2_s) or None if conversion fails
+            - track_distance: Along-track distance (s) with wraparound correction
+            - lateral_distance: Lateral distance (d) 
+            - car1_s: s-coordinate of first car
+            - car2_s: s-coordinate of second car
+        """
+        frenet_converter = self.frenet_converters.get(car_name)
+        if frenet_converter is None:
+            return None
+
+        try:
+            # Convert both positions to Frenet coordinates
+            resp1 = frenet_converter([pose1.position.x], [pose1.position.y])
+            resp2 = frenet_converter([pose2.position.x], [pose2.position.y])
+
+            if len(resp1.s) == 0 or len(resp2.s) == 0:
+                return None
+
+            s1 = resp1.s[0]
+            d1 = resp1.d[0]
+            s2 = resp2.s[0]
+            d2 = resp2.d[0]
+
+            # Calculate along-track distance with wraparound handling
+            s_diff = abs(s2 - s1)
+
+            # Handle track wraparound: if distance is more than half the track,
+            # the shorter path is around the other way
+            if s_diff > self.track_length / 2.0:
+                s_diff = self.track_length - s_diff
+
+            # Calculate lateral distance
+            d_diff = abs(d2 - d1)
+
+            return (s_diff, d_diff, s1, s2)
+
+        except rospy.ServiceException as e:
+            rospy.logwarn_throttle(5.0,
+                                   f"Frenet conversion failed for distance calculation: {e}")
+            return None
 
     def publish_obstacles(self, event):
         """Main publishing function - called by timer"""
@@ -407,14 +453,51 @@ class MultiCarObstaclePublisher:
                         f"Stale data for {other_car_name}: {age:.2f}s old")
                     continue
 
-                # Check if within detection range
+                # Check if within detection range using Frenet distance
                 if car_name in self.car_positions:
-                    distance = self.calculate_distance(
+                    # Use Frenet-based distance calculation
+                    frenet_dist = self.calculate_frenet_distance(
+                        car_name,
                         self.car_positions[car_name]['pose'],
                         other_car_data['pose']
                     )
-                    if distance > self.max_detection_range:
-                        continue  # Too far away
+
+                    if frenet_dist is not None:
+                        track_dist, lateral_dist, car_s, other_s = frenet_dist
+
+                        # Filter based on track distance (primary filter)
+                        # Use max_detection_range as track distance threshold
+                        if track_dist > self.max_detection_range:
+                            rospy.logdebug_throttle(2.0,
+                                                    f"{car_name} filters out {other_car_name}: "
+                                                    f"track_dist={track_dist:.2f}m > {self.max_detection_range}m")
+                            continue  # Too far along track
+
+                        # DISABLED: Lateral distance check
+                        # Cars are detected based ONLY on track distance (s), not lateral position (d)
+                        # This allows detection of opponents on different racing lines
+                        # max_lateral_separation = rospy.get_param('~max_lateral_separation', 5.0)
+                        # if lateral_dist > max_lateral_separation:
+                        #     rospy.logdebug_throttle(2.0,
+                        #         f"{car_name} filters out {other_car_name}: "
+                        #         f"lateral_dist={lateral_dist:.2f}m > {max_lateral_separation}m")
+                        #     continue  # Too far laterally
+
+                        rospy.logdebug_throttle(1.0,
+                                                f"{car_name} DETECTS {other_car_name}: "
+                                                f"track={track_dist:.2f}m, lateral={lateral_dist:.2f}m "
+                                                f"(s: {car_s:.1f} vs {other_s:.1f})")
+                    else:
+                        # Fallback to Cartesian distance if Frenet conversion fails
+                        rospy.logwarn_throttle(5.0,
+                                               f"Frenet distance calculation failed for {car_name}, "
+                                               f"using Cartesian fallback")
+                        cartesian_dist = self.calculate_distance(
+                            self.car_positions[car_name]['pose'],
+                            other_car_data['pose']
+                        )
+                        if cartesian_dist > self.max_detection_range:
+                            continue  # Too far away (Cartesian fallback)
 
                 # Create obstacle message (f110_msgs/Obstacle)
                 obstacle = self.create_car_obstacle(
@@ -430,14 +513,26 @@ class MultiCarObstaclePublisher:
                     markers.markers.append(viz_marker)
                     marker_id += 1
 
-                    # Log detection for debugging
+                    # Log detection for debugging with both distances
                     if car_name in self.car_positions:
-                        distance = self.calculate_distance(
+                        frenet_dist = self.calculate_frenet_distance(
+                            car_name,
                             self.car_positions[car_name]['pose'],
                             other_car_data['pose']
                         )
-                        rospy.logdebug(f"{car_name} detects {other_car_name} at {distance:.2f}m "
-                                       f"(s={obstacle.s_center:.2f}, d={obstacle.d_center:.2f})")
+                        if frenet_dist is not None:
+                            track_dist, lateral_dist, car_s, other_s = frenet_dist
+                            rospy.loginfo_throttle(2.0,
+                                                   f"{car_name} published {other_car_name} as obstacle: "
+                                                   f"track_dist={track_dist:.2f}m, lateral={lateral_dist:.2f}m, "
+                                                   f"s_coords=({car_s:.1f}, {other_s:.1f})")
+                        else:
+                            cartesian_dist = self.calculate_distance(
+                                self.car_positions[car_name]['pose'],
+                                other_car_data['pose']
+                            )
+                            rospy.logdebug(f"{car_name} detects {other_car_name} at {cartesian_dist:.2f}m "
+                                           f"(s={obstacle.s_center:.2f}, d={obstacle.d_center:.2f})")
 
             # Publish obstacle array for this car (integrates with existing perception pipeline)
             if obstacle_array.obstacles:

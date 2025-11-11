@@ -228,13 +228,13 @@ Visualization Manager:
           Queue Size: 100
           Value: true
         - Class: rviz/MarkerArray
-          Enabled: true
+          Enabled: false
           Marker Topic: /trackbounds/markers
           Name: Track Bounds Markers
           Namespaces:
             "": true
           Queue Size: 100
-          Value: true
+          Value: false
         - Class: rviz/MarkerArray
           Enabled: true
           Marker Topic: /ot_sector_markers
@@ -392,6 +392,18 @@ Visualization Manager:
           Value: true
       Enabled: true
       Name: Control
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /speed_monitor/markers
+          Name: Speed_Monitor
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: true
+      Enabled: true
+      Name: Speed Monitor
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

@@ -506,6 +506,9 @@ class Controller_manager:
             '~global_republisher/track_length', rospy.get_param('/global_republisher/track_length'))
         rospy.loginfo(f"{self.log_name} Ready!")
 
+        # Set controller ready parameter (relative namespace)
+        rospy.set_param('~controller_ready', True)
+
         while not rospy.is_shutdown():
             if self.measuring:
                 start = time.perf_counter()

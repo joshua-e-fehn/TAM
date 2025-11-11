@@ -320,6 +320,20 @@ Visualization Manager:
       Namespaces: {}
       Queue Size: 100
       Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /car1/speed_monitor/markers
+      Name: car1_Speed_Monitor
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /car2/speed_monitor/markers
+      Name: car2_Speed_Monitor
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
@@ -356,9 +370,9 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 1.0
-        Y: 0.0
-        Z: 0.0
+        X: 1.1603549718856812
+        Y: -10.549586296081543
+        Z: 3.910290002822876
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false

@@ -15,13 +15,9 @@ F1Tenth Integration:
 import numpy as np
 import rospy
 
-# F1Tenth track handler (uses global waypoints format)
-# Note: Requires track_handler_global_waypoints.py, not original track_handler_py
-try:
-    from track_handler_global_waypoints import GlobalWaypointsTrackHandler as Track
-except ImportError:
-    print("WARNING: Using fallback Track import")
-    from track_handler_py import Track
+from track_handler_global_waypoints import GlobalWaypointsTrackHandler as Track
+
+from simple_helper_utils import interpolate_with_period
 
 # F1Tenth message types
 try:
@@ -60,66 +56,173 @@ class CoordinateTransformation:
         self.use_f1tenth_mode = use_f1tenth_mode
 
         # Load parameters from ROS parameter server
-        self.load_ros_parameters()
+        self.initialized_params = False
+        self.load_and_update_ros_parameters()
 
-    def load_ros_parameters(self):
-        """Load parameters from ROS parameter server (replaces param_management_py)"""
-        # F1Tenth doesn't need most of these, but keeping for compatibility
-        self.tube_width = rospy.get_param('tube_width', 1.0)
-        self.trajectory_len_controller = rospy.get_param(
-            'trajectory_len_controller', 50)
+    def _load_yaml_defaults(self):
+        """Load default parameters from tam_sampling_params.yaml"""
+        import rospkg
+        import yaml
+        import os
+        try:
+            rospack = rospkg.RosPack()
+            pkg_path = rospack.get_path('tam_sampling_planner')
+            config_file = os.path.join(
+                pkg_path, 'config', 'tam_sampling_params.yaml')
 
-        rospy.loginfo(f"F1Tenth CoordinateTransformation initialized:")
-        rospy.loginfo(f"  - tube_width: {self.tube_width}")
-        rospy.loginfo(
-            f"  - trajectory_len_controller: {self.trajectory_len_controller}")
+            with open(config_file, 'r') as f:
+                yaml_params = yaml.safe_load(f)
+                return yaml_params if yaml_params else {}
+        except Exception as e:
+            rospy.logwarn(
+                f"CoordinateTransformation: Could not load YAML defaults: {e}")
+            return {}
 
-    # ========================================================================
-    # FULL TAM METHOD (COMMENTED OUT - NOT NEEDED FOR F1TENTH)
-    # ========================================================================
-    # This method is used by advanced MPC controllers for 3D tracks
-    # F1Tenth uses simplified convert_trajectory_to_wpnt_array() instead
-    # ========================================================================
+    def load_and_update_ros_parameters(self):
+        """Load parameters from ROS parameter server with YAML defaults as fallback"""
+        if not self.initialized_params:
+            yaml_defaults = self._load_yaml_defaults()
 
-    # def transform_to_velocity_frame(
-    #     self,
-    #     track_handler: Track,
-    #     s_array: np.ndarray,
-    #     s_dot_array: np.ndarray,
-    #     s_ddot_array: np.ndarray,
-    #     n_array: np.ndarray,
-    #     n_dot_array: np.ndarray,
-    #     n_ddot_array: np.ndarray,
-    #     postprocessed_raceline: dict
-    # ):
-    #     """
-    #     Complex 3D velocity frame transformation.
-    #     NOT NEEDED for F1Tenth - uses 2D kinematics only.
-    #     """
-    #     # Full implementation commented out - not needed for F1Tenth
-    #     raise NotImplementedError("transform_to_velocity_frame not needed for F1Tenth. Use convert_trajectory_to_wpnt_array() instead.")
+            # F1Tenth doesn't need most of these, but keeping for compatibility
+            self.tube_width = yaml_defaults.get(
+                'tube_width', rospy.get_param('behavior/tube_width', 0.05))
+            rospy.set_param('behavior/tube_width', self.tube_width)
+            self.trajectory_len_controller = yaml_defaults.get(
+                'trajectory_len_controller', rospy.get_param('trajectory_len_controller', 50))
+            rospy.set_param('trajectory_len_controller',
+                            self.trajectory_len_controller)
 
-    # ========================================================================
-    # FULL TAM IMPLEMENTATION (COMMENTED OUT - NOT NEEDED FOR F1TENTH)
-    # ========================================================================
-    # All code below this point until __cut_trajectory_at_zero was part of
-    # transform_to_velocity_frame - commented out for F1Tenth simplification
-    # ========================================================================
+            rospy.loginfo(f"F1Tenth CoordinateTransformation initialized:")
+            rospy.loginfo(f"  - tube_width: {self.tube_width}")
+            rospy.loginfo(
+                f"  - trajectory_len_controller: {self.trajectory_len_controller}")
+            self.initialized_params = True
+        else:
+            self.tube_width = rospy.get_param(
+                'behavior/tube_width', self.tube_width)
+            self.trajectory_len_controller = rospy.get_param(
+                'trajectory_len_controller', self.trajectory_len_controller)
 
-    # Original transform_to_velocity_frame body:
-    #     self.declare_and_update_parameters()
-    #     Omega_z_rf_array = np.interp(...)
-    #     dOmega_z_rf_array = np.interp(...)
-    #     chi_array = np.arctan(...)
-    #     v_array = np.sqrt(...)
-    #     ax_vf_array = (complex calculation)
-    #     ay_vf_array = (complex calculation)
-    #     Omega_z_vf_array = (complex calculation)
-    #     return v_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array
+    def transform_to_velocity_frame(
+        self,
+        track_handler: Track,
+        s_array: np.ndarray,
+        s_dot_array: np.ndarray,
+        s_ddot_array: np.ndarray,
+        n_array: np.ndarray,
+        n_dot_array: np.ndarray,
+        n_ddot_array: np.ndarray,
+        postprocessed_raceline: dict
+    ):
 
-    # ========================================================================
+        self.load_and_update_ros_parameters()
+
+        # angular velocity of road frame with respect to s expressed in road frame (ommited around x and y axis)
+        Omega_z_rf_array = interpolate_with_period(
+            s_array, track_handler.s_coord(), track_handler.omega_z(), period=track_handler.get_track_length()
+        )
+        dOmega_z_rf_array = interpolate_with_period(
+            s_array, track_handler.s_coord(), track_handler.d_omega_z(), period=track_handler.get_track_length()
+        )
+
+        Omega_z_rf_array_rl = interpolate_with_period(
+            postprocessed_raceline["s_post"], track_handler.s_coord(), track_handler.omega_z(), period=track_handler.get_track_length()
+        )
+
+        dOmega_z_rf_array_rl = interpolate_with_period(
+            postprocessed_raceline["s_post"], track_handler.s_coord(), track_handler.d_omega_z(), period=track_handler.get_track_length()
+        )
+
+        # orientation of the velocity vector relative to reference line
+        chi_array = np.arctan(
+            n_dot_array / (s_dot_array * (1.0 - Omega_z_rf_array * n_array)))
+
+        # absolute velocity
+        v_array = np.sqrt((1.0 - Omega_z_rf_array * n_array)
+                          ** 2 * s_dot_array**2 + n_dot_array**2)
+
+        # raceline['s_dot'] = raceline['V'] * np.cos(raceline['chi']) / (1.0 - raceline['n'] * Omega_z)
+
+        # x-acceleration in velocity frame
+        ax_vf_array = (
+            1
+            / np.sqrt(s_dot_array**2 * (1.0 - Omega_z_rf_array * n_array) ** 2 + n_dot_array**2)
+            * (
+                s_dot_array * s_ddot_array *
+                (1.0 - Omega_z_rf_array * n_array) ** 2
+                - s_dot_array**2
+                * (1.0 - Omega_z_rf_array * n_array)
+                * (dOmega_z_rf_array * s_dot_array * n_array + Omega_z_rf_array * n_dot_array)
+                + n_dot_array * n_ddot_array
+            )
+        )
+
+        # rewrite this formula for postprocessed_raceline
+        ax_vf_array_rl = (
+            1
+            / np.sqrt(postprocessed_raceline["s_dot_post"]**2 * (1.0 - Omega_z_rf_array_rl * postprocessed_raceline["n_post"]) ** 2 + postprocessed_raceline["n_post"]**2)
+            * (
+                postprocessed_raceline["s_dot_post"] * postprocessed_raceline["s_ddot_post"] * (
+                    1.0 - Omega_z_rf_array_rl * postprocessed_raceline["n_post"]) ** 2
+                - postprocessed_raceline["s_dot_post"]**2
+                * (1.0 - Omega_z_rf_array_rl * postprocessed_raceline["n_post"])
+                * (dOmega_z_rf_array_rl * postprocessed_raceline["s_dot_post"] * postprocessed_raceline["n_post"] + Omega_z_rf_array_rl * postprocessed_raceline["n_post"])
+                + postprocessed_raceline["n_post"] *
+                postprocessed_raceline["n_ddot_post"]
+            )
+        )
+
+        # y-acceleration in velocity frame
+        ay_vf_array = (
+            1
+            / np.sqrt(s_dot_array**2 * (1.0 - Omega_z_rf_array * n_array) ** 2 + n_dot_array**2)
+            * (
+                s_dot_array
+                * n_dot_array
+                * (dOmega_z_rf_array * s_dot_array * n_array + 2.0 * Omega_z_rf_array * n_dot_array)
+                - s_ddot_array * n_dot_array *
+                (1.0 - Omega_z_rf_array * n_array)
+                + s_dot_array**3 * Omega_z_rf_array *
+                (1 - Omega_z_rf_array * n_array) ** 2
+                + s_dot_array * n_ddot_array *
+                (1.0 - Omega_z_rf_array * n_array)
+            )
+        )
+
+        # angular velocity of velocity frame with respect to s
+        Omega_z_vf_array = (
+            s_dot_array
+            / np.sqrt(s_dot_array**2 * (1.0 - Omega_z_rf_array * n_array) ** 2 + n_dot_array**2)
+            * (
+                1.0
+                / s_dot_array
+                * (
+                    s_dot_array * (1.0 - Omega_z_rf_array *
+                                   n_array) * n_ddot_array
+                    - n_dot_array
+                    * (
+                        s_ddot_array * (1.0 - Omega_z_rf_array * n_array)
+                        - s_dot_array *
+                        (dOmega_z_rf_array * s_dot_array *
+                         n_array + Omega_z_rf_array * n_dot_array)
+                    )
+                )
+                / (s_dot_array**2 * (1.0 - Omega_z_rf_array * n_array) ** 2 + n_dot_array**2)
+                + Omega_z_rf_array
+            )
+        )
+
+        # Calculate path curvature kappa = Omega_z / V
+        # Use safe division to avoid numerical issues at low velocities
+        epsilon = 1e-6
+        v_safe = np.maximum(v_array, epsilon)
+        kappa_vf_array = Omega_z_vf_array / v_safe
+
+        return v_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array, kappa_vf_array
 
     def __cut_trajectory_at_zero(self, trajectory_N):
+
+        self.load_and_update_ros_parameters()
 
         # get indices where emergency trajectory is zero
         zero_idxs = np.where(trajectory_N["v"] <= 0.001)[0]
@@ -158,6 +261,7 @@ class CoordinateTransformation:
         NOTE: This method is from full TAM but kept for compatibility.
         F1Tenth typically doesn't need trajectory trimming.
         """
+        self.load_and_update_ros_parameters()
         remove_mask = np.ones(array_in.size, dtype=np.bool_)
         num_remove = array_in.size - len_array_out  # number of elements to be removed
 
@@ -214,6 +318,8 @@ class CoordinateTransformation:
             WpntArray message if f110_msgs available, else dict
         """
 
+        self.load_and_update_ros_parameters()
+
         if not F110_MSGS_AVAILABLE:
             rospy.logerr("f110_msgs not available for WpntArray conversion")
             return None
@@ -244,7 +350,25 @@ class CoordinateTransformation:
         # Get trajectory length
         n_points = len(traj["s"])
 
-        # Convert Frenet to Cartesian
+        # CRITICAL FIX: Wrap s-coordinates to [0, track_length) for visualization
+        # Trajectories may have continuous s > track_length (e.g., [75...85] on 76m track)
+        # While sn2cartesian handles this correctly via interp_with_period,
+        # the LINE_STRIP visualization draws straight lines between wrapped points
+        # Wrapping ensures waypoints are spatially ordered for proper visualization
+        track_length = track_handler.get_track_length()
+        s_min_original = np.min(traj["s"])
+        s_max_original = np.max(traj["s"])
+
+        # ALWAYS wrap s-coordinates to [0, track_length)
+        # This ensures all waypoints are in the valid range for interpolation
+        # and prevents LINE_STRIP visualization artifacts
+        if s_max_original > track_length or s_min_original < 0:
+            rospy.loginfo(
+                f"[CONVERT] Wrapping trajectory s-coordinates: [{s_min_original:.2f}...{s_max_original:.2f}] -> [0...{track_length:.2f})")
+
+        traj["s"] = np.mod(traj["s"], track_length)
+
+        # Convert Frenet to Cartesian (now with wrapped s-coordinates)
         xyz_array = track_handler.sn2cartesian(traj["s"], traj["n"])
         x_array = xyz_array[:, 0]
         y_array = xyz_array[:, 1]
@@ -254,12 +378,16 @@ class CoordinateTransformation:
             traj["s"], traj["chi"]
         )
 
-        # Interpolate track curvature
-        kappa_array = np.interp(
+        # Interpolate track curvature using interpolate_with_period for wraparound safety
+        track_s = track_handler.s_coord()
+        track_kappa = track_handler.kappa()
+        track_length = track_handler.get_track_length()
+
+        kappa_array = interpolate_with_period(
             traj["s"],
-            track_handler.s_coord(),
-            track_handler.kappa(),
-            period=track_handler.s_coord()[-1]
+            track_s,
+            track_kappa,
+            period=track_length
         )
 
         # Get track boundaries
@@ -310,9 +438,9 @@ class CoordinateTransformation:
     # ):
 
     #     phi_array = np.interp(trajectory['s'], track_handler.s_coord(
-    #     ), track_handler.phi(), period=track_handler.s_coord()[-1])
+    #     ), track_handler.phi(), period=track_handler.get_track_length())
     #     mu_array = np.interp(trajectory['s'], track_handler.s_coord(
-    #     ), track_handler.mu(), period=track_handler.s_coord()[-1])
+    #     ), track_handler.mu(), period=track_handler.get_track_length())
 
     #     # Values that are the same for the performance and emergency trajectory
     #     s_glob_array = trajectory["s"]

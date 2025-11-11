@@ -83,29 +83,54 @@ def find_nearest_s_and_idx(s_array, target_s, track_handler=None):
 
 def interpolate_with_period(x, xp, fp, period=None):
     """
-    Interpolate with periodic boundary conditions.
+    NumPy < 1.21 compatible interpolation with periodic support.
+
+    Uses extended array approach: triplicates data as [fp-period, fp, fp+period]
+    to handle wraparound interpolation smoothly.
 
     Args:
-        x: Points at which to evaluate interpolated values
-        xp: Known data points (must be sorted)
-        fp: Known function values at xp
-        period: Period for periodic interpolation (optional)
+        x: The x-coordinates at which to evaluate the interpolated values
+        xp: The x-coordinates of the data points (must be increasing)
+        fp: The y-coordinates of the data points (same shape as xp)
+        period: The period for wraparound interpolation
 
     Returns:
-        np.ndarray: Interpolated values
+        Interpolated values at x coordinates
     """
     if period is None:
         return np.interp(x, xp, fp)
 
-    # Handle periodic interpolation
-    x = np.asarray(x)
-    x_mod = x % period
+    # Extend coordinates: [xp-period, xp, xp+period]
+    xp_before = xp - period
+    xp_after = xp + period
+    xp_extended = np.concatenate([xp_before, xp, xp_after])
 
-    # Extend xp and fp for periodic interpolation
-    xp_extended = np.concatenate([xp - period, xp, xp + period])
+    # Triplicate data (periodic)
     fp_extended = np.concatenate([fp, fp, fp])
 
-    return np.interp(x_mod, xp_extended, fp_extended)
+    # Interpolate using extended arrays
+    return np.interp(x, xp_extended, fp_extended)
+
+
+def extend_periodic_data(coords, data, period):
+    """
+    Extend periodic data arrays for wraparound-safe interpolation.
+
+    Args:
+        coords: Coordinate array (e.g., s-coordinates)
+        data: Data array to extend (same shape as coords)
+        period: Period for wraparound (e.g., track length)
+
+    Returns:
+        Tuple of (extended_coords, extended_data)
+    """
+    coords_before = coords - period
+    coords_after = coords + period
+    extended_coords = np.concatenate([coords_before, coords, coords_after])
+
+    extended_data = np.concatenate([data, data, data])
+
+    return extended_coords, extended_data
 
 
 def validate_array_monotonic(array, name="array"):
@@ -177,6 +202,56 @@ def smooth_array(array, window_size=5):
     smoothed = np.convolve(array, kernel, mode='same')
 
     return smoothed
+
+
+def unwrap_periodic_coordinates(coords, period):
+    """
+    Unwrap periodic coordinates to handle wraparound discontinuities.
+
+    Converts periodic coordinates (e.g., arc length with wraparound) to
+    continuous unwrapped coordinates by detecting and removing jumps.
+
+    Args:
+        coords: Array of periodic coordinates (e.g., s-coordinates on track)
+        period: Period of the coordinates (e.g., track length)
+
+    Returns:
+        np.ndarray: Unwrapped coordinates (can exceed period value)
+    """
+    coords = np.asarray(coords)
+
+    # Convert to angular representation: coord -> theta = 2*pi*coord/period
+    theta = 2.0 * np.pi * coords / period
+
+    # Unwrap angles (removes 2*pi jumps)
+    theta_unwrapped = np.unwrap(theta)
+
+    # Convert back to original coordinate system
+    coords_unwrapped = theta_unwrapped * period / (2.0 * np.pi)
+
+    return coords_unwrapped
+
+
+def slice_trajectory_dict(traj_dict, start_idx=None, end_idx=None):
+    """
+    Slice all arrays/lists in a trajectory dictionary.
+
+    Args:
+        traj_dict: Dictionary containing trajectory arrays/lists
+        start_idx: Start index (None = beginning)
+        end_idx: End index (None = end)
+
+    Returns:
+        dict: New dictionary with sliced arrays/lists
+    """
+    sliced = {}
+    for key, value in traj_dict.items():
+        if isinstance(value, np.ndarray) or isinstance(value, list):
+            sliced[key] = value[start_idx:end_idx]
+        else:
+            # Keep non-array values as-is
+            sliced[key] = value
+    return sliced
 
 
 # Test functions

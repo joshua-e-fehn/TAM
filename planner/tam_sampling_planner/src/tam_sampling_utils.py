@@ -85,15 +85,19 @@ class TAMSamplingUtils:
 
     @staticmethod
     def obstacles_to_tam_format(obstacles_msg) -> List[Dict]:
-        """Convert ROS obstacles to TAM format"""
+        """Convert ROS obstacles to TAM format (F1Tenth Frenet-based obstacles)"""
 
         obstacles = []
         for obs in obstacles_msg.obstacles:
+            # F1Tenth obstacles use Frenet coordinates (s, d) not Cartesian (x, y)
             obstacles.append({
-                'x': obs.pose.position.x,
-                'y': obs.pose.position.y,
-                'radius': max(obs.scale.x, obs.scale.y) / 2.0,
-                'velocity': np.sqrt(obs.twist.linear.x**2 + obs.twist.linear.y**2)
+                's': obs.s_center,  # Longitudinal position along track
+                'd': obs.d_center,  # Lateral offset from centerline
+                'radius': obs.size / 2.0,  # Obstacle size
+                'velocity_s': obs.vs,  # Velocity in longitudinal direction
+                'velocity_d': obs.vd,  # Velocity in lateral direction
+                'is_static': obs.is_static,
+                'is_visible': obs.is_visible
             })
 
         return obstacles

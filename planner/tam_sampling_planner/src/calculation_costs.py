@@ -38,6 +38,7 @@ ROS Parameters (relative namespace):
 """
 
 from track_handler_global_waypoints import GlobalWaypointsTrackHandler
+from simple_helper_utils import interpolate_with_period
 import numpy as np
 from dataclasses import dataclass
 import rospy
@@ -78,7 +79,7 @@ class CalculationCostsParams():
 
 
 class CalculationCosts():
-    def __init__(self, params=None, debugging=False):
+    def __init__(self, debugging=False):
         """
         Initialize CalculationCosts with ROS parameters.
 
@@ -88,6 +89,7 @@ class CalculationCosts():
         """
         self.params = CalculationCostsParams()
         self.debugging = debugging
+        self.initialized_params = False
         self.declare_and_update_parameters()
 
     def _convert_global_waypoints_to_prediction(self, prediction_waypoints, time_horizon=None, dt=0.1):
@@ -460,76 +462,285 @@ class CalculationCosts():
 
         return time_coords
 
+    def _load_yaml_defaults(self):
+        """Load default parameters from tam_sampling_params.yaml"""
+        import rospkg
+        import yaml
+        import os
+        try:
+            rospack = rospkg.RosPack()
+            pkg_path = rospack.get_path('tam_sampling_planner')
+            config_file = os.path.join(
+                pkg_path, 'config', 'tam_sampling_params.yaml')
+
+            with open(config_file, 'r') as f:
+                yaml_params = yaml.safe_load(f)
+                return yaml_params if yaml_params else {}
+        except Exception as e:
+            rospy.logwarn(
+                f"CalculationCosts: Could not load YAML defaults: {e}")
+            return {}
+
     def declare_and_update_parameters(self):
-        # Load cost parameters
-        self.params.curvature_cost_weight = rospy.get_param(
-            "costs/curvature_cost_weight", 500000.0)
-        self.params.curvature_cost_threshold = rospy.get_param(
-            "costs/curvature_cost_threshold", 30.0)
-        self.params.raceline_cost_weight = rospy.get_param(
-            "costs/raceline_cost_weight", 3.5)
-        self.params.velocity_cost_weight = rospy.get_param(
-            "costs/velocity_cost_weight", 3.0)
-        self.params.friction_cost_weight = rospy.get_param(
-            "costs/friction_cost_weight", 5000.0)
-        self.params.lateral_jerk_cost_weight = rospy.get_param(
-            "costs/lateral_jerk_cost_weight", 0.0)
+        if not self.initialized_params:
+            yaml_defaults = self._load_yaml_defaults()
 
-        # Overtaking weight parameters
-        self.params.raceline_cost_weight_overtaking = rospy.get_param(
-            "overtaking_weights/raceline_cost_weight_overtaking", 2.0)
-        self.params.velocity_cost_weight_overtaking = rospy.get_param(
-            "overtaking_weights/velocity_cost_weight_overtaking", 8.0)
-        self.params.lateral_jerk_cost_weight_overtaking = rospy.get_param(
-            "overtaking_weights/lateral_jerk_cost_weight_overtaking", 0.0)
+            # Load cost parameters
+            self.params.curvature_cost_weight = yaml_defaults.get(
+                'curvature_cost_weight',
+                rospy.get_param("costs/curvature_cost_weight", 500000.0))
+            rospy.set_param("costs/curvature_cost_weight",
+                            self.params.curvature_cost_weight)
+            self.params.curvature_cost_threshold = yaml_defaults.get(
+                'curvature_cost_threshold',
+                rospy.get_param("costs/curvature_cost_threshold", 30.0))
+            rospy.set_param("costs/curvature_cost_threshold",
+                            self.params.curvature_cost_threshold)
+            self.params.raceline_cost_weight = yaml_defaults.get(
+                'raceline_cost_weight',
+                rospy.get_param("costs/raceline_cost_weight", 3.5))
+            rospy.set_param("costs/raceline_cost_weight",
+                            self.params.raceline_cost_weight)
+            self.params.velocity_cost_weight = yaml_defaults.get(
+                'velocity_cost_weight',
+                rospy.get_param("costs/velocity_cost_weight", 3.0))
+            rospy.set_param("costs/velocity_cost_weight",
+                            self.params.velocity_cost_weight)
+            self.params.friction_cost_weight = yaml_defaults.get(
+                'friction_cost_weight',
+                rospy.get_param("costs/friction_cost_weight", 5000.0))
+            rospy.set_param("costs/friction_cost_weight",
+                            self.params.friction_cost_weight)
+            self.params.lateral_jerk_cost_weight = yaml_defaults.get(
+                'lateral_jerk_cost_weight',
+                rospy.get_param("costs/lateral_jerk_cost_weight", 0.0))
+            rospy.set_param("costs/lateral_jerk_cost_weight",
+                            self.params.lateral_jerk_cost_weight)
 
-        # Prediction and collision cost parameters
-        self.params.prediction_cost_weight = rospy.get_param(
-            "costs/prediction_cost_weight", 100000.0)
-        self.params.additional_absolute_sample_cost = rospy.get_param(
-            "costs/additional_absolute_sample_cost", 50.0)
-        self.params.collision_cost_weight = rospy.get_param(
-            "costs/collision_cost_weight", 100000000.0)
+            # Overtaking weight parameters
+            self.params.raceline_cost_weight_overtaking = yaml_defaults.get(
+                'raceline_cost_weight_overtaking',
+                rospy.get_param("overtaking_weights/raceline_cost_weight_overtaking", 2.0))
+            rospy.set_param("overtaking_weights/raceline_cost_weight_overtaking",
+                            self.params.raceline_cost_weight_overtaking)
+            self.params.velocity_cost_weight_overtaking = yaml_defaults.get(
+                'velocity_cost_weight_overtaking',
+                rospy.get_param("overtaking_weights/velocity_cost_weight_overtaking", 8.0))
+            rospy.set_param("overtaking_weights/velocity_cost_weight_overtaking",
+                            self.params.velocity_cost_weight_overtaking)
+            self.params.lateral_jerk_cost_weight_overtaking = yaml_defaults.get(
+                'lateral_jerk_cost_weight_overtaking',
+                rospy.get_param("overtaking_weights/lateral_jerk_cost_weight_overtaking", 0.0))
+            rospy.set_param("overtaking_weights/lateral_jerk_cost_weight_overtaking",
+                            self.params.lateral_jerk_cost_weight_overtaking)
 
-        # Behavior parameters
-        self.params.horizon = rospy.get_param("~behavior/horizon", 4.0)
-        self.params.max_deceleration_on_target_change = rospy.get_param(
-            "behavior/max_deceleration_on_target_change", 5.0)
-        self.params.collision_check_horizon_s = rospy.get_param(
-            "behavior/collision_check_horizon_s", 1.5)
-        self.params.tube_width = rospy.get_param("~behavior/tube_width", 1.0)
+            # Prediction and collision cost parameters
+            self.params.prediction_cost_weight = yaml_defaults.get(
+                'prediction_cost_weight',
+                rospy.get_param("costs/prediction_cost_weight", 100000.0))
+            rospy.set_param("costs/prediction_cost_weight",
+                            self.params.prediction_cost_weight)
+            self.params.additional_absolute_sample_cost = yaml_defaults.get(
+                'additional_absolute_sample_cost',
+                rospy.get_param("costs/additional_absolute_sample_cost", 50.0))
+            rospy.set_param("costs/additional_absolute_sample_cost",
+                            self.params.additional_absolute_sample_cost)
+            self.params.collision_cost_weight = yaml_defaults.get(
+                'collision_cost_weight',
+                rospy.get_param("costs/collision_cost_weight", 100000000.0))
+            rospy.set_param("costs/collision_cost_weight",
+                            self.params.collision_cost_weight)
 
-        # Prediction factor parameters
-        self.params.prediction_s_factor_min_size = rospy.get_param(
-            "costs/prediction_s_factor_min_size", 0.03)
-        self.params.prediction_s_factor_max_size = rospy.get_param(
-            "costs/prediction_s_factor_max_size", 0.012)
-        self.params.prediction_s_asym_scaling = rospy.get_param(
-            "costs/prediction_s_asym_scaling", 1.5)
-        self.params.prediction_n_factor = rospy.get_param(
-            "costs/prediction_n_factor", 0.2)
-        self.params.prediction_s_factor_defender = rospy.get_param(
-            "costs/prediction_s_factor_defender", 0.03)
-        self.params.prediction_n_factor_defender = rospy.get_param(
-            "costs/prediction_n_factor_defender", 0.2)
-        self.params.prediction_s_factor_static = rospy.get_param(
-            "costs/prediction_s_factor_static", 0.05)
-        self.params.prediction_n_factor_static = rospy.get_param(
-            "costs/prediction_n_factor_static", 0.35)
-        self.params.prediction_uncertainty_weight = rospy.get_param(
-            "costs/prediction_uncertainty_weight", 4.0)
+            # Behavior parameters
+            self.params.horizon = yaml_defaults.get(
+                'planning_horizon',
+                rospy.get_param("behavior/horizon", 4.0))
+            rospy.set_param("behavior/horizon", self.params.horizon)
+            self.params.max_deceleration_on_target_change = yaml_defaults.get(
+                'max_deceleration_on_target_change',
+                rospy.get_param("behavior/max_deceleration_on_target_change", 5.0))
+            rospy.set_param("behavior/max_deceleration_on_target_change",
+                            self.params.max_deceleration_on_target_change)
+            self.params.collision_check_horizon_s = yaml_defaults.get(
+                'collision_check_horizon_s',
+                rospy.get_param("behavior/collision_check_horizon_s", 1.5))
+            rospy.set_param("behavior/collision_check_horizon_s",
+                            self.params.collision_check_horizon_s)
+            self.params.tube_width = yaml_defaults.get(
+                'tube_width',
+                rospy.get_param("behavior/tube_width", 1.0))
+            rospy.set_param("behavior/tube_width", self.params.tube_width)
 
-        # Additional cost parameters
-        self.params.increasing_rl_cost = rospy.get_param(
-            "costs/increasing_rl_cost", True)
-        self.params.velocity_excess_cost_multiplier = rospy.get_param(
-            "costs/velocity_excess_cost_multiplier", 2.0)
-        self.params.V_diff_max_costs = rospy.get_param(
-            "costs/V_diff_max_costs", 15.0)
+            # Prediction factor parameters
+            self.params.prediction_s_factor_min_size = yaml_defaults.get(
+                'prediction_s_factor_min_size',
+                rospy.get_param("costs/prediction_s_factor_min_size", 0.03))
+            rospy.set_param("costs/prediction_s_factor_min_size",
+                            self.params.prediction_s_factor_min_size)
+            self.params.prediction_s_factor_max_size = yaml_defaults.get(
+                'prediction_s_factor_max_size',
+                rospy.get_param("costs/prediction_s_factor_max_size", 0.012))
+            rospy.set_param("costs/prediction_s_factor_max_size",
+                            self.params.prediction_s_factor_max_size)
+            self.params.prediction_s_asym_scaling = yaml_defaults.get(
+                'prediction_s_asym_scaling',
+                rospy.get_param("costs/prediction_s_asym_scaling", 1.5))
+            rospy.set_param("costs/prediction_s_asym_scaling",
+                            self.params.prediction_s_asym_scaling)
+            self.params.prediction_n_factor = yaml_defaults.get(
+                'prediction_n_factor',
+                rospy.get_param("costs/prediction_n_factor", 0.2))
+            rospy.set_param("costs/prediction_n_factor",
+                            self.params.prediction_n_factor)
+            self.params.prediction_s_factor_defender = yaml_defaults.get(
+                'prediction_s_factor_defender',
+                rospy.get_param("costs/prediction_s_factor_defender", 0.03))
+            rospy.set_param("costs/prediction_s_factor_defender",
+                            self.params.prediction_s_factor_defender)
+            self.params.prediction_n_factor_defender = yaml_defaults.get(
+                'prediction_n_factor_defender',
+                rospy.get_param("costs/prediction_n_factor_defender", 0.2))
+            rospy.set_param("costs/prediction_n_factor_defender",
+                            self.params.prediction_n_factor_defender)
+            self.params.prediction_s_factor_static = yaml_defaults.get(
+                'prediction_s_factor_static',
+                rospy.get_param("costs/prediction_s_factor_static", 0.05))
+            rospy.set_param("costs/prediction_s_factor_static",
+                            self.params.prediction_s_factor_static)
+            self.params.prediction_n_factor_static = yaml_defaults.get(
+                'prediction_n_factor_static',
+                rospy.get_param("costs/prediction_n_factor_static", 0.35))
+            rospy.set_param("costs/prediction_n_factor_static",
+                            self.params.prediction_n_factor_static)
+            self.params.prediction_uncertainty_weight = yaml_defaults.get(
+                'prediction_uncertainty_weight',
+                rospy.get_param("costs/prediction_uncertainty_weight", 4.0))
+            rospy.set_param("costs/prediction_uncertainty_weight",
+                            self.params.prediction_uncertainty_weight)
 
-        # Safety distance parameters
-        self.params.safety_distance_vehicles = rospy.get_param(
-            "safety_distances/safety_distance_vehicles", 0.0)
+            # Additional cost parameters
+            self.params.increasing_rl_cost = yaml_defaults.get(
+                'increasing_rl_cost',
+                rospy.get_param("costs/increasing_rl_cost", True))
+            rospy.set_param("costs/increasing_rl_cost",
+                            self.params.increasing_rl_cost)
+            self.params.velocity_excess_cost_multiplier = yaml_defaults.get(
+                'velocity_excess_cost_multiplier',
+                rospy.get_param("costs/velocity_excess_cost_multiplier", 2.0))
+            rospy.set_param("costs/velocity_excess_cost_multiplier",
+                            self.params.velocity_excess_cost_multiplier)
+            self.params.V_diff_max_costs = yaml_defaults.get(
+                'V_diff_max_costs',
+                rospy.get_param("costs/V_diff_max_costs", 15.0))
+            rospy.set_param("costs/V_diff_max_costs",
+                            self.params.V_diff_max_costs)
+
+            # Safety distance parameters
+            self.params.safety_distance_vehicles = yaml_defaults.get(
+                'safety_distance_vehicles',
+                rospy.get_param("safety_distances/safety_distance_vehicles", 0.0))
+            rospy.set_param("safety_distances/safety_distance_vehicles",
+                            self.params.safety_distance_vehicles)
+            self.initialized_params = True
+        else:
+            # Load cost parameters
+            self.params.curvature_cost_weight = rospy.get_param(
+                "costs/curvature_cost_weight",
+                self.params.curvature_cost_weight)
+            self.params.curvature_cost_threshold = rospy.get_param(
+                "costs/curvature_cost_threshold",
+                self.params.curvature_cost_threshold)
+            self.params.raceline_cost_weight = rospy.get_param(
+                "costs/raceline_cost_weight",
+                self.params.raceline_cost_weight)
+            self.params.velocity_cost_weight = rospy.get_param(
+                "costs/velocity_cost_weight",
+                self.params.velocity_cost_weight)
+            self.params.friction_cost_weight = rospy.get_param(
+                "costs/friction_cost_weight",
+                self.params.friction_cost_weight)
+            self.params.lateral_jerk_cost_weight = rospy.get_param(
+                "costs/lateral_jerk_cost_weight",
+                self.params.lateral_jerk_cost_weight)
+
+            # Overtaking weight parameters
+            self.params.raceline_cost_weight_overtaking = rospy.get_param(
+                "overtaking_weights/raceline_cost_weight_overtaking",
+                self.params.raceline_cost_weight_overtaking)
+            self.params.velocity_cost_weight_overtaking = rospy.get_param(
+                "overtaking_weights/velocity_cost_weight_overtaking",
+                self.params.velocity_cost_weight_overtaking)
+            self.params.lateral_jerk_cost_weight_overtaking = rospy.get_param(
+                "overtaking_weights/lateral_jerk_cost_weight_overtaking",
+                self.params.lateral_jerk_cost_weight_overtaking)
+
+            # Prediction and collision cost parameters
+            self.params.prediction_cost_weight = rospy.get_param(
+                "costs/prediction_cost_weight",
+                self.params.prediction_cost_weight)
+            self.params.additional_absolute_sample_cost = rospy.get_param(
+                "costs/additional_absolute_sample_cost",
+                self.params.additional_absolute_sample_cost)
+            self.params.collision_cost_weight = rospy.get_param(
+                "costs/collision_cost_weight",
+                self.params.collision_cost_weight)
+
+            # Behavior parameters
+            self.params.horizon = rospy.get_param(
+                "behavior/horizon", self.params.horizon)
+            self.params.max_deceleration_on_target_change = rospy.get_param(
+                "behavior/max_deceleration_on_target_change",
+                self.params.max_deceleration_on_target_change)
+            self.params.collision_check_horizon_s = rospy.get_param(
+                "behavior/collision_check_horizon_s",
+                self.params.collision_check_horizon_s)
+            self.params.tube_width = rospy.get_param(
+                "behavior/tube_width", self.params.tube_width)
+
+            # Prediction factor parameters
+            self.params.prediction_s_factor_min_size = rospy.get_param(
+                "costs/prediction_s_factor_min_size",
+                self.params.prediction_s_factor_min_size)
+            self.params.prediction_s_factor_max_size = rospy.get_param(
+                "costs/prediction_s_factor_max_size",
+                self.params.prediction_s_factor_max_size)
+            self.params.prediction_s_asym_scaling = rospy.get_param(
+                "costs/prediction_s_asym_scaling",
+                self.params.prediction_s_asym_scaling)
+            self.params.prediction_n_factor = rospy.get_param(
+                "costs/prediction_n_factor",
+                self.params.prediction_n_factor)
+            self.params.prediction_s_factor_defender = rospy.get_param(
+                "costs/prediction_s_factor_defender",
+                self.params.prediction_s_factor_defender)
+            self.params.prediction_n_factor_defender = rospy.get_param(
+                "costs/prediction_n_factor_defender",
+                self.params.prediction_n_factor_defender)
+            self.params.prediction_s_factor_static = rospy.get_param(
+                "costs/prediction_s_factor_static",
+                self.params.prediction_s_factor_static)
+            self.params.prediction_n_factor_static = rospy.get_param(
+                "costs/prediction_n_factor_static",
+                self.params.prediction_n_factor_static)
+            self.params.prediction_uncertainty_weight = rospy.get_param(
+                "costs/prediction_uncertainty_weight",
+                self.params.prediction_uncertainty_weight)
+
+            # Additional cost parameters
+            self.params.increasing_rl_cost = rospy.get_param(
+                "costs/increasing_rl_cost",
+                self.params.increasing_rl_cost)
+            self.params.velocity_excess_cost_multiplier = rospy.get_param(
+                "costs/velocity_excess_cost_multiplier",
+                self.params.velocity_excess_cost_multiplier)
+            self.params.V_diff_max_costs = rospy.get_param(
+                "costs/V_diff_max_costs",
+                self.params.V_diff_max_costs)
+
+            # Safety distance parameters
+            self.params.safety_distance_vehicles = rospy.get_param(
+                "safety_distances/safety_distance_vehicles",
+                self.params.safety_distance_vehicles)
 
     def set_action_space_parameters(self, parameters):
         self.params.curvature_cost_weight = parameters.curvature_cost_weight
@@ -620,12 +831,13 @@ class CalculationCosts():
             raceline_v = np.array([wp.get("vx_mps", 0.0)
                                   for wp in raceline["wpnts"]])
         else:
-            # Fallback to old format for backward compatibility
+            # Fallback to old format (postprocessed_raceline from tam_sampling_core)
             raceline_s = raceline.get("s_post", [])
-            raceline_v = raceline.get("V_post", [])
+            # lowercase 'v' for consistency
+            raceline_v = raceline.get("v_post", [])
 
-        V_raceline = np.interp(s_array[valid_array], raceline_s,
-                               raceline_v, period=track_handler.s_coord()[-1])
+        V_raceline = interpolate_with_period(s_array[valid_array], raceline_s,
+                                             raceline_v, track_handler.get_track_length())
 
         # set costs according to role and if overtaking is allowed
         # 0 = no flag, 1 = defender, 2 = attacker
@@ -645,8 +857,9 @@ class CalculationCosts():
         # CURVATURE COST
         # ------------------------------------------------------------------------------------------------------------------
         # set curvature cost to zero when below preset speed
-        curvature_rl = np.interp(
-            s_array[valid_array], track_handler.s_coord(), track_handler.omega_z(), period=track_handler.s_coord()[-1]
+        curvature_rl = interpolate_with_period(
+            s_array[valid_array], track_handler.s_coord(
+            ), track_handler.omega_z(), track_handler.get_track_length()
         )
         curvature_diff_array = np.where(
             V_array[valid_array, :-1] < self.params.curvature_cost_threshold,
@@ -791,16 +1004,16 @@ class CalculationCosts():
                 time_pred_uncertainty / time_uncertain, 1.0)
 
             # get distances to predicted vehicle and handle start-finish line
-            s_prediction_cur = np.interp(
+            s_prediction_cur = interpolate_with_period(
                 t_array[valid_array],
                 pred_data["time_w_offset"],
                 pred_data["s"],
-                period=track_handler.s_coord()[-1],
+                track_handler.get_track_length(),
             )
             n_prediction_cur = np.interp(
                 t_array[valid_array], pred_data["time_w_offset"], pred_data["n"])
 
-            track_length = track_handler.s_coord()[-1]
+            track_length = track_handler.get_track_length()
             # positive if ego is ahead, negative if behind
             s_dist_raw = s_array[valid_array] - s_prediction_cur
 
@@ -882,7 +1095,7 @@ class CalculationCosts():
                 n_diff = np.abs(n_prediction_cur - n_traj_check)
 
                 # handle start finish line
-                track_length = track_handler.s_coord()[-1]
+                track_length = track_handler.get_track_length()
                 s_diff = np.where(s_diff_tmp < track_length /
                                   2.0, s_diff_tmp, track_length - s_diff_tmp)
 

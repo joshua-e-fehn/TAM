@@ -23,11 +23,18 @@
   <param name="/$(arg tf_prefix)racecar/robot_description" command="xacro --inorder '$(arg racecar_xacro)' frame_prefix:=$(arg tf_prefix)model_"/>
   
   <!-- Create static transform to connect robot model to simulator -->
+  <!-- Multi-car mode: bridge car1_base_link to car1_model_base_link -->
   <node pkg="tf" type="static_transform_publisher" name="$(arg tf_prefix)model_to_sim_bridge" 
         args="0 0 0 0 0 0 $(arg tf_prefix)base_link $(arg tf_prefix)model_base_link 10" 
         if="$(eval arg('tf_prefix') != '')"/>
+  
+  <!-- Single-car mode: bridge base_link to model_base_link -->
+  <node pkg="tf" type="static_transform_publisher" name="model_to_sim_bridge" 
+        args="0 0 0 0 0 0 base_link model_base_link 10" 
+        if="$(eval arg('tf_prefix') == '')"/>
         
   <!-- Bridge transforms for front hinges (simulator doesn't publish these connections) -->
+  <!-- Multi-car mode -->
   <node pkg="tf" type="static_transform_publisher" name="$(arg tf_prefix)front_left_hinge_bridge" 
         args="0.3302 0.12065 0.0508 0 0 0 $(arg tf_prefix)base_link $(arg tf_prefix)front_left_hinge 10" 
         if="$(eval arg('tf_prefix') != '')"/>
@@ -35,5 +42,14 @@
   <node pkg="tf" type="static_transform_publisher" name="$(arg tf_prefix)front_right_hinge_bridge" 
         args="0.3302 -0.12065 0.0508 0 0 0 $(arg tf_prefix)base_link $(arg tf_prefix)front_right_hinge 10" 
         if="$(eval arg('tf_prefix') != '')"/>
+  
+  <!-- Single-car mode -->
+  <node pkg="tf" type="static_transform_publisher" name="front_left_hinge_bridge" 
+        args="0.3302 0.12065 0.0508 0 0 0 base_link front_left_hinge 10" 
+        if="$(eval arg('tf_prefix') == '')"/>
+        
+  <node pkg="tf" type="static_transform_publisher" name="front_right_hinge_bridge" 
+        args="0.3302 -0.12065 0.0508 0 0 0 base_link front_right_hinge 10" 
+        if="$(eval arg('tf_prefix') == '')"/>
 
 </launch>

@@ -1,0 +1,102 @@
+<?xml version="1.0"?>
+<!--
+  Predictive Sampler Planner Launch File
+  
+  ARCHITECTURE:
+  - State Machine: Uses Predictive Spliner state transitions (PSSAMP functions)
+  - Trajectory Generation: TAM Sampling with conditional planning mode
+  - Support Nodes: Collision Prediction + Gaussian Process opponent prediction
+  
+  CONDITIONAL PLANNING:
+  When enabled, TAM only plans trajectories when:
+  1. In overtaking sector (ot_section_check == True)
+  2. Obstacles within 15m lookahead AND 2m from trajectory
+  Otherwise publishes empty trajectory (performance optimization)
+-->
+<launch>
+    <!-- === ARGUMENTS === -->
+    <arg name="veh_name" default="sim1"/>
+    <arg name="opponent_name" default="sim2"/>
+    
+    <!-- TAM Sampling Configuration -->
+    <arg name="tam_config" default="$(find tam_sampling_planner)/config/tam_config.yaml"/>
+    <arg name="tam_mode" default="predictive_sampler"/> <!-- vs "tam_sampling" -->
+    
+    <!-- Collision Prediction Configuration -->
+    <arg name="collision_pred_config" default="$(find predictive_spliner)/config/collision_prediction_config.yaml"/>
+    
+    <!-- Gaussian Process Configuration -->
+    <arg name="gp_config" default="$(find predictive_spliner)/config/gp_opponent_trajectory_config.yaml"/>
+    
+    <!-- State Machine Configuration -->
+    <arg name="state_machine_config" default="$(find state_machine)/config/state_machine.yaml"/>
+    
+    
+    <!-- === STATE MACHINE === -->
+    <group ns="$(arg veh_name)">
+        <node pkg="state_machine" type="state_machine_node.py" name="state_machine" output="screen">
+            <rosparam file="$(arg state_machine_config)" command="load"/>
+            
+            <!-- CRITICAL: Set planner to predictive_sampler -->
+            <param name="ot_planner" value="predictive_sampler"/>
+            
+            <!-- Opponent namespace for multi-car scenarios -->
+            <param name="opponent_ns" value="$(arg opponent_name)"/>
+        </node>
+    </group>
+    
+    
+    <!-- === TAM SAMPLING PLANNER (CONDITIONAL MODE) === -->
+    <group ns="$(arg veh_name)">
+        <node pkg="tam_sampling_planner" type="tam_sampling_node.py" name="tam_sampling_planner" output="screen">
+            <rosparam file="$(arg tam_config)" command="load"/>
+            
+            <!-- PREDICTIVE SAMPLER MODE: Enable conditional planning -->
+            <param name="planning_mode" value="$(arg tam_mode)"/>
+            
+            <!-- Conditional Planning Thresholds (match SQP settings) -->
+            <param name="lookahead" value="15.0"/>           <!-- Lookahead distance for obstacle detection (m) -->
+            <param name="obs_traj_thresh" value="2.0"/>      <!-- Lateral distance threshold for obstacle proximity (m) -->
+            
+            <!-- Vehicle namespace -->
+            <param name="veh_name" value="$(arg veh_name)"/>
+        </node>
+    </group>
+    
+    
+    <!-- === COLLISION PREDICTION === -->
+    <!-- Predicts 4-second horizon ROCs (Regions of Collision) -->
+    <group ns="$(arg veh_name)">
+        <node pkg="predictive_spliner" type="collision_prediction_node.py" name="collision_prediction" output="screen">
+            <rosparam file="$(arg collision_pred_config)" command="load"/>
+            
+            <!-- Opponent namespace for trajectory prediction -->
+            <param name="opponent_ns" value="$(arg opponent_name)"/>
+            <param name="veh_name" value="$(arg veh_name)"/>
+        </node>
+    </group>
+    
+    
+    <!-- === GAUSSIAN PROCESS OPPONENT TRAJECTORY === -->
+    <!-- ML-based prediction of opponent's future raceline -->
+    <group ns="$(arg veh_name)">
+        <node pkg="predictive_spliner" type="gp_opponent_trajectory_node.py" name="gp_opponent_trajectory" output="screen">
+            <rosparam file="$(arg gp_config)" command="load"/>
+            
+            <!-- Opponent namespace for pose tracking -->
+            <param name="opponent_ns" value="$(arg opponent_name)"/>
+            <param name="veh_name" value="$(arg veh_name)"/>
+        </node>
+    </group>
+    
+    
+    <!-- === VISUALIZATION (OPTIONAL) === -->
+    <!-- Uncomment to enable RViz markers for debugging -->
+    <!--
+    <group ns="$(arg veh_name)">
+        <node pkg="rviz" type="rviz" name="predictive_sampler_rviz" 
+              args="-d $(find predictive_sampler)/rviz/predictive_sampler.rviz"/>
+    </group>
+    -->
+
+</launch>

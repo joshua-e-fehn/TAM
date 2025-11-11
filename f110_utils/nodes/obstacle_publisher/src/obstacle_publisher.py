@@ -7,6 +7,7 @@ from f110_msgs.msg import ObstacleArray, Obstacle, WpntArray, Wpnt, OpponentTraj
 from visualization_msgs.msg import Marker, MarkerArray
 from frenet_conversion.srv import Glob2FrenetArr, Frenet2GlobArr
 from nav_msgs.msg import Odometry
+from std_msgs.msg import String
 import dynamic_reconfigure.client
 
 
@@ -77,6 +78,22 @@ class ObstaclePublisher:
                 else:
                     rospy.logwarn("Using static parameters from launch file")
 
+        # Update dynamic reconfigure server with launch file parameters
+        if self.dyn_client is not None:
+            try:
+                rospy.loginfo(
+                    "Updating dynamic reconfigure with launch file parameters...")
+                self.dyn_client.update_configuration({
+                    'speed_scaler': self.speed_scaler,
+                    'path_amplitude': self.path_amplitude,
+                    'path_frequency': self.path_frequency,
+                    'path_phase': self.path_phase
+                })
+                rospy.loginfo(
+                    f"Dynamic reconfigure updated: speed_scaler={self.speed_scaler}, path_amplitude={self.path_amplitude}")
+            except Exception as e:
+                rospy.logwarn(f"Failed to update dynamic reconfigure: {e}")
+
         # choose trajectory
         self.waypoints_type = rospy.get_param(
             '~trajectory', rospy.get_param('obstacle_publisher/trajectory', 'min_curv'))
@@ -103,12 +120,20 @@ class ObstaclePublisher:
         rospy.Subscriber('car_state/odom_frenet', Odometry, self.odom_cb)
         self.car_odom = Odometry()
 
+        # State machine support - subscribe to state machine commands
+        rospy.Subscriber('/state_machine_cmd', String, self.state_cmd_callback)
+        self.current_state = "READY"  # Start in READY state (not moving)
+        rospy.loginfo(
+            "[Obstacle Publisher] Starting in READY state - waiting for start command")
+
         self.obstacle_pub = rospy.Publisher(
             'perception/obstacles', ObstacleArray, queue_size=10)
         self.obstacle_mrk_pub = rospy.Publisher(
             'dummy_obstacle_markers', MarkerArray, queue_size=10)
         self.opponent_traj_pub = rospy.Publisher(
             'opponent_waypoints', OpponentTrajectory, queue_size=10)
+        self.obstacle_odom_pub = rospy.Publisher(
+            'obstacle/odom', Odometry, queue_size=10)
 
         # Frenet Conversion Service
         rospy.wait_for_service("convert_glob2frenet_service")
@@ -139,6 +164,14 @@ class ObstaclePublisher:
 
     def odom_cb(self, data: Odometry):
         self.car_odom = data
+
+    def state_cmd_callback(self, msg: String):
+        """Handle state machine commands from race start controller"""
+        new_state = msg.data
+        if new_state != self.current_state:
+            rospy.loginfo(
+                f"[Obstacle Publisher] State change: {self.current_state} -> {new_state}")
+            self.current_state = new_state
 
     def update_dynamic_parameters(self):
         """Update parameters from dynamic reconfigure server if available"""
@@ -183,9 +216,9 @@ class ObstaclePublisher:
 
     ### HELPERS ###
     def publish_obstacle_cartesian(self, obstacles):
-        """Visualizes obstacles in cartesian frame"""
+        """Visualizes obstacles in cartesian frame and publishes odometry for the first obstacle"""
         obs_markers = MarkerArray()
-        for obs in obstacles:
+        for i, obs in enumerate(obstacles):
             # Do frenet conversion from (s,d) [frenet wrt min curv] -> (x,y) [cartesian]
             resp = self.frenet2glob([obs.s_center], [obs.d_center])
             x = resp.x[0]
@@ -205,7 +238,31 @@ class ObstaclePublisher:
             obs_marker.pose.orientation.w = 1
             obs_markers.markers.append(obs_marker)
 
+            # Publish odometry for the first (main) obstacle
+            if i == 0:
+                self.publish_obstacle_odom(obs, x, y)
+
         self.obstacle_mrk_pub.publish(obs_markers)
+
+    def publish_obstacle_odom(self, obstacle, x, y):
+        """Publish obstacle odometry for speed monitoring"""
+        odom_msg = Odometry()
+        odom_msg.header.stamp = rospy.Time.now()
+        odom_msg.header.frame_id = "map"
+        odom_msg.child_frame_id = "obstacle_base_link"
+
+        # Position (in map frame)
+        odom_msg.pose.pose.position.x = x
+        odom_msg.pose.pose.position.y = y
+        odom_msg.pose.pose.position.z = 0.0
+        odom_msg.pose.pose.orientation.w = 1.0
+
+        # Velocity (linear speed from obstacle, assuming movement along track)
+        odom_msg.twist.twist.linear.x = obstacle.vs
+        odom_msg.twist.twist.linear.y = 0.0
+        odom_msg.twist.twist.linear.z = 0.0
+
+        self.obstacle_odom_pub.publish(odom_msg)
 
     def shutdown(self):
         rospy.loginfo("BEEP BOOP DUMMY OD SHUTDOWN")
@@ -305,12 +362,18 @@ class ObstaclePublisher:
             base_speed = self.opponent_wpnts.oppwpnts[approx_idx].proj_vs_mps
             self.dyn_obstacle_speed = base_speed * self.speed_scaler
 
-            self.dynamic_obstacle.s_center = (
-                self.dynamic_obstacle.s_center + self.dyn_obstacle_speed * self.looptime) % max_s
-            self.dynamic_obstacle.s_start = (
-                self.dynamic_obstacle.s_center - self.obj_len/2) % max_s
-            self.dynamic_obstacle.s_end = (
-                self.dynamic_obstacle.s_center + self.obj_len/2) % max_s
+            # Only update obstacle position if in GB_TRACK state (racing)
+            # In READY state, obstacle stays at starting position
+            if self.current_state == "GB_TRACK":
+                self.dynamic_obstacle.s_center = (
+                    self.dynamic_obstacle.s_center + self.dyn_obstacle_speed * self.looptime) % max_s
+                self.dynamic_obstacle.s_start = (
+                    self.dynamic_obstacle.s_center - self.obj_len/2) % max_s
+                self.dynamic_obstacle.s_end = (
+                    self.dynamic_obstacle.s_center + self.obj_len/2) % max_s
+            else:
+                # In READY state - obstacle doesn't move, velocity is 0
+                self.dyn_obstacle_speed = 0.0
 
             # Base d position from the raceline
             base_d_center = self.opponent_wpnts.oppwpnts[approx_idx].d_m

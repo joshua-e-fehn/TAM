@@ -1,0 +1,42 @@
+# Predictive Sampler Configuration Example
+# This file demonstrates how to configure the predictive sampler planner
+
+# State Machine Configuration
+state_machine:
+  # Set the planner type to predictive_sampler
+  ot_planner: "predictive_sampler"
+  
+  # Rate at which the state machine runs (Hz)
+  rate: 20
+  
+  # Number of local waypoints to publish
+  n_loc_wpnts: 100
+  
+  # Predictive spliner parameters (inherited from predictive_spliner)
+  pred_splini_ttl: 0.2  # Time-to-live for cached trajectories
+  splini_hyst_timer_sec: 0.75  # Hysteresis timer for trajectory stability
+  
+  # Overtaking parameters
+  overtaking_horizon_m: 6.9  # Horizon for overtaking checks
+  lateral_width_ot_m: 0.3    # Lateral width margin for overtaking
+  
+  # Graph-based parameters (used for checks)
+  gb_ego_width_m: 0.4        # Ego vehicle width
+  lateral_width_gb_m: 0.75   # Lateral width for global tracking
+  gb_horizon_m: 8.0          # Horizon for graph-based checks
+  
+  # Follow-the-gap parameters
+  ftg_speed_mps: 1.0         # Speed in FTG mode
+  ftg_timer_sec: 3.0         # Timer before entering FTG mode
+  
+  # Safety parameters
+  volt_threshold: 10         # Voltage threshold for safety checks
+  
+  # Time trials mode
+  timetrials_only: false     # Set to true to disable overtaking
+
+# Notes:
+# - The predictive_sampler uses Predictive Spliner's state transitions
+# - Overtaking trajectories come from TAM Sampling Planner
+# - All TAM Sampling parameters should be configured in tam_sampling_planner
+# - Collision prediction parameters should be configured separately

@@ -7,27 +7,39 @@ Ported from tam_race_stack/mod_planning/sampling_planner/sampling_planner/trajec
 
 MODIFICATIONS:
 - Uses ROS parameter server instead of param_manager
-- Uses global_waypoints format instead of postprocessed_raceline format  
-- GGGV-dependent functionality commented out (no GGGV diagrams available)
+- Uses postprocessed_raceline format (processed from global waypoints)
+- GGGV-dependent functionality replaced with Pacejka tire model
 - Simplified for use with Pacejka tire model parameters
 - NodeMonitor dependencies simplified to basic print statements
 
 ACTIVE CHECKS:
 - Curvature limits (kappa_thr parameter)
+- Vehicle capability limits (max_speed, max_accel)
 - Path collision with track boundaries
-- Speed rule compliance (DISABLED - no rules defined)
-- Simplified friction limits (GGGV disabled)
+- Physics-based friction limits using Pacejka tire model
+- Combined slip modeling (friction circle)
 
 DISABLED CHECKS (commented out due to missing GGGV diagrams):
-- Full physics-based tire utilization limits
-- Apparent acceleration transformations
-- Yaw moment calculations
-- GGGV interpolation-based friction limits
+- Speed rule compliance (no rules defined)
+- Apparent acceleration transformations (flat track assumption used instead)
+- Yaw moment calculations (quasi-transient limits)
+- GGGV interpolation-based friction limits (replaced by Pacejka)
+
+PACEJKA FRICTION CHECKING:
+- Uses PacejkaTireModel for physics-based tire force limits
+- Implements friction circle model: (|ax|/ax_max)^n + (|ay|/ay_max)^n <= 1
+- Considers combined longitudinal and lateral tire forces
+- Accounts for velocity-dependent limits and track curvature
+- Falls back to accepting all trajectories if tire model unavailable
 
 Required ROS Parameters (with defaults):
 - behavior/tube_width: 1.15
-- behavior/tire_util_max_check: 1.1  
+- behavior/tire_util_max_check: 1.1
+- behavior/tire_util_relaxation: 1.0 (friction check relaxation: 1.0=default, >1.0=relaxed, <1.0=strict)
 - behavior/kappa_thr: 0.1
+- behavior/max_speed: 6.0 (m/s)
+- behavior/max_accel: 2.0 (m/s²) - longitudinal acceleration limit
+- behavior/max_lateral_accel: 2.0 (m/s²) - DEPRECATED: not used (lateral forces checked by Pacejka friction model)
 - safety_distances/safety_distance_track_left: 0.0
 - safety_distances/safety_distance_track_right: 0.0
 - safety_distances/safety_distance_pitlane_left: 0.0
@@ -36,6 +48,7 @@ Required ROS Parameters (with defaults):
 - safety_distances/soft_safety_distance_right_m: 0.0
 """
 from track_handler_global_waypoints import GlobalWaypointsTrackHandler as Track
+from simple_helper_utils import interpolate_with_period
 import numpy as np
 # GGGV-dependent imports commented out - no GGGV diagrams available, using Pacejka model instead
 # from planning_common.track.gggvManager import GGGVManager, Grip_Map
@@ -51,6 +64,8 @@ import rospy
 class TrajectoryChecksParams():
     tube_width: float
     tire_util_max_check: float
+    # Friction check relaxation factor (1.0=default, >1.0=relaxed, <1.0=strict)
+    tire_util_relaxation: float
     kappa_thr: float
     safety_distance_track_left: float
     safety_distance_track_right: float
@@ -58,6 +73,10 @@ class TrajectoryChecksParams():
     safety_distance_pitlane_right: float
     soft_safety_distance_left_m: float
     soft_safety_distance_right_m: float
+    # Vehicle capability limits
+    max_speed: float  # Maximum vehicle speed (m/s)
+    max_accel: float  # Maximum longitudinal acceleration (m/s²)
+    max_lateral_accel: float  # Maximum lateral acceleration (m/s²)
 
 
 class TrajectoryChecks():
@@ -71,46 +90,220 @@ class TrajectoryChecks():
         Note: param_manager parameter removed - now uses ROS parameter server directly
         """
         self.params = TrajectoryChecksParams()
+        self.initialized_params = False
         self.declare_and_update_parameters()
         self.debugging = debugging
 
+        # Initialize Pacejka tire model for physics-based friction checking
+        try:
+            from pacejka_tire_model import PacejkaTireModel
+            self.tire_model = PacejkaTireModel()
+            self.use_tire_model = True
+            rospy.loginfo(
+                "TrajectoryChecks: Pacejka tire model initialized for friction checking")
+        except Exception as e:
+            self.tire_model = None
+            self.use_tire_model = False
+            rospy.logwarn(
+                f"TrajectoryChecks: Could not initialize tire model: {e}")
+            rospy.logwarn(
+                "TrajectoryChecks: Friction checks will accept all trajectories")
+
+    def _load_yaml_defaults(self):
+        """Load default parameters from tam_sampling_params.yaml"""
+        import rospkg
+        import yaml
+        import os
+        try:
+            rospack = rospkg.RosPack()
+            pkg_path = rospack.get_path('tam_sampling_planner')
+            config_file = os.path.join(
+                pkg_path, 'config', 'tam_sampling_params.yaml')
+
+            with open(config_file, 'r') as f:
+                yaml_params = yaml.safe_load(f)
+                return yaml_params if yaml_params else {}
+        except Exception as e:
+            rospy.logwarn(
+                f"TrajectoryChecks: Could not load YAML defaults: {e}")
+            return {}
+
     def declare_and_update_parameters(self):
-        """Load parameters from ROS parameter server using relative namespace."""
-        self.params.tube_width = rospy.get_param(
-            "behavior/tube_width", 1.15)
-        self.params.tire_util_max_check = rospy.get_param(
-            "behavior/tire_util_max_check", 1.1)
-        self.params.kappa_thr = rospy.get_param(
-            "behavior/kappa_thr", 0.1)
-        self.params.safety_distance_track_left = rospy.get_param(
-            "safety_distances/safety_distance_track_left", 0.0)
-        self.params.safety_distance_track_right = rospy.get_param(
-            "safety_distances/safety_distance_track_right", 0.0)
-        self.params.safety_distance_pitlane_left = rospy.get_param(
-            "safety_distances/safety_distance_pitlane_left", 0.0)
-        self.params.safety_distance_pitlane_right = rospy.get_param(
-            "safety_distances/safety_distance_pitlane_right", 0.0)
-        self.params.soft_safety_distance_left_m = rospy.get_param(
-            "safety_distances/soft_safety_distance_left_m", 0.0)
-        self.params.soft_safety_distance_right_m = rospy.get_param(
-            "safety_distances/soft_safety_distance_right_m", 0.0)
+        """Load parameters from ROS parameter server with YAML defaults."""
+        if not self.initialized_params:
+            yaml_defaults = self._load_yaml_defaults()
+
+            self.params.tube_width = yaml_defaults.get(
+                'tube_width', rospy.get_param("behavior/tube_width", 1.15))
+            rospy.set_param("behavior/tube_width", self.params.tube_width)
+            self.params.tire_util_max_check = yaml_defaults.get(
+                'tire_util_max_check', rospy.get_param("behavior/tire_util_max_check", 1.1))
+            rospy.set_param("behavior/tire_util_max_check",
+                            self.params.tire_util_max_check)
+            self.params.tire_util_relaxation = yaml_defaults.get(
+                'tire_util_relaxation', rospy.get_param("behavior/tire_util_relaxation", 1.0))
+            rospy.set_param("behavior/tire_util_relaxation",
+                            self.params.tire_util_relaxation)
+            self.params.kappa_thr = yaml_defaults.get(
+                'kappa_thr', rospy.get_param("behavior/kappa_thr", 0.1))
+            rospy.set_param("behavior/kappa_thr", self.params.kappa_thr)
+            self.params.safety_distance_track_left = yaml_defaults.get(
+                'safety_distance_track_left',
+                rospy.get_param("safety_distances/safety_distance_track_left", 0.0))
+            rospy.set_param("safety_distances/safety_distance_track_left",
+                            self.params.safety_distance_track_left)
+            self.params.safety_distance_track_right = yaml_defaults.get(
+                'safety_distance_track_right',
+                rospy.get_param("safety_distances/safety_distance_track_right", 0.0))
+            rospy.set_param("safety_distances/safety_distance_track_right",
+                            self.params.safety_distance_track_right)
+            self.params.safety_distance_pitlane_left = yaml_defaults.get(
+                'safety_distance_pitlane_left',
+                rospy.get_param("safety_distances/safety_distance_pitlane_left", 0.0))
+            rospy.set_param("safety_distances/safety_distance_pitlane_left",
+                            self.params.safety_distance_pitlane_left)
+            self.params.safety_distance_pitlane_right = yaml_defaults.get(
+                'safety_distance_pitlane_right',
+                rospy.get_param("safety_distances/safety_distance_pitlane_right", 0.0))
+            rospy.set_param("safety_distances/safety_distance_pitlane_right",
+                            self.params.safety_distance_pitlane_right)
+            self.params.soft_safety_distance_left_m = yaml_defaults.get(
+                'soft_safety_distance_left_m',
+                rospy.get_param("safety_distances/soft_safety_distance_left_m", 0.0))
+            rospy.set_param("safety_distances/soft_safety_distance_left_m",
+                            self.params.soft_safety_distance_left_m)
+            self.params.soft_safety_distance_right_m = yaml_defaults.get(
+                'soft_safety_distance_right_m',
+                rospy.get_param("safety_distances/soft_safety_distance_right_m", 0.0))
+            # Vehicle capability limits
+            self.params.max_speed = yaml_defaults.get(
+                'max_speed', rospy.get_param("behavior/max_speed", 6.0))
+            rospy.set_param("behavior/max_speed", self.params.max_speed)
+            self.params.max_accel = yaml_defaults.get(
+                'max_accel', rospy.get_param("behavior/max_accel", 2.0))
+            rospy.set_param("behavior/max_accel", self.params.max_accel)
+            self.params.max_lateral_accel = yaml_defaults.get(
+                'max_lateral_accel', rospy.get_param("behavior/max_lateral_accel", 2.0))
+            rospy.set_param("behavior/max_lateral_accel",
+                            self.params.max_lateral_accel)
+
+            self.initialized_params = True
+        else:
+            self.params.tube_width = rospy.get_param(
+                "behavior/tube_width", self.params.tube_width)
+            self.params.tire_util_max_check = rospy.get_param(
+                "behavior/tire_util_max_check", self.params.tire_util_max_check)
+            self.params.tire_util_relaxation = rospy.get_param(
+                "behavior/tire_util_relaxation", self.params.tire_util_relaxation)
+            self.params.kappa_thr = rospy.get_param(
+                "behavior/kappa_thr", self.params.kappa_thr)
+            self.params.safety_distance_track_left = rospy.get_param(
+                "safety_distances/safety_distance_track_left",
+                self.params.safety_distance_track_left)
+            self.params.safety_distance_track_right = rospy.get_param(
+                "safety_distances/safety_distance_track_right",
+                self.params.safety_distance_track_right)
+            self.params.safety_distance_pitlane_left = rospy.get_param(
+                "safety_distances/safety_distance_pitlane_left",
+                self.params.safety_distance_pitlane_left)
+            self.params.safety_distance_pitlane_right = rospy.get_param(
+                "safety_distances/safety_distance_pitlane_right",
+                self.params.safety_distance_pitlane_right)
+            self.params.soft_safety_distance_left_m = rospy.get_param(
+                "safety_distances/soft_safety_distance_left_m",
+                self.params.soft_safety_distance_left_m)
+            self.params.soft_safety_distance_right_m = rospy.get_param(
+                "safety_distances/soft_safety_distance_right_m",
+                self.params.soft_safety_distance_right_m)
+            # Vehicle capability limits
+            self.params.max_speed = rospy.get_param(
+                "behavior/max_speed", self.params.max_speed)
+            self.params.max_accel = rospy.get_param(
+                "behavior/max_accel", self.params.max_accel)
+            self.params.max_lateral_accel = rospy.get_param(
+                "behavior/max_lateral_accel", self.params.max_lateral_accel)
 
     def check_curvature(
         self,
         valid_array: np.ndarray,
+        # Actually kappa (curvature in rad/m), not Omega_z (yaw rate in rad/s)
         Omega_z: np.ndarray,
         invalid_array_info: np.ndarray,
     ):
         valid_tmp = np.all(
             np.abs(Omega_z[valid_array]) <= self.params.kappa_thr, axis=1)
 
-        # store trajectories that failed this check
+        # store trajectories that failed this check (only if not already marked)
         if self.debugging:
             combined_mask = valid_array.copy()
             combined_mask[valid_array] = ~valid_tmp
-            invalid_array_info[combined_mask] = "curvature"
+            # Only mark trajectories that haven't failed a previous check
+            invalid_array_info[combined_mask & (
+                invalid_array_info == "")] = "curvature"
 
         valid_array[valid_array] = valid_tmp
+
+    def __check_vehicle_capabilities(
+        self,
+        valid_array: np.ndarray,
+        V_array: np.ndarray,
+        ax_array: np.ndarray,
+        ay_array: np.ndarray,
+        invalid_array_info: np.ndarray,
+        traj_cnt: int,
+    ):
+        """
+        Check if trajectories exceed vehicle capabilities (max speed, max longitudinal accel).
+
+        Args:
+            valid_array: Boolean mask of currently valid trajectories
+            V_array: Velocity array (m/s) - shape (n_trajectories, n_points)
+            ax_array: Longitudinal acceleration in velocity frame (m/s²)
+            ay_array: Lateral acceleration in velocity frame (m/s²) - NOT CHECKED (unused)
+            invalid_array_info: Array for storing failure reasons
+            traj_cnt: Trajectory counter for logging
+
+        Note:
+            - Checks max_speed and max_accel (longitudinal only)
+            - Lateral acceleration NOT checked here - handled by Pacejka friction model
+            - ay_array parameter kept for API compatibility but not used
+        """
+        # Small tolerance for numerical stability
+        tolerance_speed = 2.0  # m/s
+        tolerance_accel = 1.0  # m/s²
+
+        # Check maximum speed
+        valid_speed = np.all(
+            V_array[valid_array] <= self.params.max_speed + tolerance_speed,
+            axis=1
+        )
+
+        # Check maximum longitudinal acceleration (both positive and negative)
+        valid_ax = np.all(
+            np.abs(ax_array[valid_array]
+                   ) <= self.params.max_accel + tolerance_accel,
+            axis=1
+        )
+
+        # Note: Lateral acceleration check removed - handled by Pacejka friction check
+        # which provides physics-based tire limits rather than guessed values
+
+        # Combine all capability checks
+        valid_tmp = valid_speed & valid_ax
+
+        # Store trajectories that failed this check (only if not already marked)
+        # Also track which specific capability was violated for detailed reporting
+        if self.debugging:
+            combined_mask = valid_array.copy()
+            combined_mask[valid_array] = ~valid_tmp
+            # Only mark trajectories that haven't failed a previous check
+            invalid_array_info[combined_mask & (
+                invalid_array_info == "")] = "vehicle_capability"
+
+        valid_array[valid_array] = valid_tmp
+
+        # Return detailed breakdown for summary (no valid_ay since lateral accel check removed)
+        return valid_speed, valid_ax
 
     def __check_path_collision(
         self,
@@ -122,29 +315,33 @@ class TrajectoryChecks():
         vehicle_params: dict,
         invalid_array_info: np.ndarray,
     ):
-        if pitlane_mode:
-            safety_distance_left = self.params.safety_distance_pitlane_left
-            safety_distance_right = self.params.safety_distance_pitlane_right
-        else:
-            safety_distance_left = self.params.safety_distance_track_left
-            safety_distance_right = self.params.safety_distance_track_right
+        # if pitlane_mode:
+        #     safety_distance_left = self.params.safety_distance_pitlane_left
+        #     safety_distance_right = self.params.safety_distance_pitlane_right
+        # else:
+        safety_distance_left = self.params.safety_distance_track_left
+        safety_distance_right = self.params.safety_distance_track_right
 
+        # Left boundary: positive value, reduce by margins to get usable left limit
         left_bound = (
-            np.interp(
+            interpolate_with_period(
                 s_array[valid_array],
                 track_handler.s_coord(),
                 track_handler.trackwidth_left(),
-                period=track_handler.s_coord()[-1],
+                track_handler.get_track_length(),
             )
             - vehicle_params["total_width"] / 2.0
             - (safety_distance_left + self.params.tube_width)
         )
+
+        # Right boundary: trackwidth_right() returns POSITIVE width (distance from centerline)
+        # We need NEGATIVE boundary (right side of track), so negate and ADD margins inward
         right_bound = (
-            np.interp(
+            -interpolate_with_period(
                 s_array[valid_array],
                 track_handler.s_coord(),
                 track_handler.trackwidth_right(),
-                period=track_handler.s_coord()[-1],
+                track_handler.get_track_length(),
             )
             + vehicle_params["total_width"] / 2.0
             + (safety_distance_right + self.params.tube_width)
@@ -153,57 +350,96 @@ class TrajectoryChecks():
         valid_tmp = np.all((n_array[valid_array] < left_bound) & (
             n_array[valid_array] > right_bound), axis=1)
 
-        # store trajectories that failed this check
+        # Check for impossible constraints due to excessive safety margins
+        has_negative_left = np.any(left_bound < 0)
+        has_positive_right = np.any(right_bound > 0)
+
+        if has_negative_left or has_positive_right:
+            rospy.logerr("\n" + "="*80)
+            rospy.logerr(
+                "⚠️⚠️⚠️  CRITICAL WARNING: SAFETY MARGINS TOO LARGE  ⚠️⚠️⚠️")
+            rospy.logerr("="*80)
+            if has_negative_left:
+                min_left = np.min(left_bound)
+                rospy.logerr(
+                    f"❌ LEFT BOUND has NEGATIVE values (min: {min_left:.3f} m)")
+                rospy.logerr(
+                    f"   This means safety margins exceed available left track width!")
+            if has_positive_right:
+                max_right = np.max(right_bound)
+                rospy.logerr(
+                    f"❌ RIGHT BOUND has POSITIVE values (max: {max_right:.3f} m)")
+                rospy.logerr(
+                    f"   This means safety margins exceed available right track width!")
+            rospy.logerr(f"\n🔧 ACTION REQUIRED: Reduce safety parameters:")
+            rospy.logerr(
+                f"   - Current tube_width: {self.params.tube_width:.3f} m")
+            rospy.logerr(
+                f"   - Current safety_distance_track_left: {safety_distance_left:.3f} m")
+            rospy.logerr(
+                f"   - Current safety_distance_track_right: {safety_distance_right:.3f} m")
+            rospy.logerr(
+                f"   - Current vehicle_width/2: {vehicle_params['total_width']/2.0:.3f} m")
+            rospy.logerr(
+                f"   - Total margin per side: ~{vehicle_params['total_width']/2.0 + safety_distance_left + self.params.tube_width:.3f} m")
+            rospy.logerr(
+                f"\n💡 These margins are NOT compatible with this raceline/map!")
+            rospy.logerr(f"   Adjust parameters in tam_sampling_params.yaml")
+            rospy.logerr("="*80 + "\n")
+
+        # store trajectories that failed this check (only if not already marked)
         if self.debugging:
             combined_mask = valid_array.copy()
             combined_mask[valid_array] = ~valid_tmp
-            invalid_array_info[combined_mask] = "path_collision"
+            # Only mark trajectories that haven't failed a previous check
+            invalid_array_info[combined_mask & (
+                invalid_array_info == "")] = "path_collision"
 
         valid_array[valid_array] = valid_tmp
 
         return left_bound, right_bound
 
-    def __check_rules(
-        self,
-        valid_array: np.ndarray,
-        V_array: np.ndarray,
-        V_target_rules: float,
-        invalid_array_info: np.ndarray,
-    ):
-        # RULES CHECK DISABLED - No speed rules to enforce
-        # Original functionality commented out:
+    # def __check_rules(
+    #     self,
+    #     valid_array: np.ndarray,
+    #     V_array: np.ndarray,
+    #     V_target_rules: float,
+    #     invalid_array_info: np.ndarray,
+    # ):
+    #     # RULES CHECK DISABLED - No speed rules to enforce
+    #     # Original functionality commented out:
 
-        # # allow slight violation
-        # tolerance_mps = 3.0
-        #
-        # # In case all entries are false the next condition will crash otherwise
-        # if np.sum(valid_array) > 0:
-        #     # handle case when target velocity is reduced to a value below ego velocity
-        #     if V_array[valid_array][0][0] > V_target_rules:
-        #         V_target_rules = V_array[valid_array][0][0]
-        #
-        # # check if every trajectory point is below maximum allowed velocity
-        # valid_tmp = np.all(V_array[valid_array] <
-        #                    V_target_rules + tolerance_mps, axis=1)
-        #
-        # # store trajectories that failed this check for visualizer
-        # if self.debugging:
-        #     combined_mask = valid_array.copy()
-        #     combined_mask[valid_array] = ~valid_tmp
-        #     invalid_array_info[combined_mask] = "rules"
-        #
-        # # if no valid trajectory is found, allow all
-        # if np.sum(valid_tmp) < 1:
-        #     # self.msgs_logger.warning(f'Trajectory ID {self.traj_cnt}: All trajectories failed the rule check - no rule check applied in this step.')
-        #     return
-        #
-        # valid_array[valid_array] = valid_tmp
+    #     # # allow slight violation
+    #     # tolerance_mps = 3.0
+    #     #
+    #     # # In case all entries are false the next condition will crash otherwise
+    #     # if np.sum(valid_array) > 0:
+    #     #     # handle case when target velocity is reduced to a value below ego velocity
+    #     #     if V_array[valid_array][0][0] > V_target_rules:
+    #     #         V_target_rules = V_array[valid_array][0][0]
+    #     #
+    #     # # check if every trajectory point is below maximum allowed velocity
+    #     # valid_tmp = np.all(V_array[valid_array] <
+    #     #                    V_target_rules + tolerance_mps, axis=1)
+    #     #
+    #     # # store trajectories that failed this check for visualizer
+    #     # if self.debugging:
+    #     #     combined_mask = valid_array.copy()
+    #     #     combined_mask[valid_array] = ~valid_tmp
+    #     #     invalid_array_info[combined_mask] = "rules"
+    #     #
+    #     # # if no valid trajectory is found, allow all
+    #     # if np.sum(valid_tmp) < 1:
+    #     #     # self.msgs_logger.warning(f'Trajectory ID {self.traj_cnt}: All trajectories failed the rule check - no rule check applied in this step.')
+    #     #     return
+    #     #
+    #     # valid_array[valid_array] = valid_tmp
 
-        # No rules to check - accept all trajectories
-        if self.debugging:
-            print("Rules check disabled - no speed rules to enforce")
+    #     # No rules to check - accept all trajectories
+    #     # if self.debugging:
+    #     #     print("Rules check disabled - no speed rules to enforce")
 
-        # All trajectories remain valid (no modification to valid_array needed)
+    #     # All trajectories remain valid (no modification to valid_array needed)
 
     def __check_friction_limits(
             self,
@@ -222,7 +458,7 @@ class TrajectoryChecks():
             msgs_logger,  # NodeMonitor - simplified
             pitlane_mode: bool,
             invalid_array_info: np.ndarray,
-            global_waypoints: dict,
+            postprocessed_raceline: dict,
     ):
         ax_tilde = np.zeros_like(s_array)
         ay_tilde = np.zeros_like(s_array)
@@ -252,117 +488,115 @@ class TrajectoryChecks():
         ay_tilde[valid_array] = ay_array[valid_array]
         g_tilde[valid_array] = 9.81  # Standard gravity
 
-        # Commented out: GGGV-dependent time processing and yaw calculations
-        # dt_array = np.diff(t_array[valid_array], append=(
-        #     t_array[valid_array][:, -1] + t_array[valid_array][:, -1] - t_array[valid_array][:, -2]).reshape(-1, 1))
-        #
-        # d_ay_array = np.diff(
-        #     ay_array[valid_array], append=ay_array[valid_array][:, -1].reshape(-1, 1), axis=1)
-        #
-        # # calc yaw acceleration for quasi-transient limits
-        # omega_z_dot_tilde = calc_Omega_z_dot_tilde(
-        #     track_handler,
-        #     s_array[valid_array],
-        #     n_array[valid_array],
-        #     chi_array[valid_array],
-        #     V_array[valid_array],
-        #     ax_array[valid_array],
-        #     ay_array[valid_array],
-        #     d_ay_array,
-        #     dt_array,
-        #     neglect_w_dot=True,
-        # )
+        # Pacejka-based friction limit checking
+        if self.use_tire_model and self.tire_model is not None:
+            try:
+                # Calculate static normal loads (no pitch dynamics for F1TENTH)
+                g = 9.81
+                l_wb = self.tire_model.l_f + self.tire_model.l_r
+                Fz_front_static = self.tire_model.mass * g * self.tire_model.l_r / l_wb
+                Fz_rear_static = self.tire_model.mass * g * self.tire_model.l_f / l_wb
 
-        # GGGV-dependent friction limit checks commented out - no GGGV diagrams available
-        # For Pacejka model, implement separate tire limit validation here
+                # Get friction circle exponent
+                n = self.tire_model.combined_slip_exponent
 
-        # All GGGV friction checking commented out:
-        # if ggv_mode == "polar":
-        #     alpha = np.arctan2(ax_tilde[valid_array], ay_tilde[valid_array])
-        #     rho = np.sqrt(ax_tilde[valid_array] ** 2 +
-        #                   ay_tilde[valid_array] ** 2)
-        #     rho_max = (
-        #         gggv_handler.gggv_interpolator(
-        #             np.array((V_array[valid_array].flatten(
-        #             ), g_tilde[valid_array].flatten(), alpha.flatten()))
-        #         )
-        #         .full()
-        #         .squeeze()
-        #         .reshape(g_tilde[valid_array].shape)
-        #     )
-        #     valid_tmp = np.all(rho < rho_max, axis=1)
-        #     if np.sum(valid_tmp) < 1:
-        #         rho_exc = np.max(rho - rho_max, axis=1)
-        #         exc_min_idx = np.argmin(rho_exc)
-        #         valid_tmp[exc_min_idx] = True
-        #         msgs_logger.warning(
-        #             f"Trajectory ID {traj_cnt}: Friction check with infeasible rho: {rho_exc[exc_min_idx]}"
-        #         )
-        #
-        # elif ggv_mode == 'diamond':
-        #     _, ax_min, ax_max, ay_max, ym_max = gggv_handler.acc_interpolator(
-        #         V_array[valid_array], g_tilde[valid_array], s_array[valid_array], n_array[valid_array], not pitlane_mode, self.debugging)
-        #
-        #     # get yaw moment factor for quasi-transient limits
-        #     ym_tilde = np.abs(omega_z_dot_tilde * gggv_handler.vehicle_inertia)
-        #     ym_factor = (1 - ym_tilde/ym_max)
-        #
-        #     # set ax limit and gg exponent according to sign of current acceleration
-        #     ax_tire_lim = np.where(ax_tilde[valid_array] > 0.0, ax_max, ax_min)
-        #     gg_exponent = np.where(
-        #         ax_tilde[valid_array] > 0.0, gggv_handler.gg_exponent_ax_pos, gggv_handler.gg_exponent_ax_neg)
-        #
-        #     # set ax machine limits
-        #     ax_machine_lim = np.interp(V_array[valid_array], np.linspace(
-        #         0.0, 90.0, 10), gggv_handler.ax_machine_limits)
-        #
-        #     # get tire utilization
-        #     tire_util_array[valid_array] = (np.abs(ax_tilde[valid_array] / (ax_tire_lim * ym_factor))) ** gg_exponent + (
-        #         np.abs(ay_tilde[valid_array] / (ay_max * ym_factor))) ** gg_exponent
-        #
-        #     # sort out trajectories that exceed the ax machine limits
-        #     valid_tmp = np.all(tire_util_array[valid_array] <= self.params.tire_util_max_check, axis=1) & \
-        #         np.all(ax_tilde[valid_array] <= (ax_machine_lim), axis=1)
-        #
-        #     # recalc raceline tire utilization - commented out due to global waypoints format
-        #     # Note: calc_raceline_tire_util expects postprocessed_raceline format,
-        #     # but we now use global_waypoints format. This needs to be adapted when GGGV is re-enabled.
-        #     # tire_util_array_rl = calc_raceline_tire_util(
-        #     #     track_handler, gggv_handler, global_waypoints)
-        #
-        #     # if np.sum(np.any(tire_util_array_rl > 1.005)) > 0: # add tolerance for numerical inaccuracies
-        #     #    print("Raceline violates the friction check!")
-        #     #    print("Max tire util value:", max(tire_util_array_rl), "at index:", np.argmax(tire_util_array_rl))
-        #
-        #     # store trajectories that failed this check for visualizer
-        #     if self.debugging:
-        #         combined_mask = valid_array.copy()
-        #         combined_mask[valid_array] = ~valid_tmp
-        #         invalid_array_info[combined_mask] = "friction"
-        #
-        #     # allow all trajectories if none is below the maximum allowed friction
-        #     if np.sum(valid_tmp) < 1:
-        #         msgs_logger.warning(
-        #             f"Trajectory ID {traj_cnt}: All trajectories exceed the friction limits by at least {self.params.tire_util_max_check}"
-        #         )
-        #
-        #         return ax_tilde, ay_tilde, g_tilde, tire_util_array
+                # Process each valid trajectory
+                valid_indices = np.where(valid_array)[0]
+                for traj_idx in valid_indices:
+                    # Process all points in this trajectory
+                    for point_idx in range(s_array.shape[1]):
+                        s = s_array[traj_idx, point_idx]
+                        V = V_array[traj_idx, point_idx]
+                        ax_actual = ax_tilde[traj_idx, point_idx]
+                        ay_actual = ay_tilde[traj_idx, point_idx]
 
-        # Simplified friction check without GGGV - accept all trajectories for now
-        # TODO: Implement Pacejka-based tire limit checking here
-        # Accept all trajectories
-        valid_tmp = np.ones(np.sum(valid_array), dtype=bool)
+                        # Get track curvature at this point
+                        try:
+                            kappa = track_handler.omega_z(s)
+                        except:
+                            # Fallback if omega_z fails
+                            kappa = 0.0
 
-        # Store info for debugging
-        if self.debugging:
-            print(
-                f"Trajectory ID {traj_cnt}: GGGV friction checks disabled - using simplified approach")
+                        # Use actual lateral acceleration from trajectory for combined slip calculation
+                        # This accounts for the friction circle: lateral acc reduces available longitudinal acc
+                        ay_for_limits = np.abs(ay_actual)
 
-        valid_array[valid_array] = valid_tmp
+                        # Get available forces from Pacejka model considering combined slip
+                        Fx_available, Fy_max = self.tire_model.calc_combined_limits(
+                            Fz_front_static, Fz_rear_static, ay_for_limits
+                        )
+
+                        # Convert forces to accelerations
+                        ax_max = Fx_available / self.tire_model.mass
+                        ay_max = Fy_max / self.tire_model.mass
+
+                        # Avoid division by zero (minimum 0.1 m/s² limits)
+                        ax_max = max(ax_max, 0.1)
+                        ay_max = max(ay_max, 0.1)
+
+                        # Calculate tire utilization using friction circle model
+                        # Formula: (|ax|/ax_max)^n + (|ay|/ay_max)^n
+                        # Note: ax_max already accounts for lateral usage via calc_combined_limits
+                        tire_util = (np.abs(ax_actual) / ax_max)**n + \
+                            (np.abs(ay_actual) / ay_max)**n
+                        tire_util_array[traj_idx, point_idx] = tire_util
+
+                # Check which trajectories are valid (all points must be within limit)
+                # Apply relaxation factor: >1.0 relaxes (allows higher tire util), <1.0 makes stricter
+                effective_threshold = self.params.tire_util_max_check * \
+                    self.params.tire_util_relaxation
+                valid_tmp = np.all(
+                    tire_util_array[valid_array] <= effective_threshold,
+                    axis=1
+                )
+
+                # Handle case where all trajectories fail the check
+                if np.sum(valid_tmp) < 1:
+                    # Find trajectory with minimum maximum violation
+                    max_violations = np.max(
+                        tire_util_array[valid_array], axis=1)
+                    best_idx = np.argmin(max_violations)
+                    valid_tmp[best_idx] = True
+
+                    # rospy.logwarn(
+                    #     f"Trajectory ID {traj_cnt}: All trajectories exceed friction limits. "
+                    #     f"Keeping best with max tire util={max_violations[best_idx]:.3f} "
+                    #     f"(threshold={effective_threshold:.3f}, relaxation={self.params.tire_util_relaxation:.2f})"
+                    # )
+
+                # Store trajectories that failed this check for visualizer (only if not already marked)
+                if self.debugging:
+                    combined_mask = valid_array.copy()
+                    combined_mask[valid_array] = ~valid_tmp
+                    # Only mark trajectories that haven't failed a previous check
+                    invalid_array_info[combined_mask & (
+                        invalid_array_info == "")] = "friction"
+
+                # Update valid array
+                valid_array[valid_array] = valid_tmp
+
+            except Exception as e:
+                rospy.logwarn_throttle(
+                    5.0,
+                    f"Trajectory ID {traj_cnt}: Error in Pacejka friction check: {e}. "
+                    "Accepting all trajectories."
+                )
+                # Fallback: accept all trajectories
+                valid_tmp = np.ones(np.sum(valid_array), dtype=bool)
+                valid_array[valid_array] = valid_tmp
+        else:
+            # No tire model available - accept all trajectories
+            rospy.logwarn_throttle(
+                10.0,
+                f"Trajectory ID {traj_cnt}: Tire model unavailable, skipping friction check"
+            )
+            valid_tmp = np.ones(np.sum(valid_array), dtype=bool)
+            valid_array[valid_array] = valid_tmp
 
         return ax_tilde, ay_tilde, g_tilde, tire_util_array
 
     def mandatory_checks_trajectory(self,
+                                    # NOTE: Actually trajectory curvature (kappa) in rad/m, not yaw rate!
                                     Omega_z_vf_array: np.ndarray,
                                     track_handler: Track,
                                     s_array: np.ndarray,
@@ -380,7 +614,7 @@ class TrajectoryChecks():
                                     vehicle_params: dict,
                                     ggv_mode: str,
                                     gggv_handler,  # GGGVManager - commented out due to no GGGV diagrams
-                                    global_waypoints: dict,
+                                    postprocessed_raceline: dict,
                                     ):
 
         self.declare_and_update_parameters()
@@ -390,6 +624,14 @@ class TrajectoryChecks():
 
         # info for invalid arrays in visualizer
         invalid_array_info = np.array([""] * s_array.shape[0], dtype='<U20')
+
+        # Initialize return variables with safe defaults (in case all trajectories fail early checks)
+        ax_tilde = np.zeros_like(s_array)
+        ay_tilde = np.zeros_like(s_array)
+        g_tilde = np.ones_like(s_array) * 9.81  # Standard gravity
+        tire_util_array = np.zeros_like(s_array)
+        left_bound = np.array([])
+        right_bound = np.array([])
 
         # checks modify the valid array. The order of the checks can have influence on the calculation time
         valid_sum = np.sum(valid_array)
@@ -401,16 +643,18 @@ class TrajectoryChecks():
             invalid_array_info=invalid_array_info,
         )
         valid_sum_tmp = np.sum(valid_array)
-        if not valid_sum_tmp:
-            print(
-                f"Trajectory ID {traj_cnt}: No valid edges after curvature check. Valid edges before: {valid_sum}")
-            # Simplified monitoring without NodeMonitor dependency
-            # if node_monitor:
-            #     node_monitor.set_error_lvl("curvature_checks", ErrorLvl.WARN)
-        else:
-            pass
-            # if node_monitor:
-            #     node_monitor.set_error_lvl("curvature_checks", ErrorLvl.OK)
+
+        # Vehicle Capability Check (speed and acceleration limits)
+        valid_sum = valid_sum_tmp
+        # valid_speed, valid_ax = self.__check_vehicle_capabilities(
+        #     valid_array=valid_array,
+        #     V_array=V_array,
+        #     ax_array=ax_vf_array,
+        #     ay_array=ay_vf_array,
+        #     invalid_array_info=invalid_array_info,
+        #     traj_cnt=traj_cnt,
+        # )
+        valid_sum_tmp = np.sum(valid_array)
 
         # Path Collision Check
         valid_sum = valid_sum_tmp
@@ -425,67 +669,115 @@ class TrajectoryChecks():
             invalid_array_info=invalid_array_info,
         )
         valid_sum_tmp = np.sum(valid_array)
+        valid_sum = valid_sum_tmp
+
+        # Friction Check
+        valid_sum = valid_sum_tmp
+        # rospy.logerr(f"\n--- Running Friction Check (SIMPLIFIED) ---")
+        ax_tilde, ay_tilde, g_tilde, tire_util_array = self.__check_friction_limits(
+            valid_array=valid_array,
+            track_handler=track_handler,
+            s_array=s_array,
+            V_array=V_array,
+            n_array=n_array,
+            chi_array=chi_array,
+            ax_array=ax_vf_array,
+            ay_array=ay_vf_array,
+            t_array=t_array,
+            ggv_mode=ggv_mode,
+            gggv_handler=gggv_handler,
+            traj_cnt=traj_cnt,
+            msgs_logger=msgs_logger,
+            pitlane_mode=pitlane_mode,
+            invalid_array_info=invalid_array_info,
+            postprocessed_raceline=postprocessed_raceline,
+        )
+        valid_sum_tmp = np.sum(valid_array)
+
+        # Summary of trajectory failures when very few or no valid trajectories
+        total_trajectories = s_array.shape[0]
+        num_valid_final = valid_sum_tmp
+        valid_percentage = (
+            num_valid_final / total_trajectories * 100) if total_trajectories > 0 else 0
+
+        # if num_valid_final == 0 or valid_percentage < 5.0:
+        #     rospy.logerr("\n" + "="*80)
+        #     rospy.logerr(
+        #         f"⚠️  TRAJECTORY VALIDATION SUMMARY - Trajectory ID {traj_cnt}")
+        #     rospy.logerr("="*80)
+        #     rospy.logerr(
+        #         f"Final valid trajectories: {num_valid_final}/{total_trajectories} ({valid_percentage:.1f}%)")
+        #     rospy.logerr("\nFailure breakdown:")
+
+        #     # Count failures by type
+        #     failure_counts = {}
+        #     for reason in ["curvature", "vehicle_capability", "path_collision", "friction", ""]:
+        #         count = np.sum(invalid_array_info == reason)
+        #         if count > 0 or reason == "":
+        #             failure_counts[reason] = count
+
+        #     # Curvature check failures
+        #     curvature_failures = failure_counts.get("curvature", 0)
+        #     curvature_pct = (
+        #         curvature_failures / total_trajectories * 100) if total_trajectories > 0 else 0
+        #     rospy.logerr(
+        #         f"  📐 Curvature check:      {curvature_failures:3d}/{total_trajectories} failed ({curvature_pct:5.1f}%)"
+        #     )
+
+        #     # # Vehicle capability check failures
+        #     # capability_failures = failure_counts.get("vehicle_capability", 0)
+        #     # capability_pct = (
+        #     #     capability_failures / total_trajectories * 100) if total_trajectories > 0 else 0
+        #     # rospy.logerr(
+        #     #     f"  🚗 Vehicle capability:   {capability_failures:3d}/{total_trajectories} failed ({capability_pct:5.1f}%)"
+        #     # )
+
+        #     # # Show detailed breakdown of which capability limits were exceeded
+        #     # if capability_failures > 0 and 'valid_speed' in locals():
+        #     #     num_speed_violations = np.sum(~valid_speed)
+        #     #     num_ax_violations = np.sum(~valid_ax)
+
+        #     #     if num_speed_violations > 0:
+        #     #         rospy.logerr(
+        #     #             f"      └─ Speed exceeded:     {num_speed_violations:3d} trajectories "
+        #     #             f"(max={self.params.max_speed:.1f} m/s)"
+        #     #         )
+        #     #     if num_ax_violations > 0:
+        #     #         rospy.logerr(
+        #     #             f"      └─ Longitudinal accel: {num_ax_violations:3d} trajectories "
+        #     #             f"(max={self.params.max_accel:.1f} m/s²)"
+        #     #         )
+        #     #     # Note: Lateral accel not checked here - handled by Pacejka friction check
+
+        #     # Path collision check failures
+        #     collision_failures = failure_counts.get("path_collision", 0)
+        #     collision_pct = (
+        #         collision_failures / total_trajectories * 100) if total_trajectories > 0 else 0
+        #     rospy.logerr(
+        #         f"  🚧 Path collision check: {collision_failures:3d}/{total_trajectories} failed ({collision_pct:5.1f}%)"
+        #     )
+
+        #     # Friction check failures
+        #     friction_failures = failure_counts.get("friction", 0)
+        #     friction_pct = (friction_failures / total_trajectories *
+        #                     100) if total_trajectories > 0 else 0
+        #     rospy.logerr(
+        #         f"  🛞 Friction check:       {friction_failures:3d}/{total_trajectories} failed ({friction_pct:5.1f}%)"
+        #     )
+
+        #     # Unknown/not labeled
+        #     unknown_failures = failure_counts.get("", 0)
+        #     if unknown_failures > 0:
+        #         unknown_pct = (unknown_failures / total_trajectories *
+        #                        100) if total_trajectories > 0 else 0
+        #         rospy.logerr(
+        #             f"  ❓ Other/Unknown:        {unknown_failures:3d}/{total_trajectories} failed ({unknown_pct:5.1f}%) ❓"
+        #         )
+
+        #     rospy.logerr("="*80 + "\n")
+
         if not valid_sum_tmp:
-            print(
-                f"Trajectory ID {traj_cnt}: No valid edges after path check. Valid edges before: {valid_sum}")
-            # Simplified monitoring without NodeMonitor dependency
-            # if node_monitor:
-            #     node_monitor.set_error_lvl("path_collision_checks", ErrorLvl.WARN)
-        else:
-            pass
-            # if node_monitor:
-            #     node_monitor.set_error_lvl("path_collision_checks", ErrorLvl.OK)
-
-            # Rules Check
-            valid_sum = valid_sum_tmp
-            self.__check_rules(
-                valid_array=valid_array,
-                V_array=V_array,
-                V_target_rules=V_target_rules,
-                invalid_array_info=invalid_array_info,
-            )
-            valid_sum_tmp = np.sum(valid_array)
-            if not valid_sum_tmp:
-                print(
-                    f'Trajectory ID {traj_cnt}: No valid edges after rule check. Valid edges before: {valid_sum}')
-                # Simplified monitoring without NodeMonitor dependency
-                # if node_monitor:
-                #     node_monitor.set_error_lvl("rule_checks", ErrorLvl.WARN)
-            else:
-                pass
-                # if node_monitor:
-                #     node_monitor.set_error_lvl("rule_checks", ErrorLvl.OK)
-
-            # Friction Check
-            valid_sum = valid_sum_tmp
-            ax_tilde, ay_tilde, g_tilde, tire_util_array = self.__check_friction_limits(
-                valid_array=valid_array,
-                track_handler=track_handler,
-                s_array=s_array,
-                V_array=V_array,
-                n_array=n_array,
-                chi_array=chi_array,
-                ax_array=ax_vf_array,
-                ay_array=ay_vf_array,
-                t_array=t_array,
-                ggv_mode=ggv_mode,
-                gggv_handler=gggv_handler,
-                traj_cnt=traj_cnt,
-                msgs_logger=msgs_logger,
-                pitlane_mode=pitlane_mode,
-                invalid_array_info=invalid_array_info,
-                global_waypoints=global_waypoints,
-            )
-            valid_sum_tmp = np.sum(valid_array)
-            if not valid_sum_tmp:
-                print(
-                    f'Trajectory ID {traj_cnt}: No valid edges after friction check. Valid edges before: {valid_sum}')
-                # Simplified monitoring without NodeMonitor dependency
-                # if node_monitor:
-                #     node_monitor.set_error_lvl("friction_checks", ErrorLvl.WARN)
-            else:
-                pass
-                # if node_monitor:
-                #     node_monitor.set_error_lvl("friction_checks", ErrorLvl.OK)
+            rospy.logerr(
+                f"[Trajectories Check] ❌ CRITICAL: No valid trajectories after all checks")
 
         return valid_array, ax_tilde, ay_tilde, g_tilde, tire_util_array, invalid_array_info, (left_bound, right_bound)

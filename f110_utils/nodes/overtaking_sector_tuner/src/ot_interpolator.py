@@ -117,7 +117,13 @@ class OvertakingInterpolator:
         # assert params.doubles[0].name == 'yeet_factor'
         self.yeet_factor = params.doubles[0].value
         self.spline_len = int(params.doubles[1].value)
+        
+        # CRITICAL: Update sectors_params dict with new values so logging shows correct values
+        self.sectors_params['yeet_factor'] = self.yeet_factor
+        self.sectors_params['spline_len'] = self.spline_len
+        
         self.need_to_reinterpolate = True
+        rospy.loginfo(f"{self.log_name} Updated params: yeet_factor={self.yeet_factor}, spline_len={self.spline_len}")
         rospy.loginfo(self.sectors_params)
 
     def dyn_speed_param_cb(self, params: Config):

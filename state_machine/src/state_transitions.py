@@ -381,14 +381,131 @@ def TAMReadyTransition(state_machine: StateMachine) -> StateType:
     """TAM Sampling Ready transition - same as base ready transition"""
     if hasattr(state_machine, 'race_start_received') and state_machine.race_start_received:
         state_machine.race_start_received = False
+        return StateType.TAM_PLANNING
+    else:
+        return StateType.READY
+
+
+def TAMPlanningTransition(state_machine: StateMachine) -> StateType:
+    """TAM Sampling transitions for being in `StateType.TAM_PLANNING`"""
+    # Call availability check to update last_valid_avoidance_wpnts with hysteresis
+    # This is the same approach used by predictive spliner
+    state_machine._check_availability_splini_wpts()
+
+    return StateType.TAM_PLANNING
+
+###########################
+# PREDICITVE SAMPLER TRANSITIONS #
+###########################
+
+
+def PSAMPReadyTransition(state_machine: StateMachine) -> StateType:
+    """PSSAMP Ready transition - same as base ready transition"""
+    if hasattr(state_machine, 'race_start_received') and state_machine.race_start_received:
+        state_machine.race_start_received = False
         return StateType.GB_TRACK
     else:
         return StateType.READY
 
 
-def TAMGlobalTrackingTransition(state_machine: StateMachine) -> StateType:
-    """TAM Sampling transitions for being in `StateType.GB_TRACK`"""
-    return StateType.GB_TRACK
+def PSSAMPGlobalTrackingTransition(state_machine: StateMachine) -> StateType:
+    """Transitions for being in `StateType.GB_TRACK`"""
+    valid_spline = state_machine._check_availability_splini_wpts()
+    enemy_in_front = state_machine._check_enemy_in_front()
+    ot_sector = state_machine._check_ot_sector()
+    gb_free = state_machine._check_gbfree()
+    gb_predict_free = state_machine._check_prediction_gbfree()
+    o_free = state_machine._check_ofree()
+    force_trailing = state_machine._check_force_trailing()
+
+    if not state_machine._check_only_ftg_zone():
+        if force_trailing:
+            return StateType.TRAILING
+        elif valid_spline and o_free and ot_sector:
+            return StateType.OVERTAKE
+        elif enemy_in_front and gb_free and gb_predict_free and ot_sector and not force_trailing:
+            return StateType.GB_TRACK
+        elif enemy_in_front:
+            return StateType.TRAILING
+        else:
+            return StateType.GB_TRACK
+    else:
+        return StateType.FTGONLY
+
+
+def PSSAMPTrailingTransition(state_machine: StateMachine) -> StateType:
+    """Transitions for being in `StateType.TRAILING`"""
+    ot_sector = state_machine._check_ot_sector()
+    valid_spline = state_machine._check_availability_splini_wpts()
+    emergency_break = state_machine._check_emergency_break()
+    enemy_in_front = state_machine._check_enemy_in_front()
+    gb_free = state_machine._check_gbfree()
+    gb_predict_free = state_machine._check_prediction_gbfree()
+    o_free = state_machine._check_ofree()
+    on_avoidance_spline = state_machine._check_on_spline()
+    on_merger = state_machine._check_on_merger()
+    force_trailing = state_machine._check_force_trailing()
+
+    rospy.loginfo_throttle(
+        5.0, f"[StateMachine] Trailing Transition Check: ot_sector={ot_sector}, valid_spline={valid_spline}, emergency_break={emergency_break}, enemy_in_front={enemy_in_front}, gb_free={gb_free}, gb_predict_free={gb_predict_free}, o_free={o_free}, on_avoidance_spline={on_avoidance_spline}, on_merger={on_merger}, force_trailing={force_trailing}")
+
+    if not state_machine._check_only_ftg_zone():
+        # If we have been sitting around in TRAILING for a while then FTG
+        if state_machine._check_ftg():
+            return StateType.FTGONLY
+        elif force_trailing:
+            return StateType.TRAILING
+        elif valid_spline and not emergency_break and o_free and ot_sector and not on_merger:
+            return StateType.OVERTAKE
+        # Questionable if on_merger really helps in this case
+        elif not enemy_in_front and on_avoidance_spline and not on_merger:
+            return StateType.OVERTAKE
+        elif not enemy_in_front:
+            return StateType.GB_TRACK
+        # enemy_in_front and and best_ot_sector:
+        elif gb_free and gb_predict_free and ot_sector:
+            return StateType.GB_TRACK
+        else:
+            return StateType.TRAILING
+    else:
+        return StateType.FTGONLY
+
+
+def PSSAMPSamplingTransition(state_machine: StateMachine) -> StateType:
+    """Transitions for being in `StateType.OVERTAKE`"""
+    if not state_machine._check_only_ftg_zone():
+        ot_sector = state_machine._check_ot_sector()
+        spline_valid = state_machine._check_availability_splini_wpts()
+        enemy_in_front = state_machine._check_enemy_in_front()
+        emergency_break = state_machine._check_emergency_break()
+        on_avoidance_spline = state_machine._check_on_spline()
+        o_free = state_machine._check_ofree()
+        force_trailing = state_machine._check_force_trailing()
+
+        if emergency_break or not ot_sector:
+            return StateType.TRAILING
+        elif not o_free or force_trailing:
+            return StateType.TRAILING
+        elif spline_valid and o_free and ot_sector:
+            return StateType.OVERTAKE
+        elif not spline_valid and not enemy_in_front and on_avoidance_spline:
+            return StateType.OVERTAKE
+        elif not spline_valid and not enemy_in_front and not on_avoidance_spline:
+            return StateType.GB_TRACK
+        else:
+            return StateType.TRAILING
+    else:
+        return StateType.FTGONLY
+
+
+def PSSAMPFTGOnlyTransition(state_machine: StateMachine) -> StateType:
+    if state_machine._check_only_ftg_zone():
+        return StateType.FTGONLY
+    else:
+        if state_machine._check_close_to_raceline() and state_machine._check_gbfree():
+            return StateType.GB_TRACK
+        else:
+            return StateType.FTGONLY
 
 
 ####################################

@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="car_name" default="car1" />
+    <!-- CRITICAL: car_name defaults to empty string for single-car mode -->
+    <!-- When used in multi_car.launch, this will be overridden to "car1", "car2", etc. -->
+    <arg name="car_name" default="" />
     <arg name="racecar_version" default="NUC2" /> <!--  JETx / NUCx ... -->
     <!-- Added to satisfy graph_based planner param passing in multi-car launches -->
     <arg name="map_name" default="" />
@@ -9,15 +11,25 @@
     <arg name="ctrl_algo" default="MAP" /> <!--  MAP / PP / STMPC / KMPC-->
     <arg name="measure" default="False" />
     <arg name="perception" default="True" /> <!--  True / False. False to disable the perception module when using the dummy obstacle publisher -->
-    <arg name="planner" default="spliner" /> <!--  spliner / predictive_spliner / tam_sampling / graph_based / frenet -->
+    <arg name="planner" default="spliner" /> <!--  spliner / predictive_spliner / tam_sampling / predictive_sampler / graph_based / frenet -->
     
     <!-- OPTIMIZATION: Parameterized topic arguments for namespace-aware operation -->
     <arg name="global_waypoints_topic" default="/global_waypoints" />
     <arg name="global_waypoints_scaled_topic" default="/global_waypoints_scaled" />
     <arg name="global_waypoints_overtaking_topic" default="/global_waypoints/overtaking" />
     <arg name="planner_output_topic" default="planner/avoidance/otwpnts" />
+    
+    <!-- CRITICAL: Obstacle topic selection for single-car vs multi-car mode -->
+    <!-- Override this argument when calling from multi_car.launch -->
+    <!-- Default: single-car uses /perception/obstacles -->
+    <!-- Multi-car: pass obstacles_topic:=/car1/perception/multi_car_obstacles -->
+    <arg name="obstacles_topic" default="/perception/obstacles" />
+    
     <!-- Namespaced measure flag (no leading slash) -->
     <param name="measure" value="$(arg measure)" />
+
+    <!-- Ensure race start controller is enabled globally so state machines start in READY -->
+    <param name="enable_race_start_controller" value="True" />
 
     <!-- CONTROLLER -->
     <node pkg="controller" name="controller_manager" type="controller_manager.py" output="screen">
@@ -121,8 +133,8 @@
             <!-- Remap to use car-specific topics -->
             <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
             <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
-            <!-- Remap input topics for multi-car obstacles and opponent trajectory -->
-            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap input topics - uses conditional obstacles_topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
             <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
             <!-- Remap output to car-specific namespace -->
             <remap from="/collision_prediction/obstacles" to="/$(arg car_name)/collision_prediction/obstacles"/>
@@ -140,8 +152,8 @@
             <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
             <remap from="/global_waypoints_updated" to="/$(arg car_name)/global_waypoints_updated"/>
             <remap from="/local_waypoints" to="/$(arg car_name)/local_waypoints"/>
-            <!-- Remap to use multi-car obstacles for multi-car racing -->
-            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap collision prediction and opponent trajectory to car-specific topics -->
             <remap from="/collision_prediction/obstacles" to="/$(arg car_name)/collision_prediction/obstacles"/>
             <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
@@ -176,8 +188,8 @@
             <!-- Remap global waypoints to car-specific topics -->
             <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
-            <!-- Remap to use multi-car obstacles for multi-car racing -->
-            <remap from="/perception/obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap to use car-specific topics -->
             <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
             <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
@@ -282,8 +294,8 @@
             <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
             <remap from="local_waypoints" to="local_waypoints"/>
-            <!-- Remap to use multi-car obstacles for multi-car racing -->
-            <remap from="perception/obstacles" to="perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap to use car-specific topics (relative paths - already in car namespace) -->
             <remap from="car_state/odom_frenet" to="car_state/odom_frenet"/>
             <remap from="car_state/odom" to="car_state/odom"/>
@@ -302,8 +314,8 @@
             <!-- Smooth prediction parameters -->
             <param name="prediction_buffer_age" value="1.0"/>  <!-- Keep predictions for 1 second -->
             <param name="marker_lifetime" value="0.8"/>  <!-- Marker lifetime in seconds -->
-            <!-- Remap to use multi-car obstacles for prediction -->
-            <remap from="perception/multi_car_obstacles" to="/$(arg car_name)/perception/multi_car_obstacles"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="perception/multi_car_obstacles" to="$(arg obstacles_topic)"/>
             <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
             <!-- Remap prediction outputs to car-specific namespace -->
@@ -320,6 +332,170 @@
             <param name="marker_timeout" value="1.0"/>  <!-- Cache timeout in seconds -->
             <!-- Remap input topics from car-specific namespaces -->
             <remap from="prediction/opponent_markerarray" to="/$(arg car_name)/prediction/opponent_markerarray"/>
+        </node>
+    </group>
+
+    <!-- PLANNER PREDICTIVE SAMPLER -->
+    <!-- Hybrid: Predictive Spliner state transitions + TAM Sampling trajectory generation + Conditional planning -->
+    <group if="$(eval planner == 'predictive_sampler')">
+        <!-- launch dynamic reconfigure for tuning State Machine and State Machine itself -->
+        <node pkg="state_machine" type="dynamic_statemachine_server.py" name="dynamic_statemachine_server" output="screen"/>
+        <!-- Ensure force_GBTRACK is always initialized to False -->
+        <param name="dynamic_statemachine_server/force_GBTRACK" value="false" />
+        <node pkg="state_machine" type="state_machine_node.py" name="state_machine" output="screen">
+                <rosparam file="$(find stack_master)/config/state_machine_params.yaml" />
+                <!--  tell state machine to pass entire logic -->
+                <param name="timetrials_only" value="False"/>
+                <!--  CRITICAL: Use predictive_sampler for PSSAMP transitions -->
+                <param name="ot_planner" value="predictive_sampler"/>
+                <!-- OPTIMIZATION: Use parameterized topic names -->
+                <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
+                <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+                <remap from="global_waypoints/overtaking" to="$(arg global_waypoints_overtaking_topic)"/>
+        </node>
+
+        <!-- Load TAM sampling parameters from config file -->
+        <rosparam command="load" file="$(find tam_sampling_planner)/config/tam_sampling_params.yaml" />
+        
+        <!-- launch TAM sampling planner and dynamic reconfigure (CONDITIONAL MODE) -->
+        <node pkg="tam_sampling_planner" type="dynamic_tam_sampling_server.py" name="dynamic_tam_sampling_tuner_node" output="screen"/>
+        <node pkg="tam_sampling_planner" type="tam_sampling_node.py" name="planner_tam_sampling" output="screen">
+            <!-- CRITICAL: Enable conditional planning mode -->
+            <param name="planning_mode" value="predictive_sampler"/>
+            
+            <!-- Conditional Planning Thresholds (match SQP settings) -->
+            <param name="lookahead" value="15.0"/>           <!-- Lookahead distance for obstacle detection (m) -->
+            <param name="obs_traj_thresh" value="2.0"/>      <!-- Lateral distance threshold for obstacle proximity (m) -->
+            
+            <!-- Core sampling parameters -->
+            <param name="lateral_samples" value="15"/>
+            <param name="longitudinal_samples" value="8"/>
+            <param name="planning_horizon" value="4.0"/>
+            <param name="dt" value="0.1"/>
+            
+            <!-- Vehicle constraints from NUC2 -->
+            <param name="max_speed" value="10.0"/>
+            <param name="max_accel" value="8.29"/>
+            <param name="max_lateral_accel" value="12.0"/>
+            
+            <!-- Safety parameters -->
+            <param name="safety_distance_track_left" value="0.5"/>
+            <param name="safety_distance_track_right" value="0.5"/>
+            <param name="safety_margin_static" value="0.5"/>
+            <param name="safety_margin_dynamic" value="1.0"/>
+            <param name="tube_width" value="1.0"/>
+            
+            <!-- Cost function weights -->
+            <param name="raceline_cost_weight" value="3.5"/>
+            <param name="velocity_cost_weight" value="3.0"/>
+            <param name="friction_cost_weight" value="5000.0"/>
+            <param name="curvature_cost_weight" value="500000.0"/>
+            <param name="lateral_jerk_cost_weight" value="0.5"/>
+            <param name="prediction_cost_weight" value="100000.0"/>
+            <param name="collision_cost_weight" value="100000000.0"/>
+            
+            <!-- Trajectory validation -->
+            <param name="kappa_thr" value="0.1"/>
+            <param name="curvature_cost_threshold" value="30.0"/>
+            <param name="increasing_rl_cost" value="true"/>
+            
+            <!-- Longitudinal sampling -->
+            <param name="s_dot_discretization" value="2.0"/>
+            <param name="v_sampling_scale" value="1.1"/>
+            <param name="s_dot_max_positive_delta" value="20.0"/>
+            <param name="relative_s_dot_min_percentage" value="0.5"/>
+            
+            <!-- Lateral sampling -->
+            <param name="n_dense_samples" value="5"/>
+            <param name="n_dense_min" value="-0.5"/>
+            <param name="n_dense_max" value="0.5"/>
+            <param name="track_width" value="3.0"/>
+            
+            <!-- Trajectory generation -->
+            <param name="trajectory_len_controller" value="50"/>
+            
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <remap from="local_waypoints" to="local_waypoints"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="perception/obstacles" to="$(arg obstacles_topic)"/>
+            <!-- Remap collision prediction obstacles (from Predictive Spliner nodes) -->
+            <remap from="collision_prediction/obstacles" to="collision_prediction/obstacles"/>
+            <!-- Remap to use car-specific topics (relative paths - already in car namespace) -->
+            <remap from="car_state/odom_frenet" to="car_state/odom_frenet"/>
+            <remap from="car_state/odom" to="car_state/odom"/>
+            <!-- Namespace the planner output (relative paths) -->
+            <remap from="planner/avoidance/otwpnts" to="planner/avoidance/otwpnts"/>
+            <remap from="planner/avoidance/markers" to="planner/avoidance/markers"/>
+        </node>
+        
+        <!-- Collision Prediction from Predictive Spliner (for ROCs) -->
+        <node pkg="predictive_spliner" type="dynamic_collision_server.py" name="dynamic_collision_tuner_node" output="screen"/>
+        <node pkg="predictive_spliner" type="collision_prediction.py" name="collision_predictor" output="screen">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <remap from="/global_waypoints_updated" to="/$(arg car_name)/global_waypoints_updated"/>
+            <!-- Remap Frenet conversion services to car-specific services -->
+            <remap from="convert_frenet2globarr_service" to="/$(arg car_name)/convert_frenet2globarr_service"/>
+            <remap from="convert_glob2frenetarr_service" to="/$(arg car_name)/convert_glob2frenetarr_service"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
+            <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
+            <!-- Remap input topics - uses conditional obstacles_topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
+            <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+            <!-- Remap output to car-specific namespace -->
+            <remap from="/collision_prediction/obstacles" to="/$(arg car_name)/collision_prediction/obstacles"/>
+            <remap from="/collision_prediction/force_trailing" to="/$(arg car_name)/collision_prediction/force_trailing"/>
+            <!-- Remap collision prediction markers to car-specific namespace -->
+            <remap from="/collision_predict/beginn" to="/$(arg car_name)/collision_predict/beginn"/>
+            <remap from="/collision_predict/end" to="/$(arg car_name)/collision_predict/end"/>
+        </node>
+        
+        <!-- Opponent Trajectory Half-Lap Projection -->
+        <node pkg="predictive_spliner" type="opponent_trajectory.py" name="OpponentHalflap" output="screen">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <remap from="/perception/obstacles" to="$(arg obstacles_topic)"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
+            <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
+            <!-- Namespace the opponent trajectory output -->
+            <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+            <remap from="/proj_opponent_trajectory" to="/$(arg car_name)/proj_opponent_trajectory"/>
+            <remap from="/opponent_marker" to="/$(arg car_name)/opponent_marker"/>
+        </node>
+        
+        <!-- Gaussian Process Opponent Trajectory Prediction -->
+        <node pkg="predictive_spliner" type="gaussian_process_opp_traj.py" name="GP_trajectory" output="screen" launch-prefix="taskset -c 1">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="/proj_opponent_trajectory" to="/$(arg car_name)/proj_opponent_trajectory"/>
+            <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+            <remap from="/opponent_traj_markerarray" to="/$(arg car_name)/opponent_traj_markerarray"/>
+        </node>
+        
+        <!-- Predictor for Opponent Trajectory -->
+        <node pkg="predictive_spliner" type="predictor_opponent_trajectory.py" name="Predictor_Opp" output="screen">
+            <!-- Remap to use car-specific topics -->
+            <remap from="/proj_opponent_trajectory" to="/$(arg car_name)/proj_opponent_trajectory"/>
+            <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+        </node>
+        
+        <!-- TAM Visualization for trajectory markers -->
+        <node pkg="tam_sampling_planner" type="visualization.py" name="tam_visualization" output="screen">
+            <!-- Car name parameter for color coding -->
+            <param name="car_name" value="$(arg car_name)"/>
+            <!-- Smooth visualization parameters -->
+            <param name="visualization_rate" value="20.0"/>  <!-- 20 Hz for smooth display -->
+            <param name="marker_timeout" value="1.0"/>  <!-- Cache timeout in seconds -->
+            <!-- Remap planner markers -->
+            <remap from="planner/avoidance/markers" to="/$(arg car_name)/planner/avoidance/markers"/>
         </node>
     </group>
 
@@ -377,15 +553,21 @@
     <group if="$(arg perception)">
         <rosparam command="load" file="$(find stack_master)/config/opponent_tracker_params.yaml" />
         <node pkg="perception" type="detect.py" name="detect" output="screen">
-            <param name="frame_prefix" value="$(arg car_name)_" />
-            <param name="map_frame" value="$(arg car_name)_map" />
-            <param name="laser_frame" value="$(arg car_name)_laser" />
+            <!-- Conditional frame prefix: use car_name_ only if car_name is not empty -->
+            <param name="frame_prefix" value="$(arg car_name)" if="$(eval car_name != '')" />
+            <param name="frame_prefix" value="" unless="$(eval car_name != '')" />
+            <param name="map_frame" value="$(arg car_name)_map" if="$(eval car_name != '')" />
+            <param name="map_frame" value="map" unless="$(eval car_name != '')" />
+            <param name="laser_frame" value="$(arg car_name)_laser" if="$(eval car_name != '')" />
+            <param name="laser_frame" value="laser" unless="$(eval car_name != '')" />
         </node>
         <arg name="var_vs" default="2" /> <!-- var_of vs-->
         <arg name="var_vd" default="8" /> <!-- var_of vs-->
         <node pkg="perception" type="tracking.py" name="tracking" output="screen">
-            <param name="frame_prefix" value="$(arg car_name)_" />
-            <param name="map_frame" value="$(arg car_name)_map" />
+            <param name="frame_prefix" value="$(arg car_name)" if="$(eval car_name != '')" />
+            <param name="frame_prefix" value="" unless="$(eval car_name != '')" />
+            <param name="map_frame" value="$(arg car_name)_map" if="$(eval car_name != '')" />
+            <param name="map_frame" value="map" unless="$(eval car_name != '')" />
         </node>
         <node pkg="perception" type="dynamic_tracker_server.py" name="dynamic_tracker_server"
             output="screen" />
@@ -394,5 +576,23 @@
     <!-- launch cpu_monitor if measuring -->
     <group if="$(arg measure)">
         <node pkg="cpu_monitor" type="monitor.py" name="cpu_monitor" output="screen" />
+    </group>
+    
+    <!-- Speed Monitor - Always On -->
+    <!-- Displays real-time speed and acceleration in terminal -->
+    <node pkg="cpu_monitor" type="speed_monitor.py" name="speed_monitor" output="screen">
+        <param name="car_name" value="$(arg car_name)"/>
+        <param name="update_rate" value="10.0"/>
+    </node>
+    
+    <!-- ============================================= -->
+    <!-- RACE START CONTROLLER                        -->
+    <!-- ============================================= -->
+    <!-- Manual start control for single-car racing -->
+    <!-- NOTE: Use ROS services for control: rosservice call /race_control/{start_both,reset_cars,emergency_stop} -->
+    <arg name="enable_race_start_controller" default="True"/>
+    
+    <group if="$(arg enable_race_start_controller)">
+        <include file="$(find race_start_controller)/launch/race_start_single.launch"/>
     </group>
 </launch>

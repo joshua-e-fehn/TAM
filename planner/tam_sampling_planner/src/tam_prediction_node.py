@@ -36,6 +36,25 @@ class TAMConstantOffsetPredictor:
         - /prediction/opponent_markers: Visualization markers (MarkerArray)
     """
 
+    def _load_yaml_defaults(self):
+        """Load default parameters from tam_sampling_params.yaml"""
+        import rospkg
+        import yaml
+        import os
+        try:
+            rospack = rospkg.RosPack()
+            pkg_path = rospack.get_path('tam_sampling_planner')
+            config_file = os.path.join(
+                pkg_path, 'config', 'tam_sampling_params.yaml')
+
+            with open(config_file, 'r') as f:
+                yaml_params = yaml.safe_load(f)
+                return yaml_params if yaml_params else {}
+        except Exception as e:
+            rospy.logwarn(
+                f"TAMConstantOffsetPredictor: Could not load YAML defaults: {e}")
+            return {}
+
     def __init__(self):
         """Initialize the TAM constant offset predictor"""
 
@@ -48,19 +67,6 @@ class TAMConstantOffsetPredictor:
             self.log_name = f"[{self.car_namespace}] TAM Predictor"
         else:
             self.log_name = "[TAM Predictor]"
-
-        # Prediction parameters - now based on global waypoints
-        self.prediction_horizon = rospy.get_param(
-            "prediction_horizon", 50.0)  # seconds (kept for compatibility)
-        self.prediction_dt = rospy.get_param(
-            "prediction_dt", 0.1)  # time step (kept for compatibility)
-        # prediction_points will be set dynamically based on global waypoints length
-
-        # Safety parameters
-        self.safety_margin = rospy.get_param(
-            "safety_margin", 0.3)  # meters from track boundaries
-        self.smoothing_factor = rospy.get_param(
-            "smoothing_factor", 0.8)  # for boundary constraints
 
         # State variables
         self.global_waypoints = WpntArray()
@@ -77,19 +83,67 @@ class TAMConstantOffsetPredictor:
         self.last_prediction_time = 0.0
         self.cached_predictions = {}
         self.prediction_buffer = {}  # Store recent predictions with timestamps
-        self.max_buffer_age = rospy.get_param(
-            "prediction_buffer_age", 1.0)  # Keep predictions for 1 second
-        self.marker_lifetime = rospy.get_param(
-            "marker_lifetime", 0.8)  # Marker lifetime in seconds
 
         # Tracking for existing markers
         self.active_marker_ids = set()
+
+        # Declare and load parameters
+        self.initialized_params = False
+        self.declare_and_update_parameters()
 
         # Setup ROS interface
         self.setup_ros_interface()
 
         rospy.loginfo(
             f"{self.log_name} Initialized - prediction points will match global waypoints length")
+
+    def declare_and_update_parameters(self):
+        if not self.initialized_params:
+            # Load YAML defaults
+            yaml_defaults = self._load_yaml_defaults()
+
+            # Prediction parameters - now based on global waypoints
+            self.prediction_horizon = yaml_defaults.get(
+                'prediction_horizon', rospy.get_param("prediction_horizon", 50.0))  # seconds
+            rospy.set_param("prediction_horizon", self.prediction_horizon)
+            self.prediction_dt = yaml_defaults.get(
+                'prediction_dt', rospy.get_param("prediction_dt", 0.1))  # time step
+            rospy.set_param("prediction_dt", self.prediction_dt)
+            # prediction_points will be set dynamically based on global waypoints length
+
+            # Safety parameters
+            self.safety_margin = yaml_defaults.get(
+                'safety_margin_dynamic', rospy.get_param("safety_margin", 0.5))
+            rospy.set_param("safety_margin", self.safety_margin)
+            self.smoothing_factor = yaml_defaults.get(
+                'smoothing_factor', rospy.get_param("smoothing_factor", 0.8))
+            rospy.set_param("smoothing_factor", self.smoothing_factor)
+
+            self.max_buffer_age = yaml_defaults.get(
+                'prediction_buffer_age', rospy.get_param("prediction_buffer_age", 1.0))
+            rospy.set_param("prediction_buffer_age", self.max_buffer_age)
+            self.marker_lifetime = yaml_defaults.get(
+                'marker_lifetime', rospy.get_param("marker_lifetime", 0.8))
+            rospy.set_param("marker_lifetime", self.marker_lifetime)
+            self.initialized_params = True
+        else:
+            # Prediction parameters - now based on global waypoints
+            self.prediction_horizon = rospy.get_param(
+                "prediction_horizon", self.prediction_horizon)  # seconds
+            self.prediction_dt = rospy.get_param(
+                "prediction_dt", self.prediction_dt)  # time step
+            # prediction_points will be set dynamically based on global waypoints length
+
+            # Safety parameters
+            self.safety_margin = rospy.get_param(
+                "safety_margin", self.safety_margin)
+            self.smoothing_factor = rospy.get_param(
+                "smoothing_factor", self.smoothing_factor)
+
+            self.max_buffer_age = rospy.get_param(
+                "prediction_buffer_age", self.max_buffer_age)
+            self.marker_lifetime = rospy.get_param(
+                "marker_lifetime", self.marker_lifetime)
 
     def setup_ros_interface(self):
         """Setup ROS subscribers and publishers"""
@@ -132,8 +186,8 @@ class TAMConstantOffsetPredictor:
                         self.track_centerline[:, 0],
                         self.track_centerline[:, 1]
                     )
-                    rospy.loginfo(
-                        f"{self.log_name} Frenet converter initialized")
+                    # rospy.loginfo(
+                    #     f"{self.log_name} Frenet converter initialized")
                 except Exception as e:
                     rospy.logwarn(
                         f"{self.log_name} Failed to initialize Frenet converter: {e}")
@@ -143,8 +197,8 @@ class TAMConstantOffsetPredictor:
         self.obstacles = msg
         current_time = rospy.Time.now()
 
-        rospy.loginfo_throttle(
-            5.0, f"{self.log_name} Received {len(msg.obstacles)} obstacles")
+        # rospy.loginfo_throttle(
+        #     5.0, f"{self.log_name} Received {len(msg.obstacles)} obstacles")
 
         # Store current obstacle data in buffer
         for i, obstacle in enumerate(msg.obstacles):
@@ -162,13 +216,13 @@ class TAMConstantOffsetPredictor:
         if (len(self.global_waypoints.wpnts) == 0 or
             self.converter is None or
                 len(msg.obstacles) == 0):
-            rospy.loginfo_throttle(
-                5.0, f"{self.log_name} Not ready for predictions: waypoints={len(self.global_waypoints.wpnts)}, converter={self.converter is not None}, obstacles={len(msg.obstacles)}")
+            # rospy.loginfo_throttle(
+            #     5.0, f"{self.log_name} Not ready for predictions: waypoints={len(self.global_waypoints.wpnts)}, converter={self.converter is not None}, obstacles={len(msg.obstacles)}")
             return
 
         # Generate and publish predictions
-        rospy.loginfo_throttle(
-            5.0, f"{self.log_name} Generating predictions for {len(msg.obstacles)} obstacles")
+        # rospy.loginfo_throttle(
+        #     5.0, f"{self.log_name} Generating predictions for {len(msg.obstacles)} obstacles")
         self.generate_predictions()
 
     def ego_state_callback(self, msg: Odometry):
@@ -201,10 +255,10 @@ class TAMConstantOffsetPredictor:
             if not obs.is_static
         ]
 
-        # Log current obstacle data
-        for i, obs in dynamic_obstacles:
-            rospy.logdebug_throttle(
-                5.0, f"{self.log_name} Current obstacle {i}: s={obs.s_center:.2f}, d={obs.d_center:.2f}, vs={obs.vs:.2f}")
+        # # Log current obstacle data
+        # for i, obs in dynamic_obstacles:
+        #     rospy.logdebug_throttle(
+        #         5.0, f"{self.log_name} Current obstacle {i}: s={obs.s_center:.2f}, d={obs.d_center:.2f}, vs={obs.vs:.2f}")
 
         # Create set of current obstacle IDs for quick lookup
         current_ids = {i for i, _ in dynamic_obstacles}
@@ -218,8 +272,8 @@ class TAMConstantOffsetPredictor:
                 if extrapolated_obs:
                     active_obstacles.append(
                         (entry['obstacle_id'], extrapolated_obs))
-                    rospy.logdebug_throttle(
-                        5.0, f"{self.log_name} Using buffered obstacle {entry['obstacle_id']} (age: {age:.2f}s)")
+                    # rospy.logdebug_throttle(
+                    #     5.0, f"{self.log_name} Using buffered obstacle {entry['obstacle_id']} (age: {age:.2f}s)")
 
         # Add current obstacles (these take priority)
         active_obstacles.extend(dynamic_obstacles)
@@ -243,6 +297,8 @@ class TAMConstantOffsetPredictor:
 
     def generate_predictions(self):
         """Generate constant offset predictions for all dynamic obstacles"""
+
+        self.declare_and_update_parameters()
 
         current_time = rospy.Time.now()
 
@@ -364,8 +420,8 @@ class TAMConstantOffsetPredictor:
             # This requires finding the current track boundaries
             relative_position = self.calculate_relative_position(obstacle)
 
-            rospy.loginfo_throttle(
-                2.0, f"{self.log_name} Obstacle {obstacle_id}: s={obstacle.s_center:.2f}, d={d_current:.2f}, relative_pos={relative_position:.2%}")
+            # rospy.loginfo_throttle(
+            #     2.0, f"{self.log_name} Obstacle {obstacle_id}: s={obstacle.s_center:.2f}, d={d_current:.2f}, relative_pos={relative_position:.2%}")
 
             # Generate prediction points based on global waypoints
             predicted_waypoints = []
@@ -400,8 +456,8 @@ class TAMConstantOffsetPredictor:
 
                 predicted_waypoints.append(pred_waypoint)
 
-            rospy.loginfo_throttle(
-                1.0, f"{self.log_name} Generated {len(predicted_waypoints)} prediction waypoints with relative position {relative_position:.2%}")
+            # rospy.loginfo_throttle(
+            #     1.0, f"{self.log_name} Generated {len(predicted_waypoints)} prediction waypoints with relative position {relative_position:.2%}")
             return predicted_waypoints
 
         except Exception as e:
@@ -519,8 +575,8 @@ class TAMConstantOffsetPredictor:
             d_left = waypoint.d_left
             d_right = waypoint.d_right
 
-            rospy.loginfo_throttle(
-                10.0, f"[TAM Predictor] Current d values: {d_left} and {d_right}")
+            # rospy.loginfo_throttle(
+            #     10.0, f"[TAM Predictor] Current d values: {d_left} and {d_right}")
 
             # Apply safety margins
             d_left_safe = d_left - self.safety_margin
@@ -644,7 +700,9 @@ class TAMConstantOffsetPredictor:
         """Main prediction loop"""
 
         # Wait for required data
-        rospy.loginfo(f"{self.log_name} Waiting for required data...")
+        # rospy.loginfo(f"{self.log_name} Waiting for required data...")
+
+        self.declare_and_update_parameters()
 
         try:
             rospy.wait_for_message("global_waypoints",
@@ -655,8 +713,8 @@ class TAMConstantOffsetPredictor:
             rospy.logwarn(f"{self.log_name} Timeout waiting for messages: {e}")
             return
 
-        rospy.loginfo(
-            f"{self.log_name} All required data received, starting prediction loop")
+        # rospy.loginfo(
+        #     f"{self.log_name} All required data received, starting prediction loop")
 
         # Main prediction loop (predictions are triggered by obstacle callbacks)
         rate = rospy.Rate(10)  # 10 Hz for marker cleanup and diagnostics

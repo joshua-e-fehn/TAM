@@ -169,11 +169,17 @@ public:
             anything_on = anything_on || mux_controller[i];
         }
         if (changed) {
+            // Debug output disabled to avoid terminal spam
+            // Uncomment below to see mux state changes
+            // for (int i = 0; i < mux_size; i++) {
+            //     std::cout << mux_controller[i] << std::endl;
+            // }
+            // std::cout << std::endl;
+            
+            // Update previous mux state
             for (int i = 0; i < mux_size; i++) {
-                std::cout << mux_controller[i] << std::endl;
                 prev_mux[i] = mux_controller[i];
             }
-            std::cout << std::endl;
         }
         if (!anything_on) {
             // If no mux channel is active, halt the car for safety

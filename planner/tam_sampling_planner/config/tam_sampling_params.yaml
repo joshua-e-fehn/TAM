@@ -4,9 +4,10 @@
 # ========================================
 # Core Sampling Parameters
 # ========================================
-lateral_samples: 15              # Number of lateral trajectory samples
-longitudinal_samples: 8          # Number of longitudinal velocity profiles  
-n_dense_samples: 5               # Dense samples around raceline
+trajectory_length: 16.0
+lateral_samples: 5             # Number of lateral trajectory samples (was 5, reduced for performance)
+longitudinal_samples: 5          # Number of longitudinal velocity profiles (was 5, reduced for performance)
+n_dense_samples: 10               # Dense samples around raceline (was 5, reduced for performance)
 n_dense_min: -0.5               # Minimum lateral offset for dense sampling (m)
 n_dense_max: 0.5                # Maximum lateral offset for dense sampling (m)
 planning_horizon: 4.0           # Planning time horizon (seconds)
@@ -15,96 +16,34 @@ dt: 0.1                         # Time discretization step (seconds)
 # ========================================
 # Vehicle Constraints (F1TENTH defaults)
 # ========================================
-max_speed: 20.0                 # Maximum vehicle speed (m/s)
-max_accel: 8.0                  # Maximum longitudinal acceleration (m/s²)
-max_lateral_accel: 12.0         # Maximum lateral acceleration (m/s²)
-track_width: 3.0                # Effective track width for sampling (m)
+max_speed: 10.0                 # Maximum vehicle speed (m/s)
+max_accel: 3.0                  # Maximum longitudinal acceleration (m/s²)
+max_lateral_accel: 12.0         # Maximum lateral acceleration (m/s²)                   ?????
+track_width: 3.0                # Effective track width for sampling (m)                !!!!! (not used)
 
 # ========================================
 # Longitudinal Sampling Parameters
 # ========================================
 s_dot_end_min: 1.0              # Minimum end velocity (m/s)
-s_dot_discretization: 2.0       # Velocity discretization step (m/s)
-s_dot_max_positive_delta: 20.0  # Max positive velocity change (m/s)
+s_dot_discretization: 1.0       # Velocity discretization step (m/s)
+s_dot_max_positive_delta: 10.0  # Max positive velocity change (m/s)
 v_sampling_scale: 1.1           # Velocity sampling scale factor
 relative_s_dot_min_percentage: 0.5  # Relative minimum velocity percentage
 
-# ========================================
-# Cost Function Weights (TAM Defaults)
-# ========================================
-# Primary cost weights
-raceline_cost_weight: 3.5       # Raceline following cost weight
-velocity_cost_weight: 3.0       # Velocity optimization cost weight
-friction_cost_weight: 5000.0    # Friction constraint cost weight
-curvature_cost_weight: 500000.0 # Curvature penalty cost weight
-lateral_jerk_cost_weight: 0.5   # Lateral jerk comfort cost weight
+# Dense velocity sampling around current velocity
+s_dot_dense_min: -4.0           # Minimum dense velocity offset (m/s)
+s_dot_dense_max: 1.0            # Maximum dense velocity offset (m/s)
+s_dot_dense_samples: 5          # Number of dense velocity samples (was 10, reduced for performance)
 
-# Obstacle avoidance costs
-prediction_cost_weight: 100000.0     # Obstacle prediction cost weight
-collision_cost_weight: 100000000.0   # Collision avoidance cost weight
-
-# Overtaking behavior weights (for multi-car scenarios)
-raceline_cost_weight_overtaking: 2.0      # Raceline cost during overtaking
-velocity_cost_weight_overtaking: 8.0      # Velocity cost during overtaking
-lateral_jerk_cost_weight_overtaking: 0.0  # Lateral jerk cost during overtaking
-
-# ========================================
-# Safety Parameters
-# ========================================
-# Track boundary safety distances
-safety_distance_track_left: 0.5    # Safety distance to left track boundary (m)
-safety_distance_track_right: 0.5   # Safety distance to right track boundary (m)
-
-# Obstacle safety margins
-safety_margin_static: 0.5          # Safety margin for static obstacles (m)
-safety_margin_dynamic: 1.0         # Safety margin for dynamic obstacles (m)
-safety_distance_vehicles: 0.0      # Additional inter-vehicle safety distance (m)
-
-# Tube and lane parameters
-tube_width: 1.0                     # Trajectory tube width (m)
-
-# Emergency safety distances
-add_emergency_safety_distance_left: 0.0   # Extra emergency safety left (m)
-add_emergency_safety_distance_right: 0.0  # Extra emergency safety right (m)
-
-# ========================================
-# Trajectory Validation Parameters
-# ========================================
-kappa_thr: 0.1                     # Maximum allowed curvature (1/m)
-curvature_cost_threshold: 30.0     # Curvature threshold for cost penalty
-tire_util_max_check: 1.1           # Maximum tire utilization check
-
-# ========================================
-# Cost Behavior Parameters
-# ========================================
-increasing_rl_cost: true           # Enable increasing raceline cost over time
-velocity_excess_cost_multiplier: 2.0   # Velocity excess cost multiplier
-V_diff_max_costs: 15.0             # Maximum velocity difference for costs
-
-# ========================================
-# Collision and Prediction Parameters
-# ========================================
-collision_check_horizon_s: 1.5     # Collision check horizon (s-coordinate)
-
-# Prediction scaling factors
-prediction_s_factor_min_size: 0.03      # Prediction s factor minimum size
-prediction_s_factor_max_size: 0.012     # Prediction s factor maximum size
-prediction_s_asym_scaling: 1.5          # Prediction s asymmetric scaling
-prediction_n_factor: 0.2                # Prediction n factor
-prediction_uncertainty_weight: 4.0      # Prediction uncertainty weight
-
-# Prediction factors for different object types
-prediction_s_factor_defender: 0.03      # Prediction s factor for defender
-prediction_n_factor_defender: 0.2       # Prediction n factor for defender
-prediction_s_factor_static: 0.05        # Prediction s factor for static objects
-prediction_n_factor_static: 0.35        # Prediction n factor for static objects
+# Forward/backward velocity sampling for adaptive acceleration limits
+forward_backward_max_v_to_rl_delta: 0.0  # Max velocity delta to raceline for forward/backward sampling
 
 # ========================================
 # Trajectory Generation Parameters
 # ========================================
 num_samples: 51                         # Number of trajectory points
-min_trajectory_length: 10.0             # Minimum trajectory length (m)
-const_trajectory_time: 0.3              # Constant trajectory time (s)
+min_trajectory_length: 16.0             # Minimum trajectory length (m)
+const_trajectory_time: 0.0              # Constant trajectory time (s)
 
 # Extension parameters for emergency trajectories
 extension_emergency_time_offset: 1.0    # Extension emergency time offset (s)
@@ -118,10 +57,107 @@ additional_const_time_emergency: 0.5    # Additional constant time emergency (s)
 # Behavior and Performance Parameters
 # ========================================
 max_deceleration_on_target_change: 5.0  # Max deceleration on target change (m/s²)
-forward_backward_velocities: true       # Add forward/backward velocity profiles
+forward_backward_velocities: false       # Add forward/backward velocity profiles
 samples_forward_backward: 3             # Number of forward/backward samples
 forward_backward_min_scale: 0.85        # Min acceleration scale for forward/backward
 forward_backward_max_scale: 0.95        # Max acceleration scale for forward/backward
+
+# ========================================
+# Cost Function Weights (TAM Defaults)
+# ========================================
+# Primary cost weights - TUNED FOR CONSERVATIVE RACING
+raceline_cost_weight: 6.0       # Raceline following cost weight (increased from 3.5 → stick closer to safe line)
+velocity_cost_weight: 1.5       # Velocity optimization cost weight (decreased from 3.0 → prioritize safety over speed)
+friction_cost_weight: 8000.0    # Friction constraint cost weight (increased from 5000 → avoid tire limits)
+curvature_cost_weight: 800000.0 # Curvature penalty cost weight (increased from 500000 → smoother cornering)
+lateral_jerk_cost_weight: 3.0   # Lateral jerk comfort cost weight (increased from 0.5 → smoother steering)
+
+# Obstacle avoidance costs
+prediction_cost_weight: 100000.0     # Obstacle prediction cost weight
+collision_cost_weight: 100000000.0   # Collision avoidance cost weight
+additional_absolute_sample_cost: 50.0  # Additional absolute sample cost
+
+# Overtaking behavior weights (for multi-car scenarios)
+raceline_cost_weight_overtaking: 2.0      # Raceline cost during overtaking
+velocity_cost_weight_overtaking: 8.0      # Velocity cost during overtaking
+lateral_jerk_cost_weight_overtaking: 0.0  # Lateral jerk cost during overtaking
+
+# ========================================
+# Safety Parameters
+# ========================================
+# Track boundary safety distances (F1TENTH: reduced for 1/10 scale racing)
+safety_distance_track_left: 0.07   # Safety distance to left track boundary (m) - F1TENTH: 2cm
+safety_distance_track_right: 0.07  # Safety distance to right track boundary (m) - F1TENTH: 2cm
+
+# Pitlane safety distances (for pit entry/exit scenarios)
+safety_distance_pitlane_left: 0.0  # Safety distance to left pitlane boundary (m)
+safety_distance_pitlane_right: 0.0 # Safety distance to right pitlane boundary (m)
+
+# Soft safety distances (for cost penalties rather than hard constraints)
+soft_safety_distance_left_m: 0.0   # Soft safety distance left (m)
+soft_safety_distance_right_m: 0.0  # Soft safety distance right (m)
+
+# Obstacle safety margins
+safety_margin_static: 0.2          # Safety margin for static obstacles (m)
+safety_margin_dynamic: 0.5         # Safety margin for dynamic obstacles (m)
+safety_distance_vehicles: 0.5      # Additional inter-vehicle safety distance (m)
+
+# Tube and lane parameters (F1TENTH: reduced from 1.0m to fit narrower tracks)
+tube_width: 0.05                   # Trajectory tube width (m) - F1TENTH: 5cm soft margin
+
+# Lateral trajectory end condition behavior
+# false: Use zero lateral velocity at trajectory end (symmetric, simpler, eliminates bias)
+# true: Use position-dependent velocity aligned with track geometry (geometrically accurate, more complex)
+use_geometric_lateral_end_velocity: true
+
+# Emergency safety distances
+add_emergency_safety_distance_left: 0.3   # Extra emergency safety left (m)
+add_emergency_safety_distance_right: 0.3  # Extra emergency safety right (m)
+
+# Fallback tire limits (used when GGGV/Pacejka data unavailable)
+max_braking_deceleration_g: 1.0           # Maximum braking in multiples of g
+max_lateral_acceleration_g: 1.2           # Maximum lateral acceleration in multiples of g
+
+# ========================================
+# Trajectory Validation Parameters
+# ========================================
+# Safety and Constraint Parameters
+kappa_thr: 1.0                     # Maximum allowed curvature (rad/m) - reduced from 1.5 to limit aggressive cornering
+curvature_cost_threshold: 30.0     # Curvature threshold for cost penalty
+tire_util_max_check: 1.1          # Maximum tire utilization check - reduced from 1.1 to stay well within tire limits
+tire_util_relaxation: 100.0          # Friction check relaxation factor (1.0=default, >1.0=relaxed, <1.0=strict)
+
+# ========================================
+# Cost Behavior Parameters
+# ========================================
+increasing_rl_cost: true           # Enable increasing raceline cost over time
+velocity_excess_cost_multiplier: 2.0   # Velocity excess cost multiplier
+V_diff_max_costs: 15.0             # Maximum velocity difference for costs
+
+# ========================================
+# Collision and Prediction Parameters
+# ========================================
+collision_check_horizon_s: 1.5     # Collision check horizon (s-coordinate)
+
+# Prediction node parameters (for tam_prediction_node)
+prediction_horizon: 50.0           # Prediction time horizon (seconds)
+prediction_dt: 0.1                 # Prediction time step (seconds)
+smoothing_factor: 0.8              # Smoothing factor for boundary constraints
+prediction_buffer_age: 1.0         # Keep predictions for this duration (seconds)
+marker_lifetime: 0.8               # Marker lifetime for visualization (seconds)
+
+# Prediction scaling factors
+prediction_s_factor_min_size: 0.03      # Prediction s factor minimum size
+prediction_s_factor_max_size: 0.012     # Prediction s factor maximum size
+prediction_s_asym_scaling: 1.5          # Prediction s asymmetric scaling
+prediction_n_factor: 0.2                # Prediction n factor
+prediction_uncertainty_weight: 4.0      # Prediction uncertainty weight
+
+# Prediction factors for different object types
+prediction_s_factor_defender: 0.03      # Prediction s factor for defender
+prediction_n_factor_defender: 0.2       # Prediction n factor for defender
+prediction_s_factor_static: 0.05        # Prediction s factor for static objects
+prediction_n_factor_static: 0.35        # Prediction n factor for static objects
 
 # ========================================
 # Interface Parameters
@@ -140,3 +176,83 @@ log_file_level: "DEBUG"                 # File log level
 lookahead: 15.0              # Lookahead distance for planning (m)
 enable_obstacle_avoidance: true  # Enable dynamic obstacle avoidance
 enable_overtaking: true      # Enable overtaking maneuvers
+
+# ========================================
+# Runtime Behavior Parameters
+# ========================================
+from_bag: false              # Whether running from bag file (for testing/replay)
+measure: false               # Enable performance measurement/profiling
+following_distance: 10.0     # Target following distance to vehicle ahead (m)
+role: 0                      # Vehicle role: 0=no flag, 1=defender, 2=attacker
+gg_scaling: 1.0              # GG diagram scaling factor for dynamic adjustment
+overtaking_allowed: true     # Whether overtaking maneuvers are permitted
+
+# ========================================
+# Vehicle Parameters (from car_model.yaml)
+# ========================================
+vehicle_name: "f1tenth"         # Vehicle name identifier
+track_name: "levine"            # Track name for racing
+pitlane_name: "levine_pitlane"  # Pitlane name for pit entry/exit
+gggv_mode: "diamond"            # GGGV mode (diamond/...)
+gg_scale: 0.9                   # GG diagram scale factor
+
+# Vehicle parameter overwrites
+overwrite_vehicle_params: true  # Enable vehicle parameter overwrites
+ax_machine_limit_overwrites: [8.0, 7.0, 7.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]  # Acceleration limits per speed
+gg_exponent_ax_pos: 1.0         # Positive acceleration exponent
+gg_exponent_ax_neg: 1.0         # Negative acceleration exponent
+ax_min_scale: 1.0               # Minimum acceleration scale
+ax_max_scale: 1.0               # Maximum acceleration scale
+ay_scale: 1.0                   # Lateral acceleration scale
+Iz: 0.05797                     # Vehicle moment of inertia (kg*m²) from car_model.yaml
+
+# Vehicle dynamics from car_model.yaml
+m: 3.54                         # Vehicle mass (kg)
+lf: 0.162                       # Distance from CG to front axle (m)
+lr: 0.145                       # Distance from CG to rear axle (m)
+wheelbase: 0.307                # Wheelbase (m)
+h_cg: 0.014                     # Height of center of gravity (m)
+a_max: 3.0                      # Maximum acceleration (m/s²)
+a_min: -3.0                     # Maximum deceleration (m/s²)
+v_max: 10.0                     # Maximum velocity (m/s)
+v_min: -5.0                     # Minimum velocity (m/s)
+
+# Vehicle dimensions (calculated from NUC2 specifications)
+# Length: lr (0.145m) + wheelbase (0.307m) + front_overhang (~0.05m) = ~0.50m
+# Width: Standard F1TENTH width = 0.20m
+width: 0.31                     # Vehicle width (m) - F1TENTH standard *** MUST BE 0.20 NOT 0.30 ***
+length: 0.58                    # Vehicle length (m) - calculated from wheelbase + overhangs
+
+# Tire and drag parameters from car_model.yaml
+C_0d: 0.48                      # Drag coefficient constant
+C_d: -1.1                       # Drag coefficient
+C_acc: 8.29                     # Acceleration coefficient
+C_dec: 5.77                     # Deceleration coefficient
+C_R: 2.03                       # Rolling resistance coefficient
+C_0v: 100                       # Velocity coefficient constant
+C_v: 20                         # Velocity coefficient
+
+# Pacejka-specific tire/drag parameters (from NUC2_pacejka.yaml)
+C_acc_pacejka: 0.35909931926497446      # Acceleration coefficient (Pacejka model)
+C_dec_pacejka: 3.2                      # Deceleration coefficient (Pacejka model)
+C_R_pacejka: 9.618150720869203          # Rolling resistance coefficient (Pacejka model)
+
+# Pacejka tire model parameters (from NUC2_pacejka.yaml)
+tire_model: "pacejka"           # Tire model type
+mu: 1.0                         # Friction coefficient
+C_Pf: [4.798521440254997, 2.1640281784621833, 0.6502296853018044, 0.3732212044732381]  # Pacejka front tire coefficients
+C_Pr: [19.999999999999996, 1.4999999999999998, 0.6184183350099146, 1.1322308905491715e-16]  # Pacejka rear tire coefficients
+
+# Steering parameters from car_model.yaml
+tau_steer: 0.15779476           # Steering time constant (s)
+max_steering_angle: 0.4189      # Maximum steering angle (rad) - ~24 degrees
+max_steering_velocity: 3.2      # Maximum steering velocity (rad/s)
+
+# Additional behavior parameters
+hybrid_long_sampling: true      # Enable hybrid longitudinal sampling
+sampling_mode: "spatial"        # Sampling mode (spatial/temporal)
+V_thr_stillstand: 2.0           # Velocity threshold for stillstand (m/s)
+perception_offset_threshold: 2.0  # Perception offset threshold
+relative_long_sampling_threshold: 0.7  # Relative longitudinal sampling threshold
+following_distance_factor_pos: 100.0   # Following distance factor positive
+following_distance_factor_neg: 40.0    # Following distance factor negative

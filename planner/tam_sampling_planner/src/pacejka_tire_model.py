@@ -51,16 +51,15 @@ class PacejkaTireModel:
         This implementation is compatible with the existing TAM stack parameter structure.
         """
         # Vehicle parameters (standard names from vehicle config files)
-        self.mass = rospy.get_param(
-            '/m', rospy.get_param('/vehicle_mass', 3.54))  # [kg]
-        self.l_f = rospy.get_param('/l_f', 0.162)  # [m] - front axle to CG
-        self.l_r = rospy.get_param('/l_r', 0.145)  # [m] - rear axle to CG
-        self.h_cg = rospy.get_param('/h_cg', 0.014)  # [m] - CG height
-        self.mu = rospy.get_param('/mu', 1.0)  # [-] - friction coefficient
+        self.mass = 3.54  # [kg]
+        self.l_f = 0.162  # [m] - front axle to CG
+        self.l_r = 0.145  # [m] - rear axle to CG
+        self.h_cg = 0.014  # [m] - CG height
+        self.mu = 1.0  # [-] - friction coefficient
 
         # Pacejka coefficients for longitudinal force (front)
         # Format: C_Pf = [B, C, D, E] matching NUC2_pacejka.yaml
-        C_Pf = rospy.get_param('/C_Pf', [4.8, 2.16, 0.65, 0.37])
+        C_Pf = [4.8, 2.16, 0.65, 0.37]
         self.B_xf = C_Pf[0]  # Stiffness factor
         self.C_xf = C_Pf[1]  # Shape factor
         self.D_xf = C_Pf[2]  # Peak factor (normalized by Fz)
@@ -68,7 +67,7 @@ class PacejkaTireModel:
 
         # Pacejka coefficients for longitudinal force (rear)
         # Format: C_Pr = [B, C, D, E] matching NUC2_pacejka.yaml
-        C_Pr = rospy.get_param('/C_Pr', [20.0, 1.5, 0.62, 0.0])
+        C_Pr = [20.0, 1.5, 0.62, 0.0]
         self.B_xr = C_Pr[0]  # Stiffness factor
         self.C_xr = C_Pr[1]  # Shape factor
         self.D_xr = C_Pr[2]  # Peak factor (normalized by Fz)

@@ -4,7 +4,7 @@
        <arg name="speed_scaler" default="0.5"/>
        <arg name="constant_speed" default="false"/>
        <!-- Sinusoidal path deviation arguments -->
-       <arg name="path_amplitude" default="0.8"/>
+       <arg name="path_amplitude" default="0.1"/>
        <arg name="path_frequency" default="0.15"/>
        <arg name="path_phase" default="0.0"/>
 
