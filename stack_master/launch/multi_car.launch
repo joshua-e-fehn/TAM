@@ -39,6 +39,9 @@
   <arg name="collision_warning_distance" default="1.5"/>
   <arg name="collision_critical_distance" default="0.8"/>
   
+  <!-- Race Start Controller Configuration -->
+  <arg name="enable_race_start_controller" default="True"/>
+  
   <!-- Performance Scaling Arguments for Multi-Car Differentiation -->
   <!-- These multipliers scale each car's speed and acceleration independently -->
   <!-- Range: ]0, 2] where 1.0 = no scaling, 0.5 = half performance, 2.0 = double performance -->
@@ -498,7 +501,6 @@
   <!-- ============================================= -->
   <!-- Manual start control for multi-car racing -->
   <!-- NOTE: Use ROS services for control: rosservice call /race_control/{start_car1,start_car2,start_both,reset_cars,emergency_stop} -->
-  <arg name="enable_race_start_controller" default="True"/>
   
   <group if="$(arg enable_race_start_controller)">
     <include file="$(find race_start_controller)/launch/race_start.launch"/>

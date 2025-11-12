@@ -3,9 +3,11 @@
     <node pkg="race_start_controller" 
           type="service_race_control.py" 
           name="race_start_controller" 
-          output="screen">
+          output="screen"
+          respawn="false">
         <param name="car1_namespace" value="car1"/>
         <param name="car2_namespace" value="car2"/>
+        <param name="single_car_mode" value="false"/>
     </node>
     
     <!-- Usage info -->

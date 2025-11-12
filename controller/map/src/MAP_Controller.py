@@ -163,8 +163,8 @@ class MAP_Controller:
         L1_vector = np.array(
             [L1_point[0] - self.position_in_map[0, 0], L1_point[1] - self.position_in_map[0, 1]])
         if np.linalg.norm(L1_vector) == 0:
-            self.logger_warn(
-                "[Controller] norm of L1 vector was 0, eta is set to 0")
+            # self.logger_warn(
+            #     "[Controller] norm of L1 vector was 0, eta is set to 0")
             eta = 0
         else:
             eta = np.arcsin(
