@@ -257,7 +257,6 @@
             <param name="safety_distance_track_left" value="0.5"/>
             <param name="safety_distance_track_right" value="0.5"/>
             <param name="safety_margin_static" value="0.5"/>
-            <param name="safety_margin_dynamic" value="1.0"/>
             <param name="tube_width" value="1.0"/>
             
             <!-- Cost function weights -->
@@ -287,7 +286,6 @@
             <param name="track_width" value="3.0"/>
             
             <!-- Trajectory generation -->
-            <param name="trajectory_len_controller" value="50"/>
             <param name="lookahead" value="15.0"/>
             
             <!-- Remap global waypoints to car-specific topics -->
@@ -410,9 +408,6 @@
             <param name="n_dense_min" value="-0.5"/>
             <param name="n_dense_max" value="0.5"/>
             <param name="track_width" value="3.0"/>
-            
-            <!-- Trajectory generation -->
-            <param name="trajectory_len_controller" value="50"/>
             
             <!-- Remap global waypoints to car-specific topics -->
             <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>

@@ -5,9 +5,9 @@
 # Core Sampling Parameters
 # ========================================
 trajectory_length: 16.0
-lateral_samples: 5             # Number of lateral trajectory samples (was 5, reduced for performance)
-longitudinal_samples: 5          # Number of longitudinal velocity profiles (was 5, reduced for performance)
-n_dense_samples: 10               # Dense samples around raceline (was 5, reduced for performance)
+lateral_samples: 20             # Number of lateral trajectory samples (was 5, reduced for performance)
+longitudinal_samples: 10          # Number of longitudinal velocity profiles (was 5, reduced for performance)
+n_dense_samples: 15               # Dense samples around raceline (was 5, reduced for performance)
 n_dense_min: -0.5               # Minimum lateral offset for dense sampling (m)
 n_dense_max: 0.5                # Maximum lateral offset for dense sampling (m)
 planning_horizon: 4.0           # Planning time horizon (seconds)
@@ -56,8 +56,8 @@ additional_const_time_emergency: 0.5    # Additional constant time emergency (s)
 # ========================================
 # Behavior and Performance Parameters
 # ========================================
-max_deceleration_on_target_change: 5.0  # Max deceleration on target change (m/s²)
-forward_backward_velocities: false       # Add forward/backward velocity profiles
+max_deceleration_on_target_change: 3.0  # Max deceleration on target change (m/s²)
+forward_backward_velocities: true       # Add forward/backward velocity profiles
 samples_forward_backward: 3             # Number of forward/backward samples
 forward_backward_min_scale: 0.85        # Min acceleration scale for forward/backward
 forward_backward_max_scale: 0.95        # Max acceleration scale for forward/backward
@@ -66,11 +66,11 @@ forward_backward_max_scale: 0.95        # Max acceleration scale for forward/bac
 # Cost Function Weights (TAM Defaults)
 # ========================================
 # Primary cost weights - TUNED FOR CONSERVATIVE RACING
-raceline_cost_weight: 6.0       # Raceline following cost weight (increased from 3.5 → stick closer to safe line)
-velocity_cost_weight: 1.5       # Velocity optimization cost weight (decreased from 3.0 → prioritize safety over speed)
-friction_cost_weight: 8000.0    # Friction constraint cost weight (increased from 5000 → avoid tire limits)
-curvature_cost_weight: 800000.0 # Curvature penalty cost weight (increased from 500000 → smoother cornering)
-lateral_jerk_cost_weight: 3.0   # Lateral jerk comfort cost weight (increased from 0.5 → smoother steering)
+raceline_cost_weight: 3.5       # Raceline following cost weight
+velocity_cost_weight: 3.0       # Velocity optimization cost weight 
+friction_cost_weight: 5000.0    # Friction constraint cost weight 
+curvature_cost_weight: 500000.0 # Curvature penalty cost weight 
+lateral_jerk_cost_weight: 0.5   # Lateral jerk comfort cost weight 
 
 # Obstacle avoidance costs
 prediction_cost_weight: 100000.0     # Obstacle prediction cost weight
@@ -125,7 +125,7 @@ max_lateral_acceleration_g: 1.2           # Maximum lateral acceleration in mult
 kappa_thr: 1.0                     # Maximum allowed curvature (rad/m) - reduced from 1.5 to limit aggressive cornering
 curvature_cost_threshold: 30.0     # Curvature threshold for cost penalty
 tire_util_max_check: 1.1          # Maximum tire utilization check - reduced from 1.1 to stay well within tire limits
-tire_util_relaxation: 100.0          # Friction check relaxation factor (1.0=default, >1.0=relaxed, <1.0=strict)
+tire_util_relaxation: 1.5          # Friction check relaxation factor (1.0=default, >1.0=relaxed, <1.0=strict)
 
 # ========================================
 # Cost Behavior Parameters
@@ -140,7 +140,6 @@ V_diff_max_costs: 15.0             # Maximum velocity difference for costs
 collision_check_horizon_s: 1.5     # Collision check horizon (s-coordinate)
 
 # Prediction node parameters (for tam_prediction_node)
-prediction_horizon: 50.0           # Prediction time horizon (seconds)
 prediction_dt: 0.1                 # Prediction time step (seconds)
 smoothing_factor: 0.8              # Smoothing factor for boundary constraints
 prediction_buffer_age: 1.0         # Keep predictions for this duration (seconds)
@@ -162,7 +161,6 @@ prediction_n_factor_static: 0.35        # Prediction n factor for static objects
 # ========================================
 # Interface Parameters
 # ========================================
-trajectory_len_controller: 50          # Trajectory length for controller
 send_trajectory_in_3d: true            # Send trajectory in 3D coordinates
 
 # ========================================

@@ -216,6 +216,8 @@ TRAJECTORY_OPTIMIZATION_PARAMS = {
         "min_accel": 2.0,
 
         # Power curve parameters
+        # Maximum acceleration from power curve (match a_max)
+        "power_curve_max_accel": 3.0,
         "power_curve_factor": 50.0,  # Power factor for acceleration curve
         "friction_limited_accel": 3.0,  # Reduced to match NUC2 a_max
 

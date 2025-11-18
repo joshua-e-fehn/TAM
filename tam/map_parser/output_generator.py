@@ -77,6 +77,13 @@ class OutputGenerator:
         iqp_array = self._create_waypoint_array(iqp_waypoints)
         sp_array = self._create_waypoint_array(sp_waypoints)
 
+        # Store the actual waypoint counts after deduplication for use in other YAML files
+        self._actual_waypoint_counts = {
+            'centerline': len(centerline_array['wpnts']),
+            'iqp': len(iqp_array['wpnts']),
+            'sp': len(sp_array['wpnts'])
+        }
+
         # Calculate statistics
         lap_time = 108.68  # Approximate
         iqp_max_speed = max(
@@ -174,7 +181,16 @@ class OutputGenerator:
 
     def create_speed_scaling_yaml(self, centerline_waypoints: List[Waypoint], output_dir: str):
         """Create speed scaling configuration."""
-        total_waypoints = len(centerline_waypoints)
+        # Use the actual waypoint count after deduplication (if available)
+        # Otherwise fall back to the length of the input waypoints
+        if hasattr(self, '_actual_waypoint_counts') and 'iqp' in self._actual_waypoint_counts:
+            # Use IQP count since sector_server subscribes to /global_waypoints (IQP trajectory)
+            total_waypoints = self._actual_waypoint_counts['iqp']
+            print(f"Using actual IQP waypoint count: {total_waypoints}")
+        else:
+            total_waypoints = len(centerline_waypoints)
+            print(
+                f"Warning: Using pre-deduplication waypoint count: {total_waypoints}")
 
         speed_scaling = {
             'global_limit': 0.5,
@@ -192,6 +208,8 @@ class OutputGenerator:
         with open(speed_path, 'w') as f:
             yaml.dump(speed_scaling, f, default_flow_style=False)
         print(f"Written: {speed_path}")
+        print(
+            f"✓ Speed scaling configured for {total_waypoints} waypoints (indices 0-{total_waypoints-1})")
 
     def create_starting_position_yaml(self, trajectory_data: Dict[str, List[Waypoint]],
                                       output_dir: str):

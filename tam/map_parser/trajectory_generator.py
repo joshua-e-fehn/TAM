@@ -431,14 +431,16 @@ class TrajectoryGenerator:
         # Generate acceleration limits based on configurable power constraints
         for v in np.linspace(0.5, max_velocity * 1.2, 30):
             # Configurable power limitation: P/v with limits
-            max_power_accel = traj_params.get("power_curve_max_accel", 5.0)
+            # Use max_longitudinal_accel as default to ensure consistency
+            max_power_accel = traj_params.get("power_curve_max_accel",
+                                              traj_params.get("max_longitudinal_accel", 3.0))
             power_factor = traj_params.get("power_curve_factor", 50.0)
             power_limited_acc = min(
                 max_power_accel, power_factor / max(v, 1.0))
 
             # Configurable friction-limited acceleration
             friction_limited_acc = traj_params.get(
-                "friction_limited_accel", 6.0)
+                "friction_limited_accel", traj_params.get("max_longitudinal_accel", 3.0))
 
             ax_max = min(power_limited_acc, friction_limited_acc)
             ax_data.append([v, ax_max])
@@ -1216,8 +1218,11 @@ class TrajectoryGenerator:
                 dt = ds / max(wp.vx_mps, 1.0)
                 acceleration = dv / dt if dt > 0 else 0.0
 
-            # Limit acceleration
-            acceleration = max(-5.0, min(5.0, acceleration))
+            # Limit acceleration to vehicle capability (3.0 m/s² for NUC2)
+            traj_params = self._load_trajectory_optimization_parameters()
+            max_accel_limit = traj_params.get("max_longitudinal_accel", 3.0)
+            acceleration = max(-max_accel_limit,
+                               min(max_accel_limit, acceleration))
 
             # Create final waypoint
             final_wp = Waypoint(

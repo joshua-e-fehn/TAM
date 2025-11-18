@@ -102,10 +102,6 @@ class TAMConstantOffsetPredictor:
             # Load YAML defaults
             yaml_defaults = self._load_yaml_defaults()
 
-            # Prediction parameters - now based on global waypoints
-            self.prediction_horizon = yaml_defaults.get(
-                'prediction_horizon', rospy.get_param("prediction_horizon", 50.0))  # seconds
-            rospy.set_param("prediction_horizon", self.prediction_horizon)
             self.prediction_dt = yaml_defaults.get(
                 'prediction_dt', rospy.get_param("prediction_dt", 0.1))  # time step
             rospy.set_param("prediction_dt", self.prediction_dt)
@@ -127,9 +123,6 @@ class TAMConstantOffsetPredictor:
             rospy.set_param("marker_lifetime", self.marker_lifetime)
             self.initialized_params = True
         else:
-            # Prediction parameters - now based on global waypoints
-            self.prediction_horizon = rospy.get_param(
-                "prediction_horizon", self.prediction_horizon)  # seconds
             self.prediction_dt = rospy.get_param(
                 "prediction_dt", self.prediction_dt)  # time step
             # prediction_points will be set dynamically based on global waypoints length

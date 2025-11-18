@@ -28,9 +28,16 @@ class SplinerVisualization:
         # Get car name from namespace or parameter
         self.car_name = rospy.get_namespace().strip('/')
         if not self.car_name or self.car_name == '/':
-            self.car_name = rospy.get_param('~car_name', 'car1')
+            self.car_name = rospy.get_param('~car_name', '')
 
-        rospy.loginfo(f"Spliner Visualization initialized for {self.car_name}")
+        # Determine if we're in single-car or multi-car mode
+        self.single_car_mode = (self.car_name == '')
+        if self.single_car_mode:
+            rospy.loginfo(
+                "Spliner Visualization initialized in single-car mode")
+        else:
+            rospy.loginfo(
+                f"Spliner Visualization initialized for {self.car_name}")
 
         # Color schemes for different cars - planned trajectories (bright, solid)
         self.planned_colors = {
@@ -52,36 +59,58 @@ class SplinerVisualization:
         # Initialize publishers for global visualization topics
         self.init_publishers()
 
-        rospy.loginfo(f"Spliner Visualization ready for {self.car_name}")
+        if self.single_car_mode:
+            rospy.loginfo("Spliner Visualization ready in single-car mode")
+        else:
+            rospy.loginfo(f"Spliner Visualization ready for {self.car_name}")
 
     def init_subscribers(self):
         """Initialize subscribers to car-specific marker topics"""
         # Local waypoints - the actual trajectory sent to the controller (from state machine)
         from f110_msgs.msg import WpntArray
-        local_wpnts_topic = f'/{self.car_name}/local_waypoints'
+
+        if self.single_car_mode:
+            # Single-car mode: subscribe to topics without car prefix
+            local_wpnts_topic = '/local_waypoints'
+            avoidance_wpnts_topic = '/planner/avoidance/otwpnts'
+        else:
+            # Multi-car mode: subscribe to car-specific topics
+            local_wpnts_topic = f'/{self.car_name}/local_waypoints'
+            avoidance_wpnts_topic = f'/{self.car_name}/planner/avoidance/otwpnts'
+
         rospy.Subscriber(local_wpnts_topic, WpntArray,
                          self.local_waypoints_callback)
 
         # Avoidance waypoints - spliner's output (before state machine processing)
-        avoidance_wpnts_topic = f'/{self.car_name}/planner/avoidance/otwpnts'
         rospy.Subscriber(avoidance_wpnts_topic, OTWpntArray,
                          self.avoidance_waypoints_callback)
 
     def init_publishers(self):
         """Initialize publishers to global visualization topics"""
-        # Car-specific local waypoints - what's actually being sent to the controller (from state machine)
-        self.local_wpnts_pub = rospy.Publisher(
-            f'/visualization/spliner/{self.car_name}/controller_waypoints',
-            MarkerArray,
-            queue_size=1
-        )
-
-        # Car-specific avoidance waypoints - spliner's output (arrows showing avoidance path)
-        self.avoidance_wpnts_pub = rospy.Publisher(
-            f'/visualization/spliner/{self.car_name}/avoidance_waypoints',
-            MarkerArray,
-            queue_size=1
-        )
+        if self.single_car_mode:
+            # Single-car mode: publish to topics without car prefix
+            self.local_wpnts_pub = rospy.Publisher(
+                '/visualization/spliner/controller_waypoints',
+                MarkerArray,
+                queue_size=1
+            )
+            self.avoidance_wpnts_pub = rospy.Publisher(
+                '/visualization/spliner/avoidance_waypoints',
+                MarkerArray,
+                queue_size=1
+            )
+        else:
+            # Multi-car mode: publish to car-specific topics
+            self.local_wpnts_pub = rospy.Publisher(
+                f'/visualization/spliner/{self.car_name}/controller_waypoints',
+                MarkerArray,
+                queue_size=1
+            )
+            self.avoidance_wpnts_pub = rospy.Publisher(
+                f'/visualization/spliner/{self.car_name}/avoidance_waypoints',
+                MarkerArray,
+                queue_size=1
+            )
 
     def get_car_color(self):
         """Get the color for this car"""
@@ -102,15 +131,21 @@ class SplinerVisualization:
         new_marker = deepcopy(marker)
 
         # Set car-specific namespace
-        new_marker.ns = f"{self.car_name}_{marker_type}"
+        if self.single_car_mode:
+            new_marker.ns = marker_type
+        else:
+            new_marker.ns = f"{self.car_name}_{marker_type}"
 
         # Apply car-specific color
         new_marker.color = self.get_car_color()
 
         # Ensure unique IDs across cars by adding car-specific offset
-        # Use hash for consistent offset
-        car_offset = hash(self.car_name) % 1000
-        new_marker.id = marker.id + car_offset + marker_id_offset
+        # Use hash for consistent offset (only in multi-car mode)
+        if self.single_car_mode:
+            new_marker.id = marker.id + marker_id_offset
+        else:
+            car_offset = hash(self.car_name) % 1000
+            new_marker.id = marker.id + car_offset + marker_id_offset
 
         # Ensure frame is global map
         new_marker.header.frame_id = "map"
@@ -144,11 +179,18 @@ class SplinerVisualization:
             markers = self.create_wpntarray_markers(msg, "local_wpnts")
             if markers.markers:
                 self.local_wpnts_pub.publish(markers)
-                rospy.logdebug_throttle(5.0,
-                                        f"{self.car_name}: Published {len(markers.markers)} local waypoint markers")
+                if self.single_car_mode:
+                    rospy.logdebug_throttle(5.0,
+                                            f"Published {len(markers.markers)} local waypoint markers")
+                else:
+                    rospy.logdebug_throttle(5.0,
+                                            f"{self.car_name}: Published {len(markers.markers)} local waypoint markers")
         except Exception as e:
-            rospy.logwarn(
-                f"Error processing local waypoints for {self.car_name}: {e}")
+            if self.single_car_mode:
+                rospy.logwarn(f"Error processing local waypoints: {e}")
+            else:
+                rospy.logwarn(
+                    f"Error processing local waypoints for {self.car_name}: {e}")
 
     def avoidance_waypoints_callback(self, msg):
         """Handle avoidance waypoints - spliner's output before state machine processing"""
@@ -160,19 +202,29 @@ class SplinerVisualization:
                     msg, "avoidance_wpnts")
                 if markers.markers:
                     self.avoidance_wpnts_pub.publish(markers)
-                    rospy.logdebug_throttle(5.0,
-                                            f"{self.car_name}: Published {len(markers.markers)} avoidance waypoint markers")
+                    if self.single_car_mode:
+                        rospy.logdebug_throttle(5.0,
+                                                f"Published {len(markers.markers)} avoidance waypoint markers")
+                    else:
+                        rospy.logdebug_throttle(5.0,
+                                                f"{self.car_name}: Published {len(markers.markers)} avoidance waypoint markers")
             else:
                 # Clear avoidance markers when no waypoints
                 clear_marker = MarkerArray()
                 delete_marker = Marker()
                 delete_marker.action = Marker.DELETEALL
-                delete_marker.ns = f"{self.car_name}_avoidance_wpnts"
+                if self.single_car_mode:
+                    delete_marker.ns = "avoidance_wpnts"
+                else:
+                    delete_marker.ns = f"{self.car_name}_avoidance_wpnts"
                 clear_marker.markers.append(delete_marker)
                 self.avoidance_wpnts_pub.publish(clear_marker)
         except Exception as e:
-            rospy.logwarn(
-                f"Error processing avoidance waypoints for {self.car_name}: {e}")
+            if self.single_car_mode:
+                rospy.logwarn(f"Error processing avoidance waypoints: {e}")
+            else:
+                rospy.logwarn(
+                    f"Error processing avoidance waypoints for {self.car_name}: {e}")
 
     def create_wpntarray_markers(self, waypoints_msg, namespace_suffix):
         """Create visualization markers from WpntArray waypoints (local waypoints from state machine)"""
@@ -182,7 +234,12 @@ class SplinerVisualization:
             return marker_array
 
         car_color = self.get_car_color()
-        car_offset = hash(self.car_name) % 1000
+
+        # Calculate car offset only in multi-car mode
+        if self.single_car_mode:
+            car_offset = 0
+        else:
+            car_offset = hash(self.car_name) % 1000
 
         # Create markers for each waypoint (downsampled - every 3rd waypoint)
         marker_id = 0
@@ -194,7 +251,12 @@ class SplinerVisualization:
             marker = Marker()
             marker.header.frame_id = "map"
             marker.header.stamp = rospy.Time.now()
-            marker.ns = f"{self.car_name}_{namespace_suffix}"
+
+            if self.single_car_mode:
+                marker.ns = namespace_suffix
+            else:
+                marker.ns = f"{self.car_name}_{namespace_suffix}"
+
             marker.id = car_offset + marker_id
             marker.type = Marker.ARROW
             marker.action = Marker.ADD
@@ -244,15 +306,24 @@ class SplinerVisualization:
             min(1.0, car_color.b * 0.8),
             0.4  # More transparent
         )
-        # Different offset to avoid ID collision
-        car_offset = hash(self.car_name) % 1000 + 5000
+
+        # Calculate different offset for avoidance markers to avoid ID collision
+        if self.single_car_mode:
+            car_offset = 5000
+        else:
+            car_offset = hash(self.car_name) % 1000 + 5000
 
         # Create markers for each waypoint
         for i, wpnt in enumerate(waypoints_msg.wpnts):
             marker = Marker()
             marker.header.frame_id = "map"
             marker.header.stamp = rospy.Time.now()
-            marker.ns = f"{self.car_name}_{namespace_suffix}"
+
+            if self.single_car_mode:
+                marker.ns = namespace_suffix
+            else:
+                marker.ns = f"{self.car_name}_{namespace_suffix}"
+
             marker.id = car_offset + i
             marker.type = Marker.CUBE  # Use cubes instead of arrows for clear distinction
             marker.action = Marker.ADD

@@ -87,21 +87,12 @@ class CoordinateTransformation:
             self.tube_width = yaml_defaults.get(
                 'tube_width', rospy.get_param('behavior/tube_width', 0.05))
             rospy.set_param('behavior/tube_width', self.tube_width)
-            self.trajectory_len_controller = yaml_defaults.get(
-                'trajectory_len_controller', rospy.get_param('trajectory_len_controller', 50))
-            rospy.set_param('trajectory_len_controller',
-                            self.trajectory_len_controller)
-
             rospy.loginfo(f"F1Tenth CoordinateTransformation initialized:")
             rospy.loginfo(f"  - tube_width: {self.tube_width}")
-            rospy.loginfo(
-                f"  - trajectory_len_controller: {self.trajectory_len_controller}")
             self.initialized_params = True
         else:
             self.tube_width = rospy.get_param(
                 'behavior/tube_width', self.tube_width)
-            self.trajectory_len_controller = rospy.get_param(
-                'trajectory_len_controller', self.trajectory_len_controller)
 
     def transform_to_velocity_frame(
         self,

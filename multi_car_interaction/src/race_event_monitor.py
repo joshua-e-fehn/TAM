@@ -226,15 +226,19 @@ class RaceEventMonitor:
         base_log_dir = rospy.get_param('/race_test/log_directory',
                                        os.path.join(os.path.expanduser('~'), 'catkin_ws', 'testSimulation', 'logs'))
 
-        # Create batch-specific subdirectory
-        # batch_number can be string or int, handle both
-        if batch_number and str(batch_number) != '0':
-            batch_dir = os.path.join(base_log_dir, f"batch_{batch_number}")
-            log_filename = f"race_events_sim{simulation_id}_{timestamp}.csv"
-        else:
-            # Fallback: use 'unbatched' directory if batch_number not set
-            batch_dir = os.path.join(base_log_dir, "unbatched")
-            log_filename = f"race_events_sim{simulation_id}_{timestamp}.csv"
+        # Create mode-specific subdirectory
+        mode_dir = os.path.join(base_log_dir, self.race_mode)
+
+        # Batch number should always be set by the test framework
+        # If not set, generate one (fallback - should not happen in normal operation)
+        if not batch_number or str(batch_number) == '0':
+            batch_number = datetime.now().strftime("%Y%m%d%H%M%S")
+            rospy.logwarn(
+                f"[Race Monitor] No batch_number set, generated: {batch_number}")
+
+        # Create batch-specific subdirectory within mode folder
+        batch_dir = os.path.join(mode_dir, f"batch_{batch_number}")
+        log_filename = f"race_events_sim{simulation_id}_{timestamp}.csv"
 
         # Create batch directory if it doesn't exist
         os.makedirs(batch_dir, exist_ok=True)
@@ -345,6 +349,10 @@ class RaceEventMonitor:
             # Initialize tracking
             self.car_laps[car_name] = 0
             self.car_previous_s[car_name] = None
+
+        # Track boundary collision tracking (for cooldown)
+        # {car_name: {'s': s_coord, 'timestamp': rospy.Time}}
+        self.last_boundary_collision = {}
 
     def setup_obstacle_topics(self):
         """Setup subscribers for obstacle monitoring (single_car_obstacle mode)"""
@@ -523,12 +531,23 @@ class RaceEventMonitor:
             # No waypoints yet, skip boundary checking
             return False
 
+        race_ending_collision = False
+
         for car_name in self.car_names:
             if car_name not in self.car_frenet:
                 continue
 
             s = self.car_frenet[car_name]['s']
             d = self.car_frenet[car_name]['d']
+
+            # Get Cartesian coordinates for logging
+            x = self.car_positions.get(car_name, {}).get('pose', None)
+            if x:
+                x_coord = x.position.x
+                y_coord = x.position.y
+            else:
+                x_coord = 0.0
+                y_coord = 0.0
 
             # Try to get actual track boundaries from global waypoints
             d_left, d_right = self.get_track_boundaries_at_s(s)
@@ -563,17 +582,41 @@ class RaceEventMonitor:
                 violation_side = "RIGHT"
 
             if is_out_of_bounds:
-                # Car is currently out of bounds - check if it's been out long enough
-                reason = f"track_boundary_crash ({car_name} off-track {violation_side}: d={d:.2f}m, limit={'left=' + str(d_left_limit) if violation_side == 'LEFT' else 'right=' + str(d_right_limit)}m, s={s:.2f}m)"
-                self.log_event('track_crash', car1_name=car_name,
-                               details=reason)
-                self.set_race_complete(reason)
-                return True
+                # Check cooldown distance - only log if 10m away from last collision
+                should_log = True
+                last_collision = self.last_boundary_collision.get(car_name)
+
+                if last_collision is not None:
+                    # Calculate distance from last collision
+                    s_diff = abs(s - last_collision['s'])
+                    # Handle wrap-around at track end
+                    if s_diff > self.track_length / 2:
+                        s_diff = self.track_length - s_diff
+
+                    if s_diff < 10.0:  # Within 10m cooldown
+                        should_log = False
+
+                if should_log:
+                    # Log this collision
+                    reason = f"track_boundary_collision ({car_name} off-track {violation_side}: x={x_coord:.2f}m, y={y_coord:.2f}m, s={s:.2f}m, d={d:.2f}m, limit={'left=' + str(d_left_limit) if violation_side == 'LEFT' else 'right=' + str(d_right_limit)}m)"
+                    self.log_event('track_crash', car1_name=car_name,
+                                   details=reason)
+
+                    # Update last collision tracking
+                    self.last_boundary_collision[car_name] = {
+                        's': s,
+                        'timestamp': rospy.Time.now()
+                    }
+
+                    # In single_car_no_obstacle mode, don't end the race
+                    if self.race_mode != 'single_car_no_obstacle':
+                        race_ending_collision = True
+                        self.set_race_complete(reason)
             else:
                 # Car is within acceptable bounds (including tolerance)
                 pass
 
-        return False
+        return race_ending_collision
 
     def check_condition_overtake_lead(self):
         """Condition 4: Car1 overtook car2 and is 10+ meters ahead"""
