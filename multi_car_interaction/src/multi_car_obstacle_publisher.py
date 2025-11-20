@@ -357,7 +357,7 @@ class MultiCarObstaclePublisher:
         # Standard obstacle properties
         obstacle.size = max(self.car_length, self.car_width)
         obstacle.is_static = False  # Cars are dynamic
-        obstacle.is_visible = True  # Assume cars are always visible
+        obstacle.is_visible = False  # Assume cars are always visible
         obstacle.is_actually_a_gap = False  # This is a solid obstacle
 
         # Velocity uncertainty

@@ -22,7 +22,7 @@ speed_lookahead_for_steer: 0.0 # safe/agg 0.0/0.175
 
 ## Trailing Controller Parameters
 prioritize_dyn: True
-trailing_gap: 2 # Distance in meters or gap in seconds, depending on mode
+trailing_gap: 10 # Distance in meters or gap in seconds, depending on mode
 trailing_p_gain: 1
 trailing_i_gain: 0.0
 trailing_d_gain: 0.2

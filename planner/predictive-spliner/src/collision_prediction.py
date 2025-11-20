@@ -119,21 +119,41 @@ class CollisionPredictor:
         """
         Notices the change in the parameters and changes spline params
         """
-        self.time_steps = rospy.get_param(
-            "dynamic_collision_tuner_node/n_time_steps", 200)
-        self.dt = rospy.get_param("dynamic_collision_tuner_node/dt", 0.02)
-        self.save_distance_front = rospy.get_param(
-            "dynamic_collision_tuner_node/save_distance_front", 0.6)
-        self.save_distance_back = rospy.get_param(
-            "dynamic_collision_tuner_node/save_distance_back", 0.4)
-        self.max_v = rospy.get_param("dynamic_collision_tuner_node/max_v", 10)
-        self.min_v = rospy.get_param("dynamic_collision_tuner_node/min_v", 0)
-        self.max_a = rospy.get_param("dynamic_collision_tuner_node/max_a", 5.5)
-        self.min_a = rospy.get_param("dynamic_collision_tuner_node/min_a", 5)
-        self.max_expire_counter = rospy.get_param(
-            "dynamic_collision_tuner_node/max_expire_counter", 10)
-        self.speed_offset = rospy.get_param(
-            "dynamic_collision_tuner_node/max_expire_counter", 0)
+        # Detect if we're in a car namespace (multi-car mode)
+        node_name = rospy.get_name()
+        car_namespace = None
+        if '/car1/' in node_name or node_name.startswith('/car1'):
+            car_namespace = '/car1'
+        elif '/car2/' in node_name or node_name.startswith('/car2'):
+            car_namespace = '/car2'
+
+        def get_param(param_name, dyn_reconf_param, default):
+            """Get parameter checking car namespace first if in multi-car mode"""
+            if car_namespace:
+                return rospy.get_param(f'{car_namespace}/{param_name}', rospy.get_param(param_name, rospy.get_param(dyn_reconf_param, default)))
+            else:
+                return rospy.get_param(param_name, rospy.get_param(dyn_reconf_param, default))
+
+        # Priority: 1) Car-namespaced (multi-car), 2) Global (single-car), 3) Dynamic reconfigure, 4) Defaults
+        self.time_steps = get_param(
+            "n_time_steps", "dynamic_collision_tuner_node/n_time_steps", 200)
+        self.dt = get_param("dt", "dynamic_collision_tuner_node/dt", 0.02)
+        self.save_distance_front = get_param(
+            "save_distance_front", "dynamic_collision_tuner_node/save_distance_front", 0.6)
+        self.save_distance_back = get_param(
+            "save_distance_back", "dynamic_collision_tuner_node/save_distance_back", 0.4)
+        self.max_v = get_param(
+            "max_v", "dynamic_collision_tuner_node/max_v", 10)
+        self.min_v = get_param(
+            "min_v", "dynamic_collision_tuner_node/min_v", 0)
+        self.max_a = get_param(
+            "max_a", "dynamic_collision_tuner_node/max_a", 5.5)
+        self.min_a = get_param(
+            "min_a", "dynamic_collision_tuner_node/min_a", 5)
+        self.max_expire_counter = get_param(
+            "max_expire_counter", "dynamic_collision_tuner_node/max_expire_counter", 10)
+        self.speed_offset = get_param(
+            "speed_offset", "dynamic_collision_tuner_node/speed_offset", 0)
 
         print(
             f"[Coll. Pred.] Dynamic reconf triggered new params:\n"

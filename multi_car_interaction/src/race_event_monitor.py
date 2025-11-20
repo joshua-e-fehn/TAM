@@ -354,6 +354,38 @@ class RaceEventMonitor:
         # {car_name: {'s': s_coord, 'timestamp': rospy.Time}}
         self.last_boundary_collision = {}
 
+        # Event counters for single_car_obstacle mode
+        self.successful_overtakes_count = 0
+        self.obstacle_collision_count = 0
+        self.boundary_collision_count = 0
+        self.max_overtakes = 2
+        self.max_obstacle_collisions = 2
+        self.max_boundary_collisions = 5
+
+        # Collision tracking with separation distance requirement
+        # Track if currently in collision with obstacle
+        self.in_collision_with_obstacle = False
+        # Track if car1 and car2 are currently in collision
+        self.in_collision_car1_car2 = False
+        self.car_collision_count = 0  # Count collisions between cars in multi-car mode
+        self.max_car_collisions = 2  # Maximum car-to-car collisions before ending race
+        # meters - must separate by this much before counting another collision
+        self.min_separation_distance = 2.0
+
+        # Overtake state tracking
+        # Track if car is locally behind obstacle (within overtake range)
+        self.car_is_locally_behind = True
+        self.car_ahead_distance = 0.0  # How far ahead the car is
+
+        # Multi-car overtake state tracking
+        self.car1_is_locally_behind = True  # Track if car1 is locally behind car2
+
+        # Ego car stall detection (for all modes)
+        # List of (timestamp, s_position) tuples
+        self.ego_car_movement_history = []
+        self.stall_check_duration = 15.0  # seconds
+        self.stall_distance_threshold = 3.0  # meters
+
     def setup_obstacle_topics(self):
         """Setup subscribers for obstacle monitoring (single_car_obstacle mode)"""
         # Subscribe to obstacle odometry (Cartesian)
@@ -368,7 +400,10 @@ class RaceEventMonitor:
         rospy.Subscriber("/state_machine_cmd", String,
                          self.obstacle_state_callback)
 
-        rospy.loginfo("[Race Monitor] Obstacle monitoring enabled")
+        rospy.logwarn("[Race Monitor] ✓ Obstacle monitoring ENABLED")
+        rospy.logwarn("[Race Monitor] ✓ Subscribed to /obstacle/odom_frenet")
+        rospy.logwarn("[Race Monitor] ✓ Overtake detection: Car must be {:.1f}m ahead".format(
+            self.overtake_lead_distance))
 
     def car_odom_callback(self, msg, car_name):
         """Store car Cartesian position from odometry"""
@@ -497,7 +532,7 @@ class RaceEventMonitor:
         return False
 
     def check_condition_collision(self):
-        """Condition 2: Collision between cars"""
+        """Condition 2: Collision between cars with separation distance requirement"""
         if len(self.car_names) < 2:
             return False
 
@@ -515,11 +550,29 @@ class RaceEventMonitor:
                 )
 
                 if distance <= self.collision_distance:
-                    reason = f"collision (distance: {distance:.2f}m between {car1_name} and {car2_name})"
-                    self.log_event('collision', car1_name=car1_name, car2_name=car2_name,
-                                   distance=distance, details=reason)
-                    self.set_race_complete(reason)
-                    return True
+                    # Currently in collision zone
+                    if not self.in_collision_car1_car2:
+                        # NEW collision - cars were previously separated
+                        self.car_collision_count += 1
+                        self.in_collision_car1_car2 = True
+
+                        reason = f"collision #{self.car_collision_count} (distance: {distance:.2f}m between {car1_name} and {car2_name})"
+                        self.log_event('collision', car1_name=car1_name, car2_name=car2_name,
+                                       distance=distance, details=reason)
+
+                        rospy.logwarn(
+                            f"[Race Monitor] Car collision {self.car_collision_count}/{self.max_car_collisions}")
+
+                        # Check if max collisions reached
+                        if self.car_collision_count >= self.max_car_collisions:
+                            reason = f"max_car_collisions ({self.car_collision_count} collisions between {car1_name} and {car2_name})"
+                            self.set_race_complete(reason)
+                            return True
+                else:
+                    # Outside collision zone
+                    if distance > self.min_separation_distance:
+                        # Cars have separated enough - reset collision flag
+                        self.in_collision_car1_car2 = False
 
         return False
 
@@ -597,50 +650,138 @@ class RaceEventMonitor:
                         should_log = False
 
                 if should_log:
-                    # Log this collision
-                    reason = f"track_boundary_collision ({car_name} off-track {violation_side}: x={x_coord:.2f}m, y={y_coord:.2f}m, s={s:.2f}m, d={d:.2f}m, limit={'left=' + str(d_left_limit) if violation_side == 'LEFT' else 'right=' + str(d_right_limit)}m)"
-                    self.log_event('track_crash', car1_name=car_name,
-                                   details=reason)
-
                     # Update last collision tracking
                     self.last_boundary_collision[car_name] = {
                         's': s,
                         'timestamp': rospy.Time.now()
                     }
 
-                    # In single_car_no_obstacle mode, don't end the race
-                    if self.race_mode != 'single_car_no_obstacle':
-                        race_ending_collision = True
-                        self.set_race_complete(reason)
+                    # Log the boundary collision but don't end the race (all modes)
+                    reason = f"track_boundary_collision ({car_name} off-track {violation_side}: x={x_coord:.2f}m, y={y_coord:.2f}m, s={s:.2f}m, d={d:.2f}m)"
+                    self.log_event('track_crash', car1_name=car_name,
+                                   details=reason)
             else:
                 # Car is within acceptable bounds (including tolerance)
                 pass
 
         return race_ending_collision
 
+    def check_condition_enemy_overlapped(self):
+        """Check if car2 has overlapped car1 (2+ laps ahead)"""
+        car1_lap = self.car_laps.get('car1', 0)
+        car2_lap = self.car_laps.get('car2', 0)
+
+        if car2_lap >= car1_lap + 2:
+            reason = f"car2_overlapped_car1 (car2_lap={car2_lap}, car1_lap={car1_lap}, car2 is {car2_lap - car1_lap} laps ahead)"
+            self.log_event('enemy_overlapped', car1_name='car1', car2_name='car2',
+                           details=reason)
+            self.set_race_complete(reason)
+            return True
+        return False
+
+    def check_condition_ego_car_stalled(self):
+        """Check if ego car (car1/car) has not moved more than 3m in last 15 seconds"""
+        # Determine ego car name based on mode
+        if self.race_mode.startswith('single_car'):
+            ego_car_name = 'car'
+        else:
+            ego_car_name = 'car1'
+
+        # Check if we have Frenet data for ego car
+        if ego_car_name not in self.car_frenet:
+            return False
+
+        current_time = rospy.Time.now()
+        current_s = self.car_frenet[ego_car_name]['s']
+        current_lap = self.car_laps.get(ego_car_name, 0)
+
+        # Calculate absolute s position (accounting for laps)
+        current_absolute_s = current_lap * self.track_length + current_s
+
+        # Add current position to history
+        self.ego_car_movement_history.append(
+            (current_time, current_absolute_s))
+
+        # Remove entries older than stall_check_duration
+        cutoff_time = current_time - rospy.Duration(self.stall_check_duration)
+        self.ego_car_movement_history = [
+            (t, s) for t, s in self.ego_car_movement_history if t > cutoff_time
+        ]
+
+        # Check if we have enough history (at least 1 second of data)
+        if len(self.ego_car_movement_history) < 2:
+            return False
+
+        # Get oldest position in the window
+        oldest_time, oldest_s = self.ego_car_movement_history[0]
+        time_span = (current_time - oldest_time).to_sec()
+
+        # Only check if we have at least 15 seconds of history
+        if time_span < self.stall_check_duration:
+            return False
+
+        # Calculate distance traveled
+        distance_traveled = abs(current_absolute_s - oldest_s)
+
+        # Check if car hasn't moved enough
+        if distance_traveled < self.stall_distance_threshold:
+            reason = f"ego_car_stalled ({ego_car_name} moved only {distance_traveled:.2f}m in {time_span:.1f}s, threshold: {self.stall_distance_threshold}m in {self.stall_check_duration}s)"
+            self.log_event('ego_stalled', car1_name=ego_car_name,
+                           details=reason)
+            self.set_race_complete(reason)
+            return True
+
+        return False
+
     def check_condition_overtake_lead(self):
         """Condition 4: Car1 overtook car2 and is 10+ meters ahead"""
         if 'car1' not in self.car_frenet or 'car2' not in self.car_frenet:
             return False
 
+        # Get current positions (local s-coordinates)
         car1_s = self.car_frenet['car1']['s']
         car2_s = self.car_frenet['car2']['s']
         car1_lap = self.car_laps.get('car1', 0)
         car2_lap = self.car_laps.get('car2', 0)
 
-        # Calculate absolute position including laps
+        # Calculate local s-coordinate difference (handling wrap-around)
+        local_s_diff = car1_s - car2_s
+
+        # Normalize to shortest path around circular track
+        # If the difference is more than half the track length,
+        # the shorter path is in the opposite direction
+        if local_s_diff > self.track_length / 2:
+            # Car1 is actually behind (shorter to go backwards)
+            local_s_diff = local_s_diff - self.track_length
+        elif local_s_diff < -self.track_length / 2:
+            # Car1 is actually ahead (shorter to go forwards)
+            local_s_diff = local_s_diff + self.track_length
+
+        # Now local_s_diff is in range [-track_length/2, +track_length/2]
+        # Positive means car1 is ahead, negative means car1 is behind
+
+        # Check if car1 comes close to car2 again (within 10m behind)
+        # This resets the locally_behind flag
+        if local_s_diff > -10.0 and local_s_diff < 0.0:
+            if not self.car1_is_locally_behind:
+                self.car1_is_locally_behind = True
+                self.log_event('overtake_state_change', car1_name='car1', car2_name='car2',
+                               distance=local_s_diff,
+                               details=f"Car1 is now locally behind car2 (local_diff={local_s_diff:.2f}m, car1_lap={car1_lap}, car2_lap={car2_lap})")
+
+        # Check for successful overtake:
+        # Car1 must be locally behind AND local position must be 10m+ ahead
+        # AND absolute position must be ahead (to ensure proper lap accounting)
         car1_absolute_s = car1_lap * self.track_length + car1_s
         car2_absolute_s = car2_lap * self.track_length + car2_s
 
-        # Calculate actual distance difference
-        s_diff = car1_absolute_s - car2_absolute_s
+        if self.car1_is_locally_behind and local_s_diff >= self.overtake_lead_distance and car1_absolute_s > car2_absolute_s:
+            # Overtake detected! Update state and end race
+            self.car1_is_locally_behind = False
 
-        # Check if car1 is ahead by the lead distance
-        # Only trigger if car1 is actually ahead (positive difference)
-        if s_diff >= self.overtake_lead_distance:
-            reason = f"car1_overtake_lead (car1 ahead by {s_diff:.2f}m, threshold: {self.overtake_lead_distance}m, car1_lap={car1_lap}, car2_lap={car2_lap})"
+            reason = f"car1_overtake_lead (car1 ahead by {local_s_diff:.2f}m locally, car1_abs={car1_absolute_s:.2f}m, car2_abs={car2_absolute_s:.2f}m, threshold: {self.overtake_lead_distance}m, car1_lap={car1_lap}, car2_lap={car2_lap})"
             self.log_event('overtake_lead', car1_name='car1', car2_name='car2',
-                           distance=s_diff, details=reason)
+                           distance=local_s_diff, details=reason)
             self.set_race_complete(reason)
             return True
 
@@ -704,7 +845,7 @@ class RaceEventMonitor:
         return False
 
     def check_condition_car_obstacle_collision(self):
-        """Single-car obstacle mode: Collision between car and obstacle"""
+        """Single-car obstacle mode: Collision between car and obstacle with separation distance requirement"""
         if not self.monitor_obstacle or self.obstacle_position is None:
             return False
 
@@ -718,43 +859,116 @@ class RaceEventMonitor:
         )
 
         if distance <= self.collision_distance:
-            reason = f"car_obstacle_collision (distance: {distance:.2f}m)"
-            self.log_event('collision', car1_name=car_name, car2_name='obstacle',
-                           distance=distance, details=reason)
+            # Currently in collision zone
+            if not self.in_collision_with_obstacle:
+                # NEW collision - car and obstacle were previously separated
+                self.obstacle_collision_count += 1
+                self.in_collision_with_obstacle = True
+
+                # Reset overtake state - collision invalidates any ongoing overtake attempt
+                self.car_ahead_distance = 0.0
+
+                reason = f"car_obstacle_collision (distance: {distance:.2f}m, collision #{self.obstacle_collision_count})"
+                self.log_event('collision', car1_name=car_name, car2_name='obstacle',
+                               distance=distance, details=reason)
+
+                rospy.logwarn(
+                    f"[Race Monitor] Obstacle collision {self.obstacle_collision_count}/{self.max_obstacle_collisions}")
+
+                if self.obstacle_collision_count >= self.max_obstacle_collisions:
+                    reason = f"max_obstacle_collisions ({self.obstacle_collision_count} collisions)"
+                    self.set_race_complete(reason)
+                    return True
+        else:
+            # Outside collision zone
+            if distance > self.min_separation_distance:
+                # Car and obstacle have separated enough - reset collision flag
+                self.in_collision_with_obstacle = False
+
+        return False
+
+    def check_condition_obstacle_overlapped(self):
+        """Check if obstacle has overlapped car (2+ laps ahead)"""
+        car_name = self.car_names[0]
+        car_lap = self.car_laps.get(car_name, 0)
+        obstacle_lap = self.obstacle_laps
+
+        if obstacle_lap >= car_lap + 2:
+            reason = f"obstacle_overlapped_car (obstacle_lap={obstacle_lap}, car_lap={car_lap}, obstacle is {obstacle_lap - car_lap} laps ahead)"
+            self.log_event('enemy_overlapped', car1_name=car_name, car2_name='obstacle',
+                           details=reason)
             self.set_race_complete(reason)
             return True
-
         return False
 
     def check_condition_car_overtake_obstacle(self):
         """Single-car obstacle mode: Car overtook obstacle by lead distance"""
-        if not self.monitor_obstacle or self.obstacle_frenet is None:
+        # Check if obstacle monitoring is enabled
+        if not self.monitor_obstacle:
+            return False
+
+        # Check if obstacle Frenet data is available
+        if self.obstacle_frenet is None:
             return False
 
         car_name = self.car_names[0]
         if car_name not in self.car_frenet:
             return False
 
+        # Get current positions (local s-coordinates)
         car_s = self.car_frenet[car_name]['s']
         obstacle_s = self.obstacle_frenet['s']
         car_lap = self.car_laps.get(car_name, 0)
         obstacle_lap = self.obstacle_laps
 
-        # Calculate absolute position including laps
+        # Calculate local s-coordinate difference (handling wrap-around)
+        local_s_diff = car_s - obstacle_s
+
+        # Normalize to shortest path around circular track
+        # If the difference is more than half the track length,
+        # the shorter path is in the opposite direction
+        if local_s_diff > self.track_length / 2:
+            # Car is actually behind (shorter to go backwards)
+            local_s_diff = local_s_diff - self.track_length
+        elif local_s_diff < -self.track_length / 2:
+            # Car is actually ahead (shorter to go forwards)
+            local_s_diff = local_s_diff + self.track_length
+
+        # Now local_s_diff is in range [-track_length/2, +track_length/2]
+        # Positive means car is ahead, negative means car is behind
+
+        # Store distance for logging
+        self.car_ahead_distance = local_s_diff
+
+        # Check if car comes close to obstacle again (within 10m behind)
+        # This resets the locally_behind flag
+        if local_s_diff > -10.0 and local_s_diff < 0.0:
+            if not self.car_is_locally_behind:
+                self.car_is_locally_behind = True
+                self.log_event('overtake_state_change', car1_name=car_name, car2_name='obstacle',
+                               distance=local_s_diff,
+                               details=f"Car is now locally behind obstacle (local_diff={local_s_diff:.2f}m, car_lap={car_lap}, obs_lap={obstacle_lap})")
+
+        # Check for successful overtake:
+        # Car must be locally behind AND local position must be 10m+ ahead
+        # AND absolute position must be ahead (to ensure proper lap accounting)
         car_absolute_s = car_lap * self.track_length + car_s
         obstacle_absolute_s = obstacle_lap * self.track_length + obstacle_s
 
-        # Calculate actual distance difference
-        s_diff = car_absolute_s - obstacle_absolute_s
+        if self.car_is_locally_behind and local_s_diff > self.overtake_lead_distance and car_absolute_s > obstacle_absolute_s:
+            # Overtake detected! Update state immediately
+            self.car_is_locally_behind = False
+            self.successful_overtakes_count += 1
 
-        # Check if car is ahead by the lead distance
-        # Only trigger if car is actually ahead (positive difference)
-        if s_diff >= self.overtake_lead_distance:
-            reason = f"car_overtake_obstacle ({car_name} ahead by {s_diff:.2f}m, threshold: {self.overtake_lead_distance}m, car_lap={car_lap}, obstacle_lap={obstacle_lap})"
+            reason = f"successful_overtake #{self.successful_overtakes_count} ({car_name} ahead by {local_s_diff:.2f}m locally, car_abs={car_absolute_s:.2f}m, obs_abs={obstacle_absolute_s:.2f}m, car_lap={car_lap}, obstacle_lap={obstacle_lap})"
             self.log_event('overtake_lead', car1_name=car_name, car2_name='obstacle',
-                           distance=s_diff, details=reason)
-            self.set_race_complete(reason)
-            return True
+                           distance=local_s_diff, details=reason)
+
+            # Check if max overtakes reached
+            if self.successful_overtakes_count >= self.max_overtakes:
+                reason = f"max_successful_overtakes ({self.successful_overtakes_count} overtakes)"
+                self.set_race_complete(reason)
+                return True
 
         return False
 
@@ -778,12 +992,18 @@ class RaceEventMonitor:
 
         current_time = rospy.Time.now()
 
+        # Check ego car stall condition FIRST (applies to all modes)
+        if self.check_condition_ego_car_stalled():
+            return
+
         # Check race completion conditions based on mode
         if self.race_mode == 'multi_car':
             # Multi-car specific conditions
             if self.check_condition_lap_completion():
                 return
             if self.check_condition_collision():
+                return
+            if self.check_condition_enemy_overlapped():
                 return
             if self.check_condition_overtake_lead():
                 return
@@ -802,13 +1022,16 @@ class RaceEventMonitor:
 
         elif self.race_mode == 'single_car_obstacle':
             # Single car vs obstacle conditions
-            if self.check_condition_single_car_lap_completion():
+            # Check overtakes FIRST (before lap completion) to ensure they're detected
+            if self.check_condition_obstacle_overlapped():
                 return
             if self.check_condition_car_obstacle_collision():
                 return
+            if self.check_condition_car_overtake_obstacle():
+                return
             if self.check_condition_track_boundary():
                 return
-            if self.check_condition_car_overtake_obstacle():
+            if self.check_condition_single_car_lap_completion():
                 return
 
         # Publish status periodically

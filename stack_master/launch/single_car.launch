@@ -83,6 +83,10 @@
          doc="Sinusoidal lateral deviation frequency"/>
     <arg name="obstacle_path_phase" default="0.0" 
          doc="Sinusoidal lateral deviation phase offset"/>
+    <arg name="obstacle_max_speed_limit" default="6.35"
+         doc="Physical speed limit cap (m/s) applied before scaling - matches ego car limits"/>
+    <arg name="obstacle_max_accel" default="3.0"
+         doc="Maximum acceleration limit (m/s²) applied before scaling - matches ego car limits"/>
     
     <!-- ============================================= -->
     <!-- RACE START CONTROL                           -->
@@ -132,6 +136,8 @@
         <arg name="obstacles_topic" value="/perception/obstacles"/>
         <!-- Pass race start controller enable flag to headtohead.launch -->
         <arg name="enable_race_start_controller" value="$(arg enable_race_start_controller)"/>
+        <!-- Pass obstacle enable flag to headtohead.launch for race controller -->
+        <arg name="enable_obstacle" value="$(arg enable_dummy_obstacle)"/>
     </include>
     
     <!-- ============================================= -->
@@ -147,6 +153,8 @@
             <arg name="path_amplitude" value="$(arg obstacle_path_amplitude)"/>
             <arg name="path_frequency" value="$(arg obstacle_path_frequency)"/>
             <arg name="path_phase" value="$(arg obstacle_path_phase)"/>
+            <arg name="max_speed_limit" value="$(arg obstacle_max_speed_limit)"/>
+            <arg name="max_accel" value="$(arg obstacle_max_accel)"/>
         </include>
     </group>
     

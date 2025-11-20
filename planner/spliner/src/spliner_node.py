@@ -69,15 +69,15 @@ class ObstacleSpliner:
         rospy.Subscriber("global_waypoints", WpntArray, self.gb_cb)
         rospy.Subscriber("global_waypoints_scaled",
                          WpntArray, self.gb_scaled_cb)
-        # dyn params sub
+        # dyn params sub (internal representation - pre_apex are negative for positions before apex)
         self.pre_apex_0 = -4
         self.pre_apex_1 = -3
         self.pre_apex_2 = -1.5
-        self.post_apex_0 = 2
-        self.post_apex_1 = 3
-        self.post_apex_2 = 4
+        self.post_apex_0 = 4.5
+        self.post_apex_1 = 5.0
+        self.post_apex_2 = 5.5
         self.evasion_dist = 0.65
-        self.obs_traj_tresh = 0.3
+        self.obs_traj_tresh = 1.5
         self.spline_bound_mindist = 0.2
         if not self.from_bag:
             rospy.Subscriber(
@@ -133,31 +133,46 @@ class ObstacleSpliner:
         """
         Notices the change in the parameters and changes spline params
         """
-        self.pre_apex_0 = -1 * \
-            rospy.get_param("dynamic_spline_tuner_node/pre_apex_dist0", -4)
-        self.pre_apex_1 = -1 * \
-            rospy.get_param("dynamic_spline_tuner_node/pre_apex_dist1", -3)
-        self.pre_apex_2 = -1 * \
-            rospy.get_param(
-                "dynamic_spline_tuner_node/pre_apex_dist2", -1.5) + 0.1
-        self.post_apex_0 = rospy.get_param(
-            "dynamic_spline_tuner_node/post_apex_dist0", 2)
-        self.post_apex_1 = rospy.get_param(
-            "dynamic_spline_tuner_node/post_apex_dist1", 3)
-        self.post_apex_2 = rospy.get_param(
-            "dynamic_spline_tuner_node/post_apex_dist2", 4)
+        # Detect if we're in a car namespace (multi-car mode)
+        node_name = rospy.get_name()
+        car_namespace = None
+        if '/car1/' in node_name or node_name.startswith('/car1'):
+            car_namespace = '/car1'
+        elif '/car2/' in node_name or node_name.startswith('/car2'):
+            car_namespace = '/car2'
 
-        self.evasion_dist = rospy.get_param(
-            "dynamic_spline_tuner_node/evasion_dist", 0.65)
-        self.obs_traj_tresh = rospy.get_param(
-            "dynamic_spline_tuner_node/obs_traj_tresh", 0.3)
-        self.spline_bound_mindist = rospy.get_param(
-            "dynamic_spline_tuner_node/spline_bound_mindist", 0.2)
+        def get_param(param_name, dyn_reconf_param, default):
+            """Get parameter checking car namespace first if in multi-car mode"""
+            if car_namespace:
+                return rospy.get_param(f'{car_namespace}/{param_name}', rospy.get_param(param_name, rospy.get_param(dyn_reconf_param, default)))
+            else:
+                return rospy.get_param(param_name, rospy.get_param(dyn_reconf_param, default))
 
-        self.kd_obs_pred = rospy.get_param(
-            "dynamic_spline_tuner_node/kd_obs_pred")
-        self.fixed_pred_time = rospy.get_param(
-            "dynamic_spline_tuner_node/fixed_pred_time")
+        # Priority: 1) Car-namespaced (multi-car), 2) Global (single-car), 3) Dynamic reconfigure, 4) Defaults
+        self.pre_apex_0 = -1 * get_param(
+            "pre_apex_dist0", "dynamic_spline_tuner_node/pre_apex_dist0", 4.0)
+        self.pre_apex_1 = -1 * get_param(
+            "pre_apex_dist1", "dynamic_spline_tuner_node/pre_apex_dist1", 3.0)
+        self.pre_apex_2 = -1 * get_param(
+            "pre_apex_dist2", "dynamic_spline_tuner_node/pre_apex_dist2", 2.0) + 0.1
+        self.post_apex_0 = get_param(
+            "post_apex_dist0", "dynamic_spline_tuner_node/post_apex_dist0", 4.5)
+        self.post_apex_1 = get_param(
+            "post_apex_dist1", "dynamic_spline_tuner_node/post_apex_dist1", 5.0)
+        self.post_apex_2 = get_param(
+            "post_apex_dist2", "dynamic_spline_tuner_node/post_apex_dist2", 5.5)
+
+        self.evasion_dist = get_param(
+            "evasion_dist", "dynamic_spline_tuner_node/evasion_dist", 0.65)
+        self.obs_traj_tresh = get_param(
+            "obs_traj_tresh", "dynamic_spline_tuner_node/obs_traj_tresh", 1.5)
+        self.spline_bound_mindist = get_param(
+            "spline_bound_mindist", "dynamic_spline_tuner_node/spline_bound_mindist", 0.2)
+
+        self.kd_obs_pred = get_param(
+            "kd_obs_pred", "dynamic_spline_tuner_node/kd_obs_pred", 1.0)
+        self.fixed_pred_time = get_param(
+            "fixed_pred_time", "dynamic_spline_tuner_node/fixed_pred_time", 0.15)
 
         spline_params = [
             self.pre_apex_0,
@@ -168,11 +183,28 @@ class ObstacleSpliner:
             self.post_apex_1,
             self.post_apex_2,
         ]
-        rospy.loginfo(
-            f"[{self.name}] Dynamic reconf triggered new spline params: {spline_params} [m],\n"
-            f" evasion apex distance: {self.evasion_dist} [m],\n"
-            f" obstacle trajectory treshold: {self.obs_traj_tresh} [m]\n"
-            f" obstacle prediciton k_d: {self.kd_obs_pred},    obstacle prediciton constant time: {self.fixed_pred_time} [s] "
+
+        # Debug output with all parameter values
+        rospy.logwarn(
+            f"{'='*70}\n"
+            f"[{self.name}] 🔧 DYNAMIC PARAMETERS UPDATED\n"
+            f"{'='*70}\n"
+            f"  Namespace: {car_namespace if car_namespace else 'global'}\n"
+            f"  Spline control points [m]: {spline_params}\n"
+            f"  ├─ pre_apex_0:  {self.pre_apex_0:7.2f} m (config: {-self.pre_apex_0:.2f})\n"
+            f"  ├─ pre_apex_1:  {self.pre_apex_1:7.2f} m (config: {-self.pre_apex_1:.2f})\n"
+            f"  ├─ pre_apex_2:  {self.pre_apex_2:7.2f} m (config: {-(self.pre_apex_2-0.1):.2f})\n"
+            f"  ├─ post_apex_0: {self.post_apex_0:7.2f} m\n"
+            f"  ├─ post_apex_1: {self.post_apex_1:7.2f} m\n"
+            f"  └─ post_apex_2: {self.post_apex_2:7.2f} m\n"
+            f"  Avoidance parameters:\n"
+            f"  ├─ evasion_dist:         {self.evasion_dist:.3f} m\n"
+            f"  ├─ obs_traj_tresh:       {self.obs_traj_tresh:.3f} m\n"
+            f"  └─ spline_bound_mindist: {self.spline_bound_mindist:.3f} m\n"
+            f"  Prediction parameters:\n"
+            f"  ├─ kd_obs_pred:          {self.kd_obs_pred:.3f}\n"
+            f"  └─ fixed_pred_time:      {self.fixed_pred_time:.3f} s\n"
+            f"{'='*70}"
         )
 
     #############

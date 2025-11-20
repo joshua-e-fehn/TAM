@@ -167,15 +167,14 @@ def PSTrailingTransition(state_machine: StateMachine) -> StateType:
     on_merger = state_machine._check_on_merger()
     force_trailing = state_machine._check_force_trailing()
 
-    rospy.loginfo_throttle(
-        5.0, f"[StateMachine] Trailing Transition Check: ot_sector={ot_sector}, valid_spline={valid_spline}, emergency_break={emergency_break}, enemy_in_front={enemy_in_front}, gb_free={gb_free}, gb_predict_free={gb_predict_free}, o_free={o_free}, on_avoidance_spline={on_avoidance_spline}, on_merger={on_merger}, force_trailing={force_trailing}")
-
     if not state_machine._check_only_ftg_zone():
         # If we have been sitting around in TRAILING for a while then FTG
         if state_machine._check_ftg():
             return StateType.FTGONLY
-        elif force_trailing:
-            return StateType.TRAILING
+        # elif force_trailing:
+        #     rospy.logerr_throttle(
+        #         0.5, "[StateMachine] NOT OVERTAKING: force_trailing is True")
+        #     return StateType.TRAILING
         elif valid_spline and not emergency_break and o_free and ot_sector and not on_merger:
             return StateType.OVERTAKE
         # Questionable if on_merger really helps in this case
@@ -205,7 +204,7 @@ def PSOvertakingTransition(state_machine: StateMachine) -> StateType:
 
         if emergency_break or not ot_sector:
             return StateType.TRAILING
-        elif not o_free or force_trailing:
+        if not o_free or force_trailing:
             return StateType.TRAILING
         elif spline_valid and o_free and ot_sector:
             return StateType.OVERTAKE

@@ -138,7 +138,7 @@ class Controller_manager:
 
         self.prioritize_dyn = True
 
-        self.trailing_gap = 1.5
+        self.trailing_gap = 10.0
         self.trailing_p_gain = 0.5
         self.trailing_i_gain = 0.001
         self.trailing_d_gain = 0.2

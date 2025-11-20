@@ -586,8 +586,11 @@
     <!-- Manual start control for single-car racing -->
     <!-- NOTE: Use ROS services for control: rosservice call /race_control/{start_both,reset_cars,emergency_stop} -->
     <arg name="enable_race_start_controller" default="True"/>
+    <arg name="enable_obstacle" default="false"/>
     
     <group if="$(arg enable_race_start_controller)">
-        <include file="$(find race_start_controller)/launch/race_start_single.launch"/>
+        <include file="$(find race_start_controller)/launch/race_start_single.launch">
+            <arg name="enable_obstacle" value="$(arg enable_obstacle)"/>
+        </include>
     </group>
 </launch>

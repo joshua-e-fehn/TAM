@@ -176,22 +176,38 @@ class SQPAvoidanceNode:
 
     # Callback triggered by dynamic spline reconf
     def dyn_param_cb(self, params: Config):
-        self.evasion_dist = rospy.get_param(
-            "dynamic_sqp_tuner_node/evasion_dist", 0.65)
-        self.obs_traj_tresh = rospy.get_param(
-            "dynamic_sqp_tuner_node/obs_traj_tresh", 1.5)
-        self.spline_bound_mindist = rospy.get_param(
-            "dynamic_sqp_tuner_node/spline_bound_mindist", 0.2)
-        self.lookahead = rospy.get_param(
-            "dynamic_sqp_tuner_node/lookahead_dist", 15)
-        self.avoidance_resolution = rospy.get_param(
-            "dynamic_sqp_tuner_node/avoidance_resolution", 20)
-        self.back_to_raceline_before = rospy.get_param(
-            "dynamic_sqp_tuner_node/back_to_raceline_before", 5)
-        self.back_to_raceline_after = rospy.get_param(
-            "dynamic_sqp_tuner_node/back_to_raceline_after", 5)
-        self.avoid_static_obs = rospy.get_param(
-            "dynamic_sqp_tuner_node/avoid_static_obs", True)
+        # Detect if we're in a car namespace (multi-car mode)
+        node_name = rospy.get_name()
+        car_namespace = None
+        if '/car1/' in node_name or node_name.startswith('/car1'):
+            car_namespace = '/car1'
+        elif '/car2/' in node_name or node_name.startswith('/car2'):
+            car_namespace = '/car2'
+
+        def get_param(param_name, dyn_reconf_param, default):
+            """Get parameter checking car namespace first if in multi-car mode"""
+            if car_namespace:
+                return rospy.get_param(f'{car_namespace}/{param_name}', rospy.get_param(param_name, rospy.get_param(dyn_reconf_param, default)))
+            else:
+                return rospy.get_param(param_name, rospy.get_param(dyn_reconf_param, default))
+
+        # Priority: 1) Car-namespaced (multi-car), 2) Global (single-car), 3) Dynamic reconfigure, 4) Defaults
+        self.evasion_dist = get_param(
+            "evasion_dist", "dynamic_sqp_tuner_node/evasion_dist", 0.65)
+        self.obs_traj_tresh = get_param(
+            "obs_traj_tresh", "dynamic_sqp_tuner_node/obs_traj_tresh", 1.5)
+        self.spline_bound_mindist = get_param(
+            "spline_bound_mindist", "dynamic_sqp_tuner_node/spline_bound_mindist", 0.2)
+        self.lookahead = get_param(
+            "lookahead_dist", "dynamic_sqp_tuner_node/lookahead_dist", 15)
+        self.avoidance_resolution = get_param(
+            "avoidance_resolution", "dynamic_sqp_tuner_node/avoidance_resolution", 20)
+        self.back_to_raceline_before = get_param(
+            "back_to_raceline_before", "dynamic_sqp_tuner_node/back_to_raceline_before", 5)
+        self.back_to_raceline_after = get_param(
+            "back_to_raceline_after", "dynamic_sqp_tuner_node/back_to_raceline_after", 5)
+        self.avoid_static_obs = get_param(
+            "avoid_static_obs", "dynamic_sqp_tuner_node/avoid_static_obs", True)
 
         print(
             f"[Planner] Dynamic reconf triggered new spline params: \n"

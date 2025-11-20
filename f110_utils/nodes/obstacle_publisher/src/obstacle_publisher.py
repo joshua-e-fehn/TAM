@@ -94,6 +94,15 @@ class ObstaclePublisher:
             except Exception as e:
                 rospy.logwarn(f"Failed to update dynamic reconfigure: {e}")
 
+        # Physical limits for realistic speed scaling (match ego car constraints)
+        self.max_speed_limit = rospy.get_param(
+            '~max_speed_limit', rospy.get_param('obstacle_publisher/max_speed_limit', 6.3))
+        self.max_accel_limit = rospy.get_param(
+            '~max_accel_limit', rospy.get_param('obstacle_publisher/max_accel_limit', 3.0))
+
+        # Track previous speed for acceleration limiting
+        self.previous_speed = 0.0
+
         # choose trajectory
         self.waypoints_type = rospy.get_param(
             '~trajectory', rospy.get_param('obstacle_publisher/trajectory', 'min_curv'))
@@ -121,7 +130,9 @@ class ObstaclePublisher:
         self.car_odom = Odometry()
 
         # State machine support - subscribe to state machine commands
-        rospy.Subscriber('/state_machine_cmd', String, self.state_cmd_callback)
+        # Use private name to get namespaced topic (e.g., /obstacle/state_machine_cmd)
+        rospy.Subscriber('/obstacle/state_machine_cmd',
+                         String, self.state_cmd_callback)
         self.current_state = "READY"  # Start in READY state (not moving)
         rospy.loginfo(
             "[Obstacle Publisher] Starting in READY state - waiting for start command")
@@ -134,6 +145,8 @@ class ObstaclePublisher:
             'opponent_waypoints', OpponentTrajectory, queue_size=10)
         self.obstacle_odom_pub = rospy.Publisher(
             'obstacle/odom', Odometry, queue_size=10)
+        self.obstacle_odom_frenet_pub = rospy.Publisher(
+            'obstacle/odom_frenet', Odometry, queue_size=10)
 
         # Publish obstacle state for test framework monitoring
         self.obstacle_state_pub = rospy.Publisher(
@@ -270,6 +283,27 @@ class ObstaclePublisher:
 
         self.obstacle_odom_pub.publish(odom_msg)
 
+    def publish_obstacle_odom_frenet(self, obstacle):
+        """Publish obstacle odometry in Frenet frame"""
+        odom_frenet_msg = Odometry()
+        odom_frenet_msg.header.stamp = rospy.Time.now()
+        odom_frenet_msg.header.frame_id = "frenet"
+        odom_frenet_msg.child_frame_id = "obstacle_base_link"
+
+        # Position in Frenet frame (s in x, d in y)
+        odom_frenet_msg.pose.pose.position.x = obstacle.s_center
+        odom_frenet_msg.pose.pose.position.y = obstacle.d_center
+        odom_frenet_msg.pose.pose.position.z = 0.0
+        odom_frenet_msg.pose.pose.orientation.w = 1.0
+
+        # Velocity in Frenet frame
+        # vs (tangential velocity)
+        odom_frenet_msg.twist.twist.linear.x = obstacle.vs
+        odom_frenet_msg.twist.twist.linear.y = 0.0  # vd (lateral velocity)
+        odom_frenet_msg.twist.twist.linear.z = 0.0
+
+        self.obstacle_odom_frenet_pub.publish(odom_frenet_msg)
+
     def shutdown(self):
         rospy.loginfo("BEEP BOOP DUMMY OD SHUTDOWN")
         self.obstacle_pub.publish(ObstacleArray())
@@ -368,9 +402,31 @@ class ObstaclePublisher:
             s = self.dynamic_obstacle.s_center
             approx_idx = np.abs(opponent_s_array - s).argmin()
 
-            # Apply dynamic speed scaling to the base speed
+            # Apply physical speed limit to base speed (like ego car has)
+            # This ensures obstacle scales relative to achievable speeds, not theoretical raceline
             base_speed = self.opponent_wpnts.oppwpnts[approx_idx].proj_vs_mps
-            self.dyn_obstacle_speed = base_speed * self.speed_scaler
+            capped_base_speed = min(base_speed, self.max_speed_limit)
+
+            # Now apply speed scaler to the capped speed
+            target_speed = capped_base_speed * self.speed_scaler
+
+            # Apply acceleration limit: max_accel_limit * speed_scaler
+            max_allowed_accel = self.max_accel_limit * self.speed_scaler
+            max_speed_change = max_allowed_accel * self.looptime
+
+            # Limit speed change to respect acceleration constraint
+            speed_delta = target_speed - self.previous_speed
+            if abs(speed_delta) > max_speed_change:
+                # Clamp acceleration
+                if speed_delta > 0:
+                    self.dyn_obstacle_speed = self.previous_speed + max_speed_change
+                else:
+                    self.dyn_obstacle_speed = self.previous_speed - max_speed_change
+            else:
+                self.dyn_obstacle_speed = target_speed
+
+            # Update previous speed for next iteration
+            self.previous_speed = self.dyn_obstacle_speed
 
             # Only update obstacle position if in GB_TRACK state (racing)
             # In READY state, obstacle stays at starting position
@@ -384,6 +440,7 @@ class ObstaclePublisher:
             else:
                 # In READY state - obstacle doesn't move, velocity is 0
                 self.dyn_obstacle_speed = 0.0
+                self.previous_speed = 0.0  # Reset previous speed when stopped
 
             # Base d position from the raceline
             base_d_center = self.opponent_wpnts.oppwpnts[approx_idx].d_m
@@ -406,6 +463,7 @@ class ObstaclePublisher:
 
             obstacle_msg.obstacles.append(self.dynamic_obstacle)
             self.publish_obstacle_cartesian(obstacle_msg.obstacles)
+            self.publish_obstacle_odom_frenet(self.dynamic_obstacle)
 
             self.obstacle_pub.publish(obstacle_msg)
 

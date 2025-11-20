@@ -30,19 +30,32 @@ class ServiceRaceController:
         # Check if we're in single-car mode (no namespace prefix)
         self.single_car_mode = rospy.get_param('~single_car_mode', False)
 
+        # Check if obstacle is enabled in single-car mode
+        self.enable_obstacle = rospy.get_param('~enable_obstacle', False)
+
         # Publishers for each car's state machine
         if self.single_car_mode:
             # Single car mode - publish to root namespace
             self.car1_state_pub = rospy.Publisher(
                 '/state_machine_cmd', String, queue_size=1)
             self.car2_state_pub = None  # No second car in single mode
-            rospy.loginfo("Race Control initialized in SINGLE-CAR mode")
+
+            # Obstacle publisher if enabled
+            if self.enable_obstacle:
+                self.obstacle_state_pub = rospy.Publisher(
+                    '/obstacle/state_machine_cmd', String, queue_size=1)
+                rospy.loginfo(
+                    "Race Control initialized in SINGLE-CAR mode with OBSTACLE")
+            else:
+                self.obstacle_state_pub = None
+                rospy.loginfo("Race Control initialized in SINGLE-CAR mode")
         else:
             # Multi-car mode - publish to namespaced topics
             self.car1_state_pub = rospy.Publisher(
                 f'/{self.car1_namespace}/state_machine_cmd', String, queue_size=1)
             self.car2_state_pub = rospy.Publisher(
                 f'/{self.car2_namespace}/state_machine_cmd', String, queue_size=1)
+            self.obstacle_state_pub = None
             rospy.loginfo(
                 f"Race Control initialized in MULTI-CAR mode ({self.car1_namespace}, {self.car2_namespace})")
 
@@ -60,8 +73,14 @@ class ServiceRaceController:
 
         rospy.loginfo("Race Control Services Ready!")
         if self.single_car_mode:
-            rospy.loginfo(
-                "Commands: rosservice call /race_control/{start_both,reset_cars,emergency_stop}")
+            if self.enable_obstacle:
+                rospy.loginfo(
+                    "Commands: rosservice call /race_control/{start_car1,start_car2,start_both,reset_cars,emergency_stop}")
+                rospy.loginfo(
+                    "  start_car1 = car, start_car2 = obstacle, start_both = both")
+            else:
+                rospy.loginfo(
+                    "Commands: rosservice call /race_control/{start_both,reset_cars,emergency_stop}")
         else:
             rospy.loginfo(
                 "Commands: rosservice call /race_control/{start_car1,start_car2,start_both,reset_cars,emergency_stop}")
@@ -77,7 +96,12 @@ class ServiceRaceController:
 
     def start_car2_service(self, req):
         if self.single_car_mode:
-            rospy.logwarn("start_car2 called in single-car mode - ignoring")
+            if self.enable_obstacle and self.obstacle_state_pub:
+                rospy.loginfo("Starting Obstacle (single-car obstacle mode)")
+                self.obstacle_state_pub.publish(String("GB_TRACK"))
+            else:
+                rospy.logwarn(
+                    "start_car2 called in single-car mode without obstacle - ignoring")
         else:
             rospy.loginfo("Starting Car2")
             self.car2_state_pub.publish(String("GB_TRACK"))
@@ -86,6 +110,9 @@ class ServiceRaceController:
     def start_both_service(self, req):
         if self.single_car_mode:
             rospy.loginfo("RACE START (single-car mode)")
+            if self.enable_obstacle and self.obstacle_state_pub:
+                rospy.loginfo("  Starting obstacle and car together")
+                self.obstacle_state_pub.publish(String("GB_TRACK"))
             self.car1_state_pub.publish(String("GB_TRACK"))
         else:
             rospy.loginfo("RACE START - Both Cars")
@@ -97,6 +124,9 @@ class ServiceRaceController:
         if self.single_car_mode:
             rospy.loginfo("Resetting car to READY")
             self.car1_state_pub.publish(String("READY"))
+            if self.enable_obstacle and self.obstacle_state_pub:
+                rospy.loginfo("Resetting obstacle to READY")
+                self.obstacle_state_pub.publish(String("READY"))
         else:
             rospy.loginfo("Resetting cars to READY")
             self.car1_state_pub.publish(String("READY"))
@@ -107,6 +137,8 @@ class ServiceRaceController:
         if self.single_car_mode:
             rospy.logwarn("EMERGENCY STOP")
             self.car1_state_pub.publish(String("READY"))
+            if self.enable_obstacle and self.obstacle_state_pub:
+                self.obstacle_state_pub.publish(String("READY"))
         else:
             rospy.logwarn("EMERGENCY STOP")
             self.car1_state_pub.publish(String("READY"))

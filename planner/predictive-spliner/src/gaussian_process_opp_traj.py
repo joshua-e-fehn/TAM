@@ -38,6 +38,27 @@ class GaussianProcessOppTraj(object):
         rospy.wait_for_message("global_waypoints", WpntArray)
         self.converter = self.initialize_converter()
 
+        # Parameters / switches
+        self._use_global_prediction_param = rospy.get_param(
+            '~use_global_prediction', False)
+        self._global_prediction_speed_scale = rospy.get_param(
+            '~global_prediction_speed_scale', 1.0)
+        self._global_prediction_d_var = rospy.get_param(
+            '~global_prediction_d_variance', 0.05)
+        self._global_prediction_vs_var = rospy.get_param(
+            '~global_prediction_vs_variance', 0.05)
+        self._proj_traj_wait_timeout = rospy.get_param(
+            '~proj_traj_wait_timeout', 0.5)
+        self._global_prediction_max_speed = rospy.get_param(
+            '~global_prediction_max_speed', 10.0)
+
+        # Cached data for global prediction mode
+        self._global_prediction_cache = None
+        self._global_prediction_marker = None
+        self._global_wpnts_dirty = True
+        self.lap_count = 0.0
+        self._last_prediction_mode = None
+
     # Callback
     def proj_opp_traj_cb(self, data: ProjOppTraj):
         self.proj_opp_traj = data
@@ -47,6 +68,7 @@ class GaussianProcessOppTraj(object):
                                   for wpnt in data.wpnts])
         self.glb_wpnts = data
         self.track_length = data.wpnts[-1].s_m
+        self._global_wpnts_dirty = True
 
     # Functions
 
@@ -98,8 +120,19 @@ class GaussianProcessOppTraj(object):
         proj_opp_traj = ProjOppTraj()
         sorted_detection_list = []
         while not rospy.is_shutdown():
-            proj_opp_traj = rospy.wait_for_message(
-                'proj_opponent_trajectory', ProjOppTraj)
+            global_mode_enabled = self._global_prediction_enabled()
+            self._maybe_log_prediction_mode(global_mode_enabled)
+
+            if global_mode_enabled:
+                self._publish_global_waypoint_prediction()
+                self.rate.sleep()
+                continue
+
+            try:
+                proj_opp_traj = rospy.wait_for_message(
+                    'proj_opponent_trajectory', ProjOppTraj, timeout=self._proj_traj_wait_timeout)
+            except rospy.ROSException:
+                continue
             self.lap_count = proj_opp_traj.lapcount
             opp_on_traj = proj_opp_traj.opp_is_on_trajectory
             nr_of_points = proj_opp_traj.nrofpoints
@@ -181,6 +214,78 @@ class GaussianProcessOppTraj(object):
                     # Publish
                     self.opp_traj_gp_pub.publish(opp_traj_gp_msg)
                     self.opp_traj_marker_pub.publish(opp_traj_marker_array)
+
+    def _global_prediction_enabled(self):
+        if rospy.get_param('~use_global_prediction', self._use_global_prediction_param):
+            return True
+
+        return rospy.get_param('/race_test/use_global_prediction', False)
+
+    def _get_global_prediction_max_speed(self):
+        """Get max speed limit, checking race_test parameter first"""
+        return rospy.get_param('/race_test/global_prediction_max_speed',
+                               self._global_prediction_max_speed)
+
+    def _publish_global_waypoint_prediction(self):
+        if not hasattr(self, 'glb_wpnts'):
+            return
+
+        oppwpnts_list, marker_array = self._get_global_waypoint_prediction()
+        if oppwpnts_list is None:
+            return
+
+        # Use lap_count >= 1.0 for global prediction to allow overtaking immediately
+        # (collision prediction checks lap_count < 1 to force trailing)
+        opp_traj_gp_msg = self.make_opponent_trajectory_msg(
+            oppwpnts_list=oppwpnts_list,
+            lap_count=1.0,
+            raw_oppenent_traj_msg=None)
+        self.opp_traj_gp_pub.publish(opp_traj_gp_msg)
+        self.opp_traj_marker_pub.publish(marker_array)
+
+    def _get_global_waypoint_prediction(self):
+        if self._global_prediction_cache is None or self._global_wpnts_dirty:
+            if not hasattr(self, 'glb_wpnts'):
+                return None, None
+
+            # Get current max speed limit (may be updated via race_test param)
+            max_speed_limit = self._get_global_prediction_max_speed()
+
+            oppwpnts_list = []
+            for wpnt in self.glb_wpnts.wpnts[:-1]:
+                oppwpnt = OppWpnt()
+                oppwpnt.x_m = wpnt.x_m
+                oppwpnt.y_m = wpnt.y_m
+                oppwpnt.s_m = wpnt.s_m
+                oppwpnt.d_m = 0.0
+                # Cap at physical speed limit before scaling (like obstacle publisher)
+                capped_speed = min(wpnt.vx_mps, max_speed_limit)
+                oppwpnt.proj_vs_mps = max(
+                    0.0, capped_speed * self._global_prediction_speed_scale)
+                oppwpnt.vd_mps = 0.0
+                oppwpnt.d_var = self._global_prediction_d_var
+                oppwpnt.vs_var = self._global_prediction_vs_var
+                oppwpnts_list.append(oppwpnt)
+
+            self._global_prediction_cache = oppwpnts_list
+            self._global_prediction_marker = self._visualize_opponent_wpnts(
+                oppwpnts_list=oppwpnts_list)
+            self._global_wpnts_dirty = False
+
+        return self._global_prediction_cache, self._global_prediction_marker
+
+    def _maybe_log_prediction_mode(self, using_global_prediction):
+        if self._last_prediction_mode == using_global_prediction:
+            return
+
+        node_switch = rospy.get_param(
+            '~use_global_prediction', self._use_global_prediction_param)
+        race_test_switch = rospy.get_param(
+            '/race_test/use_global_prediction', False)
+        mode_label = "GLOBAL WAYPOINT" if using_global_prediction else "GAUSSIAN PROCESS"
+        rospy.loginfo("[GP Opp Traj] Prediction mode: %s (node switch=%s, /race_test switch=%s)",
+                      mode_label, node_switch, race_test_switch)
+        self._last_prediction_mode = using_global_prediction
 
     # Helper Functions
     def create_sorted_detection_list(self, proj_opponent_detections: list, sorted_detection_list: list, ego_s_original: list):

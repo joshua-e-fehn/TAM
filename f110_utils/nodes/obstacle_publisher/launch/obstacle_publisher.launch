@@ -7,6 +7,8 @@
        <arg name="path_amplitude" default="0.1"/>
        <arg name="path_frequency" default="0.15"/>
        <arg name="path_phase" default="0.0"/>
+       <arg name="max_speed_limit" default="6.35"/>
+       <arg name="max_accel" default="3.0"/>
 
        <!-- Launch Collision detector as well -->
      <node name="collision_detector" pkg="obstacle_publisher" type="collision_detector.py" output="screen"/>
@@ -22,6 +24,10 @@
               <param name="path_amplitude" value="$(arg path_amplitude)"/>
               <param name="path_frequency" value="$(arg path_frequency)"/>
               <param name="path_phase" value="$(arg path_phase)"/>
+              <!-- Physical speed limit cap -->
+              <param name="max_speed_limit" value="$(arg max_speed_limit)"/>
+              <!-- Maximum acceleration limit -->
+              <param name="max_accel" value="$(arg max_accel)"/>
        </node>
 
 

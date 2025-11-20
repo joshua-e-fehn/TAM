@@ -1,10 +1,13 @@
 <launch>
     <!-- Race Start Controller for Single-Car Mode -->
+    <arg name="enable_obstacle" default="false"/>
+    
     <node pkg="race_start_controller" 
           type="service_race_control.py" 
           name="race_start_controller" 
           output="screen">
         <param name="single_car_mode" value="true"/>
+        <param name="enable_obstacle" value="$(arg enable_obstacle)"/>
     </node>
     
     <!-- Usage info -->
