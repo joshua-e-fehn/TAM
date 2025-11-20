@@ -385,30 +385,30 @@ class BasicTAMToETHMapParser:
     def _resample_to_uniform_spacing(self, waypoints: List[Dict], spacing: float = 0.1, name: str = "") -> List[Dict]:
         """
         Resample waypoints to uniform spacing along the trajectory.
-        
+
         CRITICAL: The Frenet converter assumes waypoints are uniformly spaced at 0.1m.
         After arc length recalculation, waypoints have variable spacing, which causes
         position tracking errors. This function resamples to uniform spacing.
-        
+
         Args:
             waypoints: List of waypoint dictionaries with accurate s_m values
             spacing: Target spacing in meters (default: 0.1m for Frenet converter)
             name: Optional name for logging
-            
+
         Returns:
             List of waypoints with uniform spacing
         """
         if len(waypoints) < 2:
             return waypoints
-        
+
         # Extract data for interpolation
         s_values = np.array([wp['s_m'] for wp in waypoints])
         total_length = s_values[-1]
-        
+
         # Create uniform s spacing
         num_points = int(total_length / spacing) + 1
         s_uniform = np.linspace(0, total_length, num_points)
-        
+
         # Interpolate all properties
         x_values = np.array([wp['x_m'] for wp in waypoints])
         y_values = np.array([wp['y_m'] for wp in waypoints])
@@ -416,14 +416,14 @@ class BasicTAMToETHMapParser:
         ax_values = np.array([wp['ax_mps2'] for wp in waypoints])
         d_right_values = np.array([wp['d_right'] for wp in waypoints])
         d_left_values = np.array([wp['d_left'] for wp in waypoints])
-        
+
         x_uniform = np.interp(s_uniform, s_values, x_values)
         y_uniform = np.interp(s_uniform, s_values, y_values)
         vx_uniform = np.interp(s_uniform, s_values, vx_values)
         ax_uniform = np.interp(s_uniform, s_values, ax_values)
         d_right_uniform = np.interp(s_uniform, s_values, d_right_values)
         d_left_uniform = np.interp(s_uniform, s_values, d_left_values)
-        
+
         # Create resampled waypoints
         resampled = []
         for i in range(len(s_uniform)):
@@ -435,24 +435,24 @@ class BasicTAMToETHMapParser:
                 dx = x_uniform[0] - x_uniform[i]
                 dy = y_uniform[0] - y_uniform[i]
             psi_rad = math.atan2(dy, dx)
-            
+
             # Calculate curvature using three points
             prev_i = (i - 1) % len(s_uniform)
             next_i = (i + 1) % len(s_uniform)
             x0, y0 = x_uniform[prev_i], y_uniform[prev_i]
             x1, y1 = x_uniform[i], y_uniform[i]
             x2, y2 = x_uniform[next_i], y_uniform[next_i]
-            
+
             area = 0.5 * abs((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0))
             side_a = math.sqrt((x1 - x0)**2 + (y1 - y0)**2)
             side_b = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
             side_c = math.sqrt((x2 - x0)**2 + (y2 - y0)**2)
-            
+
             if side_a * side_b * side_c > 1e-10:
                 kappa_radpm = 4 * area / (side_a * side_b * side_c)
             else:
                 kappa_radpm = 0.0
-            
+
             resampled.append({
                 'id': i,
                 's_m': s_uniform[i],
@@ -466,10 +466,11 @@ class BasicTAMToETHMapParser:
                 'vx_mps': vx_uniform[i],
                 'ax_mps2': ax_uniform[i]
             })
-        
+
         if name:
-            print(f"    ✅ {name}: Resampled to {len(resampled)} waypoints with uniform {spacing}m spacing")
-        
+            print(
+                f"    ✅ {name}: Resampled to {len(resampled)} waypoints with uniform {spacing}m spacing")
+
         return resampled
 
     def _recalculate_headings(self, waypoints: List[Dict]) -> List[Dict]:
@@ -1550,7 +1551,8 @@ class BasicTAMToETHMapParser:
             print(f"🔧 Final Step: Fixing Position Tracking")
             print(f"{'='*60}")
             print(f"  ℹ️  Step 1: Recalculating s_m from actual geometric distances")
-            print(f"  ℹ️  Step 2: Resampling to uniform 0.1m spacing (required by Frenet converter)")
+            print(
+                f"  ℹ️  Step 2: Resampling to uniform 0.1m spacing (required by Frenet converter)")
 
             # First recalculate arc lengths from geometry
             trajectory_data['centerline'] = self._recalculate_arc_length(
@@ -1567,7 +1569,7 @@ class BasicTAMToETHMapParser:
             # Then resample to uniform spacing for Frenet converter compatibility
             print(f"\n  🔄 Resampling waypoints to uniform spacing...")
             print(f"  ⚠️  CRITICAL: Frenet converter assumes uniform 0.1m spacing")
-            
+
             trajectory_data['centerline'] = self._resample_to_uniform_spacing(
                 trajectory_data['centerline'], spacing=0.1, name="🔵 Centerline")
 
