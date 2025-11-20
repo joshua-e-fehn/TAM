@@ -87,10 +87,30 @@ def extract_trackbounds_coordinates(trackbounds_markers):
 
 def extract_coordinates_and_speeds(waypoints):
     """Extract x, y coordinates and speeds from waypoints."""
-    x_coords = [wp['x_m'] for wp in waypoints]
-    y_coords = [wp['y_m'] for wp in waypoints]
-    speeds = [wp['vx_mps'] for wp in waypoints]
+    # Handle both direct values and nested {'data': value} structure
+    def get_value(wp, key):
+        val = wp[key]
+        return val['data'] if isinstance(val, dict) and 'data' in val else val
+
+    x_coords = [get_value(wp, 'x_m') for wp in waypoints]
+    y_coords = [get_value(wp, 'y_m') for wp in waypoints]
+    speeds = [get_value(wp, 'vx_mps') for wp in waypoints]
     return x_coords, y_coords, speeds
+
+
+def extract_full_trajectory_data(waypoints):
+    """Extract all trajectory data including acceleration."""
+    # Handle both direct values and nested {'data': value} structure
+    def get_value(wp, key):
+        val = wp[key]
+        return val['data'] if isinstance(val, dict) and 'data' in val else val
+
+    x_coords = [get_value(wp, 'x_m') for wp in waypoints]
+    y_coords = [get_value(wp, 'y_m') for wp in waypoints]
+    speeds = [get_value(wp, 'vx_mps') for wp in waypoints]
+    accelerations = [get_value(wp, 'ax_mps2') for wp in waypoints]
+    arc_lengths = [get_value(wp, 's_m') for wp in waypoints]
+    return x_coords, y_coords, speeds, accelerations, arc_lengths
 
 
 def plot_trajectories(centerline_waypoints, iqp_waypoints, sp_waypoints, trackbounds_markers):
@@ -159,18 +179,23 @@ def plot_trajectories(centerline_waypoints, iqp_waypoints, sp_waypoints, trackbo
 
     # Plot 2: Speed profile comparison (only for available trajectories)
     # Use arc length for x-axis (approximate)
-    cl_s = [wp['s_m'] for wp in centerline_waypoints]
+    # Helper function to extract values
+    def get_value(wp, key):
+        val = wp[key]
+        return val['data'] if isinstance(val, dict) and 'data' in val else val
+
+    cl_s = [get_value(wp, 's_m') for wp in centerline_waypoints]
 
     ax2.plot(cl_s, cl_speeds, 'b-', linewidth=2,
              label=f'Centerline (max: {max(cl_speeds):.1f} m/s)')
 
     if iqp_waypoints:
-        iqp_s = [wp['s_m'] for wp in iqp_waypoints]
+        iqp_s = [get_value(wp, 's_m') for wp in iqp_waypoints]
         ax2.plot(iqp_s, iqp_speeds, 'r-', linewidth=2,
                  label=f'IQP (max: {max(iqp_speeds):.1f} m/s)')
 
     if sp_waypoints:
-        sp_s = [wp['s_m'] for wp in sp_waypoints]
+        sp_s = [get_value(wp, 's_m') for wp in sp_waypoints]
         ax2.plot(sp_s, sp_speeds, 'g-', linewidth=2,
                  label=f'SP (max: {max(sp_speeds):.1f} m/s)')
 
@@ -291,6 +316,70 @@ def plot_speed_heatmap(waypoints, trajectory_name, trackbounds_markers=None):
     if trackbounds_markers:
         ax.legend()
 
+    return fig
+
+
+def plot_acceleration_profiles(centerline_waypoints, iqp_waypoints, sp_waypoints):
+    """Create acceleration profile comparison plot for all available trajectories."""
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10))
+
+    # Extract data for available trajectories
+    cl_x, cl_y, cl_speeds, cl_accels, cl_s = extract_full_trajectory_data(
+        centerline_waypoints)
+
+    # Plot acceleration vs track distance
+    ax1.plot(cl_s, cl_accels, 'b-', linewidth=2, alpha=0.8,
+             label=f'Centerline (max: {max(cl_accels):.2f} m/s²)')
+
+    if iqp_waypoints:
+        iqp_x, iqp_y, iqp_speeds, iqp_accels, iqp_s = extract_full_trajectory_data(
+            iqp_waypoints)
+        ax1.plot(iqp_s, iqp_accels, 'r-', linewidth=2, alpha=0.8,
+                 label=f'IQP - Racing Line (max: {max(iqp_accels):.2f} m/s²)')
+
+    if sp_waypoints:
+        sp_x, sp_y, sp_speeds, sp_accels, sp_s = extract_full_trajectory_data(
+            sp_waypoints)
+        ax1.plot(sp_s, sp_accels, 'g-', linewidth=2, alpha=0.8,
+                 label=f'SP - Shortest Path (max: {max(sp_accels):.2f} m/s²)')
+
+    # Add reference lines for typical acceleration limits
+    ax1.axhline(y=3.0, color='orange', linestyle='--', linewidth=1.5, alpha=0.7,
+                label='Car Limit (+3 m/s²)')
+    ax1.axhline(y=-3.0, color='purple', linestyle='--', linewidth=1.5, alpha=0.7,
+                label='Car Limit (-3 m/s²)')
+
+    ax1.set_xlabel('Track Distance (m)')
+    ax1.set_ylabel('Acceleration (m/s²)')
+    ax1.set_title('Acceleration Profiles Along Track')
+    ax1.legend(loc='upper right')
+    ax1.grid(True, alpha=0.3)
+
+    # Plot speed vs acceleration (g-g diagram style)
+    ax2.scatter(cl_speeds, cl_accels, c='blue',
+                s=20, alpha=0.6, label='Centerline')
+
+    if iqp_waypoints:
+        ax2.scatter(iqp_speeds, iqp_accels, c='red', s=20,
+                    alpha=0.6, label='IQP - Racing Line')
+
+    if sp_waypoints:
+        ax2.scatter(sp_speeds, sp_accels, c='green', s=20,
+                    alpha=0.6, label='SP - Shortest Path')
+
+    # Add reference lines
+    ax2.axhline(y=3.0, color='orange', linestyle='--', linewidth=1.5, alpha=0.7,
+                label='Car Limit (+3 m/s²)')
+    ax2.axhline(y=-3.0, color='purple', linestyle='--', linewidth=1.5, alpha=0.7,
+                label='Car Limit (-3 m/s²)')
+
+    ax2.set_xlabel('Speed (m/s)')
+    ax2.set_ylabel('Acceleration (m/s²)')
+    ax2.set_title('Speed vs Acceleration (g-g Diagram Style)')
+    ax2.legend(loc='upper right')
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
     return fig
 
 
@@ -486,6 +575,15 @@ def plot_map(map_info, plots_dir):
         fig4.savefig(boundaries_path, dpi=300, bbox_inches='tight')
         print(f"Saved track boundaries plot: {boundaries_path}")
 
+        # Create acceleration profile plot
+        print("Creating acceleration profile plot...")
+        fig_accel = plot_acceleration_profiles(
+            centerline_waypoints, iqp_waypoints, sp_waypoints)
+        accel_path = os.path.join(
+            plots_dir, f"{clean_name}_acceleration_profiles.png")
+        fig_accel.savefig(accel_path, dpi=300, bbox_inches='tight')
+        print(f"Saved acceleration profiles plot: {accel_path}")
+
         # Show statistics for available trajectories
         print(f"\n=== {map_info['name']} Statistics ===")
         left_bounds_x, left_bounds_y, right_bounds_x, right_bounds_y = extract_trackbounds_coordinates(
@@ -493,29 +591,44 @@ def plot_map(map_info, plots_dir):
         print(
             f"Track Boundaries - Left: {len(left_bounds_x)} points, Right: {len(right_bounds_x)} points")
 
-        cl_speeds = [wp['vx_mps'] for wp in centerline_waypoints]
+        # Helper function to extract values
+        def get_value(wp, key):
+            val = wp[key]
+            return val['data'] if isinstance(val, dict) and 'data' in val else val
+
+        cl_speeds = [get_value(wp, 'vx_mps') for wp in centerline_waypoints]
+        cl_accels = [get_value(wp, 'ax_mps2') for wp in centerline_waypoints]
         print(
-            f"Centerline - Min: {min(cl_speeds):.2f} m/s, Max: {max(cl_speeds):.2f} m/s, Avg: {np.mean(cl_speeds):.2f} m/s")
+            f"Centerline - Speed: Min {min(cl_speeds):.2f} m/s, Max {max(cl_speeds):.2f} m/s, Avg {np.mean(cl_speeds):.2f} m/s")
+        print(
+            f"             Accel: Min {min(cl_accels):.2f} m/s², Max {max(cl_accels):.2f} m/s², Avg {np.mean(cl_accels):.2f} m/s²")
 
         if iqp_waypoints:
-            iqp_speeds = [wp['vx_mps'] for wp in iqp_waypoints]
+            iqp_speeds = [get_value(wp, 'vx_mps') for wp in iqp_waypoints]
+            iqp_accels = [get_value(wp, 'ax_mps2') for wp in iqp_waypoints]
             print(
-                f"IQP        - Min: {min(iqp_speeds):.2f} m/s, Max: {max(iqp_speeds):.2f} m/s, Avg: {np.mean(iqp_speeds):.2f} m/s")
+                f"IQP        - Speed: Min {min(iqp_speeds):.2f} m/s, Max {max(iqp_speeds):.2f} m/s, Avg {np.mean(iqp_speeds):.2f} m/s")
+            print(
+                f"             Accel: Min {min(iqp_accels):.2f} m/s², Max {max(iqp_accels):.2f} m/s², Avg {np.mean(iqp_accels):.2f} m/s²")
         else:
             print("IQP        - Not available")
 
         if sp_waypoints:
-            sp_speeds = [wp['vx_mps'] for wp in sp_waypoints]
+            sp_speeds = [get_value(wp, 'vx_mps') for wp in sp_waypoints]
+            sp_accels = [get_value(wp, 'ax_mps2') for wp in sp_waypoints]
             print(
-                f"SP         - Min: {min(sp_speeds):.2f} m/s, Max: {max(sp_speeds):.2f} m/s, Avg: {np.mean(sp_speeds):.2f} m/s")
+                f"SP         - Speed: Min {min(sp_speeds):.2f} m/s, Max {max(sp_speeds):.2f} m/s, Avg {np.mean(sp_speeds):.2f} m/s")
+            print(
+                f"             Accel: Min {min(sp_accels):.2f} m/s², Max {max(sp_accels):.2f} m/s², Avg {np.mean(sp_accels):.2f} m/s²")
         else:
             print("SP         - Not available")
 
         # Track length (use available trajectory with most waypoints)
         if iqp_waypoints:
-            track_length = max([wp['s_m'] for wp in iqp_waypoints])
+            track_length = max([get_value(wp, 's_m') for wp in iqp_waypoints])
         else:
-            track_length = max([wp['s_m'] for wp in centerline_waypoints])
+            track_length = max([get_value(wp, 's_m')
+                               for wp in centerline_waypoints])
         print(f"\nTrack length: {track_length:.2f} m")
 
         # Estimated lap times (rough calculation) for available trajectories
@@ -526,9 +639,14 @@ def plot_map(map_info, plots_dir):
             for i in range(len(waypoints)-1):
                 wp1 = waypoints[i]
                 wp2 = waypoints[i+1]
-                distance = np.sqrt(
-                    (wp2['x_m'] - wp1['x_m'])**2 + (wp2['y_m'] - wp1['y_m'])**2)
-                avg_speed = (wp1['vx_mps'] + wp2['vx_mps']) / 2
+                x1 = get_value(wp1, 'x_m')
+                y1 = get_value(wp1, 'y_m')
+                x2 = get_value(wp2, 'x_m')
+                y2 = get_value(wp2, 'y_m')
+                v1 = get_value(wp1, 'vx_mps')
+                v2 = get_value(wp2, 'vx_mps')
+                distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+                avg_speed = (v1 + v2) / 2
                 if avg_speed > 0:
                     total_time += distance / avg_speed
             return total_time

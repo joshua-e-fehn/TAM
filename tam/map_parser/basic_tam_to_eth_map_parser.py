@@ -199,6 +199,33 @@ class BasicTAMToETHMapParser:
         print(
             f"  🟡 Trackbounds: {len(scaled_trackbounds_left)} left, {len(scaled_trackbounds_right)} right (scaled)")
 
+        # Recalculate headings from trajectory geometry
+        print(f"\n{'='*60}")
+        print(f"🧭 Step 3: Recalculating Headings")
+        print(f"{'='*60}")
+        print(f"  ℹ️  CSV input may have incorrect/constant headings")
+        print(f"  ℹ️  Recalculating from trajectory geometry for accuracy")
+        scaled_centerline = self._recalculate_headings(scaled_centerline)
+        if scaled_iqp:
+            scaled_iqp = self._recalculate_headings(scaled_iqp)
+
+        # Interpolate to common resolution (match IQP)
+        print(f"\n{'='*60}")
+        print(f"🔄 Step 4: Interpolating to Common Resolution")
+        print(f"{'='*60}")
+        print(f"  ℹ️  IQP (racing line) is the reference trajectory")
+        print(f"  ℹ️  Other paths will be interpolated to match IQP waypoint count")
+
+        if scaled_iqp:
+            target_count = len(scaled_iqp)
+            print(f"  🎯 Target waypoint count: {target_count}")
+
+            # Interpolate centerline to match IQP resolution
+            scaled_centerline = self._interpolate_to_target_count(
+                scaled_centerline, target_count, "🔵 Centerline")
+        else:
+            print(f"  ⚠️  No IQP waypoints available, skipping interpolation")
+
         # Validate track closure
         print(f"\n🔍 Validating track closure...")
         self._validate_track_closure(scaled_centerline, "🔵 Centerline")
@@ -324,6 +351,170 @@ class BasicTAMToETHMapParser:
             'y_m': pt['y_m'] * self.scale_factor + self.translation_offset[1]
         }
 
+    def _recalculate_arc_length(self, waypoints: List[Dict], name: str = "") -> List[Dict]:
+        """
+        Recalculate arc length (s_m) based on cumulative geometric distance.
+        
+        This is critical to prevent position tracking errors that accumulate over time,
+        causing the car to lag behind the local waypoints.
+        
+        Args:
+            waypoints: List of waypoint dictionaries
+            name: Optional name for logging
+            
+        Returns:
+            List of waypoints with corrected s_m values
+        """
+        if len(waypoints) < 2:
+            return waypoints
+        
+        waypoints[0]['s_m'] = 0.0
+        for i in range(1, len(waypoints)):
+            dx = waypoints[i]['x_m'] - waypoints[i-1]['x_m']
+            dy = waypoints[i]['y_m'] - waypoints[i-1]['y_m']
+            segment_length = math.sqrt(dx**2 + dy**2)
+            waypoints[i]['s_m'] = waypoints[i-1]['s_m'] + segment_length
+        
+        if name:
+            total_length = waypoints[-1]['s_m']
+            print(f"    ✅ {name}: Recalculated arc length, total track length: {total_length:.2f}m")
+        
+        return waypoints
+
+    def _recalculate_headings(self, waypoints: List[Dict]) -> List[Dict]:
+        """
+        Recalculate headings (psi_rad) from trajectory coordinates.
+
+        This fixes the issue where CSV input has incorrect/constant headings.
+        Calculates heading from the direction vector to the next waypoint.
+        """
+        if len(waypoints) < 2:
+            return waypoints
+
+        print(f"    🔄 Recalculating headings from trajectory geometry...")
+
+        for i in range(len(waypoints)):
+            # For closed loop, wrap around at the end
+            next_i = (i + 1) % len(waypoints)
+
+            dx = waypoints[next_i]['x_m'] - waypoints[i]['x_m']
+            dy = waypoints[next_i]['y_m'] - waypoints[i]['y_m']
+
+            # Calculate heading using atan2 (returns angle in radians from -π to π)
+            heading = math.atan2(dy, dx)
+            waypoints[i]['psi_rad'] = heading
+
+        print(f"    ✅ Recalculated {len(waypoints)} headings")
+        return waypoints
+
+    def _interpolate_to_target_count(self, waypoints: List[Dict], target_count: int, name: str) -> List[Dict]:
+        """Interpolate waypoints to match target count using s_m-based spline interpolation."""
+        if len(waypoints) < 2:
+            return waypoints
+
+        if len(waypoints) == target_count:
+            print(
+                f"    {name}: Already has {target_count} waypoints, no interpolation needed")
+            return waypoints
+
+        print(
+            f"    {name}: Interpolating from {len(waypoints)} to {target_count} waypoints...")
+
+        # Extract coordinates and properties
+        s_values = np.array([wp['s_m'] for wp in waypoints])
+        x_values = np.array([wp['x_m'] for wp in waypoints])
+        y_values = np.array([wp['y_m'] for wp in waypoints])
+        vx_values = np.array([wp['vx_mps'] for wp in waypoints])
+        ax_values = np.array([wp['ax_mps2'] for wp in waypoints])
+        d_right_values = np.array([wp['d_right'] for wp in waypoints])
+        d_left_values = np.array([wp['d_left'] for wp in waypoints])
+
+        # Create uniform s_m spacing for interpolation
+        s_min = s_values[0]
+        s_max = s_values[-1]
+        s_new = np.linspace(s_min, s_max, target_count)
+
+        # Interpolate all properties including acceleration
+        x_new = np.interp(s_new, s_values, x_values)
+        y_new = np.interp(s_new, s_values, y_values)
+        vx_new = np.interp(s_new, s_values, vx_values)
+        ax_new = np.interp(s_new, s_values, ax_values)
+        d_right_new = np.interp(s_new, s_values, d_right_values)
+        d_left_new = np.interp(s_new, s_values, d_left_values)
+
+        # Create new waypoint array
+        interpolated_waypoints = []
+        for i in range(target_count):
+            wp = {
+                'id': i,
+                's_m': s_new[i],
+                'd_m': 0.0,
+                'x_m': x_new[i],
+                'y_m': y_new[i],
+                'd_right': d_right_new[i],
+                'd_left': d_left_new[i],
+                'psi_rad': 0.0,  # Will be recalculated
+                'kappa_radpm': 0.0,  # Will be recalculated
+                'vx_mps': vx_new[i],
+                'ax_mps2': ax_new[i]  # Use interpolated acceleration
+            }
+            interpolated_waypoints.append(wp)
+
+        # Recalculate headings and curvatures from interpolated trajectory
+        for i in range(len(interpolated_waypoints)):
+            next_i = (i + 1) % len(interpolated_waypoints)
+            prev_i = (i - 1) % len(interpolated_waypoints)
+
+            # Calculate heading from direction to next point
+            dx = interpolated_waypoints[next_i]['x_m'] - \
+                interpolated_waypoints[i]['x_m']
+            dy = interpolated_waypoints[next_i]['y_m'] - \
+                interpolated_waypoints[i]['y_m']
+            interpolated_waypoints[i]['psi_rad'] = math.atan2(dy, dx)
+
+            # Calculate curvature using three points
+            x0, y0 = interpolated_waypoints[prev_i]['x_m'], interpolated_waypoints[prev_i]['y_m']
+            x1, y1 = interpolated_waypoints[i]['x_m'], interpolated_waypoints[i]['y_m']
+            x2, y2 = interpolated_waypoints[next_i]['x_m'], interpolated_waypoints[next_i]['y_m']
+
+            # Menger curvature formula
+            area = 0.5 * abs((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0))
+            side_a = math.sqrt((x1 - x0)**2 + (y1 - y0)**2)
+            side_b = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+            side_c = math.sqrt((x2 - x0)**2 + (y2 - y0)**2)
+
+            if side_a * side_b * side_c > 1e-10:
+                interpolated_waypoints[i]['kappa_radpm'] = 4 * \
+                    area / (side_a * side_b * side_c)
+            else:
+                interpolated_waypoints[i]['kappa_radpm'] = 0.0
+
+        # Recalculate accelerations from velocity profile if original accelerations were all zero
+        if np.max(np.abs(ax_values)) < 0.01:
+            print(f"    🔧 Recalculating accelerations from velocity profile...")
+            for i in range(len(interpolated_waypoints)):
+                next_i = (i + 1) % len(interpolated_waypoints)
+
+                # Calculate distance between waypoints
+                dx = interpolated_waypoints[next_i]['x_m'] - \
+                    interpolated_waypoints[i]['x_m']
+                dy = interpolated_waypoints[next_i]['y_m'] - \
+                    interpolated_waypoints[i]['y_m']
+                ds = math.sqrt(dx**2 + dy**2)
+
+                if ds > 1e-6:
+                    # Calculate acceleration from velocity change
+                    v1 = interpolated_waypoints[i]['vx_mps']
+                    v2 = interpolated_waypoints[next_i]['vx_mps']
+                    # Using v2^2 = v1^2 + 2*a*ds, solve for a = (v2^2 - v1^2) / (2*ds)
+                    ax = (v2**2 - v1**2) / (2.0 * ds)
+                    interpolated_waypoints[i]['ax_mps2'] = ax
+                else:
+                    interpolated_waypoints[i]['ax_mps2'] = 0.0
+
+        print(f"    ✅ Interpolated to {len(interpolated_waypoints)} waypoints")
+        return interpolated_waypoints
+
     def _validate_track_closure(self, waypoints: List[Dict], name: str):
         """Validate that track forms a closed loop."""
         if len(waypoints) < 3:
@@ -419,7 +610,9 @@ class BasicTAMToETHMapParser:
             'map_info_str': {
                 'data': f'IQP estimated lap time: {iqp_lap_time:.4f}s; IQP maximum speed: {iqp_max_speed:.4f}m/s; SP estimated lap time: {sp_lap_time:.4f}s; SP maximum speed: {sp_max_speed:.4f}m/s'
             },
-            'est_lap_time': {'data': sp_lap_time if sp_waypoints else iqp_lap_time},
+            'est_lap_time': {
+                'data': sp_lap_time if sp_waypoints else iqp_lap_time
+            },
             'centerline_markers': centerline_markers,
             'centerline_waypoints': centerline_array,
             'global_traj_markers_iqp': iqp_markers,
@@ -434,16 +627,17 @@ class BasicTAMToETHMapParser:
         wpnt_list = []
         for wp in waypoints:
             wpnt_list.append({
-                's_m': {'data': wp['s_m']},
-                'd_m': {'data': wp['d_m']},
-                'd_right': {'data': wp['d_right']},
-                'd_left': {'data': wp['d_left']},
-                'x_m': {'data': wp['x_m']},
-                'y_m': {'data': wp['y_m']},
-                'psi_rad': {'data': wp['psi_rad']},
-                'kappa_radpm': {'data': wp['kappa_radpm']},
-                'vx_mps': {'data': wp['vx_mps']},
-                'ax_mps2': {'data': wp['ax_mps2']}
+                'id': wp['id'],
+                's_m': wp['s_m'],
+                'd_m': wp['d_m'],
+                'x_m': wp['x_m'],
+                'y_m': wp['y_m'],
+                'd_right': wp['d_right'],
+                'd_left': wp['d_left'],
+                'psi_rad': wp['psi_rad'],
+                'kappa_radpm': wp['kappa_radpm'],
+                'vx_mps': wp['vx_mps'],
+                'ax_mps2': wp['ax_mps2']
             })
 
         return {
@@ -467,7 +661,7 @@ class BasicTAMToETHMapParser:
 
             markers.append({
                 'header': {'seq': 0, 'stamp': {'secs': 0, 'nsecs': 0}, 'frame_id': 'map'},
-                'ns': marker_type,
+                'ns': '',
                 'id': i,
                 'type': 2,  # SPHERE
                 'action': 0,
@@ -478,7 +672,12 @@ class BasicTAMToETHMapParser:
                 'scale': {'x': scale, 'y': scale, 'z': scale},
                 'color': {'r': color['r'], 'g': color['g'], 'b': color['b'], 'a': color['a']},
                 'lifetime': {'secs': 0, 'nsecs': 0},
-                'frame_locked': False
+                'frame_locked': False,
+                'points': [],
+                'colors': [],
+                'text': '',
+                'mesh_resource': '',
+                'mesh_use_embedded_materials': False
             })
 
         return {'markers': markers}
@@ -766,6 +965,15 @@ class BasicTAMToETHMapParser:
 
                 print(
                     f"✅ Converted to {len(sp_waypoints)} shortest path waypoints")
+
+                # Interpolate SP to match IQP resolution if needed
+                if len(centerline_waypoints) != len(sp_waypoints):
+                    target_count = len(centerline_waypoints)
+                    print(
+                        f"🔄 Interpolating SP to match centerline/IQP resolution ({target_count} waypoints)...")
+                    sp_waypoints = self._interpolate_to_target_count(
+                        sp_waypoints, target_count, "🟢 SP")
+
                 return sp_waypoints
 
             finally:
@@ -872,6 +1080,15 @@ class BasicTAMToETHMapParser:
 
                 print(
                     f"✅ Converted to {len(racing_waypoints)} racing line waypoints")
+
+                # Interpolate to match centerline resolution if different
+                if len(racing_waypoints) != len(centerline_waypoints):
+                    target_count = len(centerline_waypoints)
+                    print(
+                        f"🔄 Interpolating racing line to match centerline resolution ({target_count} waypoints)...")
+                    racing_waypoints = self._interpolate_to_target_count(
+                        racing_waypoints, target_count, "🔴 Racing Line (IQP)")
+
                 return racing_waypoints
 
             finally:
@@ -969,13 +1186,14 @@ class BasicTAMToETHMapParser:
                     car_data = yaml.safe_load(f)
                 mass = car_data.get('m', car_data.get('mass', mass))
                 wheelbase = car_data.get('wheelbase', wheelbase)
-                max_velocity = car_data.get('v_max', car_data.get('max_velocity', max_velocity))
+                max_velocity = car_data.get(
+                    'v_max', car_data.get('max_velocity', max_velocity))
                 max_steering = car_data.get('max_steering_angle', max_steering)
                 max_accel = car_data.get('a_max', max_accel)
                 max_decel = abs(car_data.get('a_min', -max_decel))
             except:
                 pass
-        
+
         # Store for GGV/ax_max generation
         self._car_max_velocity = max_velocity
         self._car_max_accel = max_accel
@@ -1001,8 +1219,14 @@ class BasicTAMToETHMapParser:
             f.write(f'optim_opts_shortest_path={{"width_opt": 0.5}}\n')
             f.write(
                 f'optim_opts_mincurv={{"width_opt": 0.3, "iqp_iters_min": 3, "iqp_curverror_allowed": 0.01}}\n')
+            # Enable safe trajectory mode with acceleration limits
+            # Use conservative limits that account for the optimizer's tendency to exceed them
+            safe_ax_pos = max_accel * 0.9  # 90% of max for positive acceleration
+            safe_ax_neg = max_decel * 0.9  # 90% of max for braking
+            safe_ay = max_accel * 0.9      # 90% of max for lateral acceleration
+
             f.write(
-                f'optim_opts_mintime={{"width_opt": 0.3, "penalty_delta": 50.0, "penalty_F": 0.01, "mue": 1.0, "n_gauss": 5, "dn": 0.25, "limit_energy": false, "energy_limit": 2.0, "safe_traj": false, "ax_pos_safe": null, "ax_neg_safe": null, "ay_safe": null, "w_tr_reopt": 2.0, "w_veh_reopt": 0.3, "w_add_spl_regr": 0.2, "step_non_reg": 0, "eps_kappa": 0.001}}\n\n')
+                f'optim_opts_mintime={{"width_opt": 0.3, "penalty_delta": 50.0, "penalty_F": 0.01, "mue": 1.0, "n_gauss": 5, "dn": 0.25, "limit_energy": false, "energy_limit": 2.0, "safe_traj": true, "ax_pos_safe": {safe_ax_pos:.2f}, "ax_neg_safe": {safe_ax_neg:.2f}, "ay_safe": {safe_ay:.2f}, "w_tr_reopt": 2.0, "w_veh_reopt": 0.3, "w_add_spl_regr": 0.2, "step_non_reg": 0, "eps_kappa": 0.001}}\n\n')
 
             # Add vehicle parameters for mintime optimization
             f.write(
@@ -1027,50 +1251,60 @@ class BasicTAMToETHMapParser:
         # Use car-specific parameters (set in _create_vehicle_params_file)
         max_velocity = getattr(self, '_car_max_velocity', 10.0)
         max_accel = getattr(self, '_car_max_accel', 3.0)
-        
-        # Lateral acceleration limit (typically 1-1.5x longitudinal for race cars)
-        # For F1Tenth, use similar magnitude as longitudinal
-        max_lateral_accel = max_accel * 1.2
-        
+
+        # Use slightly conservative limits for SP (90%) vs more conservative for IQP (via safe_traj)
+        # The shortest path optimizer doesn't have safe_traj constraints, so it uses these GGV limits directly
+        safe_accel = max_accel * 0.9  # Increased from 0.8 to 0.9 (90%)
+        safe_lateral_accel = safe_accel
+
         with open("ggv.csv", "w") as f:
-            f.write("# v_mps, ax_max_mps2, ay_max_mps2\n")
-            f.write(f"# Generated for {self.car_name}: max_accel={max_accel}m/s², max_velocity={max_velocity}m/s\n")
-            
-            # Generate GGV data with velocity-dependent acceleration limits
-            # Acceleration decreases with velocity due to power/drag limitations
-            for v in np.linspace(0.5, max_velocity * 1.5, 30):
-                # Linear decrease: full accel at low speed, ~60% at max speed
-                velocity_factor = max(0.6, 1.0 - 0.4 * (v / max_velocity))
-                ax_max = max_accel * velocity_factor
-                ay_max = max_lateral_accel * velocity_factor
-                f.write(f"{v:.2f}, {ax_max:.2f}, {ay_max:.2f}\n")
-        
-        print(f"   ✅ Created GGV diagram (max: {max_accel:.1f}m/s² longitudinal, {max_lateral_accel:.1f}m/s² lateral)")
+            f.write("# vx_mps,ax_max_mps2,ay_max_mps2\n")
+
+            # Generate GGV data with mild velocity dependence for realism
+            # Start from low velocity for complete coverage
+            for v in np.linspace(0.5, max_velocity * 1.2, 30):
+                # Slight decrease with velocity (power limit simulation)
+                # But stay conservative to ensure limits are respected
+                if v <= max_velocity:
+                    # 100% at v=0 to 80% at v_max
+                    velocity_factor = 1.0 - 0.2 * (v / max_velocity)
+                else:
+                    velocity_factor = 0.8  # Constant beyond max velocity
+
+                ax_max = safe_accel * max(0.8, velocity_factor)
+                ay_max = safe_lateral_accel * max(0.8, velocity_factor)
+                f.write(f"{v:.2f},{ax_max:.2f},{ay_max:.2f}\n")
+
+        print(
+            f"   ✅ Created GGV diagram (conservative: {safe_accel:.1f}m/s² base, scaled with velocity)")
 
     def _create_ax_max_file(self):
         """Create ax_max curve for optimizer using car-specific limits."""
         # Use car-specific parameters (set in _create_vehicle_params_file)
         max_velocity = getattr(self, '_car_max_velocity', 10.0)
         max_accel = getattr(self, '_car_max_accel', 3.0)
-        max_decel = getattr(self, '_car_max_decel', 3.0)
-        
+
+        # Use slightly conservative limit for SP - increased from 80% to 90%
+        safe_accel = max_accel * 0.9
+
         with open("ax_max_machines.csv", "w") as f:
-            f.write("# v_mps, ax_max_machines_mps2\n")
-            f.write(f"# Generated for {self.car_name}: accel={max_accel}m/s², decel={max_decel}m/s²\n")
-            
-            # Generate acceleration limits for both positive (accel) and negative (brake)
-            for v in np.linspace(0.0, max_velocity * 1.5, 30):
-                # Positive acceleration: decreases with velocity (power limit)
-                velocity_factor = max(0.6, 1.0 - 0.4 * (v / max_velocity))
-                ax_max_accel = max_accel * velocity_factor
-                
-                # Negative acceleration (braking): more constant, slight decrease at very high speed
-                ax_max_brake = -max_decel * max(0.9, 1.0 - 0.1 * (v / max_velocity))
-                
-                # Write both limits (optimizer uses envelope)
-                f.write(f"{v:.2f}, {ax_max_accel:.2f}\n")
-                
-        print(f"   ✅ Created ax_max curve (accel: {max_accel:.1f}m/s², decel: {max_decel:.1f}m/s²)")
+            f.write("# vx_mps,ax_max_mps2\n")
+
+            # Generate acceleration curve with power limitation simulation
+            for v in np.linspace(0.5, max_velocity * 1.2, 30):
+                if v <= max_velocity:
+                    # Power-limited: a_max = P/v, but capped at safe_accel
+                    # This models realistic power constraints
+                    power_factor = safe_accel * max_velocity / 3.0  # Power constant
+                    ax_max = min(safe_accel, power_factor / v)
+                else:
+                    # Beyond max velocity, use reduced acceleration
+                    ax_max = safe_accel * 0.6
+
+                f.write(f"{v:.2f},{ax_max:.2f}\n")
+
+        print(
+            f"   ✅ Created ax_max curve (conservative: {safe_accel:.1f}m/s² base limit with power curve)")
 
     def _convert_optimizer_result_to_waypoints(self, optimized_trajectory: np.ndarray,
                                                reference_waypoints: List[Dict]) -> List[Dict]:
@@ -1097,7 +1331,7 @@ class BasicTAMToETHMapParser:
 
             waypoint = {
                 'id': i,
-                's_m': optimized_trajectory[i, 0],  # arc length
+                's_m': optimized_trajectory[i, 0],  # arc length from optimizer
                 'd_m': 0.0,
                 'x_m': x_m,
                 'y_m': y_m,
@@ -1201,7 +1435,7 @@ class BasicTAMToETHMapParser:
             # Step 1 & 2: Load and scale all data upfront (CLEAN SEPARATION)
             trajectory_data = self.load_and_scale_csv()
 
-            # Step 2.5: Generate shortest path if not disabled
+            # Step 2.5: Generate trajectories if not disabled
             if self.racing_line_type != 'disable':
                 print(f"\n{'='*60}")
                 print(f"🎯 Step 2.5: Generating Optimized Trajectories")
@@ -1218,6 +1452,25 @@ class BasicTAMToETHMapParser:
                     print(f"\n✅ Trajectory generation complete!")
                 else:
                     print(f"\n⚠️  Racing line generation failed, using CSV IQP data")
+
+            # Step 2.9: Recalculate arc lengths for all trajectories
+            # This fixes position tracking errors while maintaining optimizer convergence
+            print(f"\n{'='*60}")
+            print(f"🔧 Final Step: Recalculating Arc Lengths")
+            print(f"{'='*60}")
+            print(f"  ℹ️  Recalculating s_m from actual geometric distances")
+            print(f"  ℹ️  This ensures accurate position tracking during runtime")
+            
+            trajectory_data['centerline'] = self._recalculate_arc_length(
+                trajectory_data['centerline'], "🔵 Centerline")
+            
+            if trajectory_data.get('iqp'):
+                trajectory_data['iqp'] = self._recalculate_arc_length(
+                    trajectory_data['iqp'], "🔴 IQP (racing line)")
+            
+            if trajectory_data.get('sp'):
+                trajectory_data['sp'] = self._recalculate_arc_length(
+                    trajectory_data['sp'], "🟢 SP (shortest path)")
 
             # Step 3: Create output directory
             print(f"\n{'='*60}")

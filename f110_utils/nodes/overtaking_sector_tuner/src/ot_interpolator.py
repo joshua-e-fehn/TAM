@@ -117,13 +117,14 @@ class OvertakingInterpolator:
         # assert params.doubles[0].name == 'yeet_factor'
         self.yeet_factor = params.doubles[0].value
         self.spline_len = int(params.doubles[1].value)
-        
+
         # CRITICAL: Update sectors_params dict with new values so logging shows correct values
         self.sectors_params['yeet_factor'] = self.yeet_factor
         self.sectors_params['spline_len'] = self.spline_len
-        
+
         self.need_to_reinterpolate = True
-        rospy.loginfo(f"{self.log_name} Updated params: yeet_factor={self.yeet_factor}, spline_len={self.spline_len}")
+        rospy.loginfo(
+            f"{self.log_name} Updated params: yeet_factor={self.yeet_factor}, spline_len={self.spline_len}")
         rospy.loginfo(self.sectors_params)
 
     def dyn_speed_param_cb(self, params: Config):
@@ -151,7 +152,8 @@ class OvertakingInterpolator:
             sector = f"Overtaking_sector{i}"
             if self.sectors_params[sector]['ot_flag']:
                 if self.prev_sector_overtaking(i):
-                    schedule[self.sectors_params[sector]['start']:self.sectors_params[sector]['start']+switching_sec_len-1] = 1
+                    schedule[self.sectors_params[sector]['start']
+                        :self.sectors_params[sector]['start']+switching_sec_len-1] = 1
                 else:
                     for j in range(switching_sec_len):
                         schedule[self.sectors_params[sector]['start']+j] = self.interpolating_function(
@@ -219,24 +221,27 @@ class OvertakingInterpolator:
                 # find direction of global
                 coordinate = np.array(
                     [self.glb_wpnts_scaled.wpnts[i].x_m, self.glb_wpnts_scaled.wpnts[i].y_m])
+                s_m_current = self.glb_wpnts_scaled.wpnts[i].s_m
                 direction = np.array(
-                    [self.glb_spline_x(i/10, 1), self.glb_spline_y(i/10, 1)])
+                    [self.glb_spline_x(s_m_current, 1), self.glb_spline_y(s_m_current, 1)])
                 direction /= np.linalg.norm(direction)
 
-                # find nearest point
+                # find nearest point on SP trajectory
                 nearest_p_idx = np.argmin(
                     (np.linalg.norm((self.ot_spline_np-coordinate), axis=1)))
 
+                # Get s_m of nearest point from SP waypoints
+                start_s_m = self.glb_wpnts_sp_og.wpnts[nearest_p_idx].s_m
+
                 # find point perpendicular
-                start_idx = nearest_p_idx
-                idx_fwd = start_idx
-                idx_bwd = start_idx
+                s_m_fwd = start_s_m
+                s_m_bwd = start_s_m
                 min_perp_fwd = None
                 min_perp_bwd = None
                 #  look forward
                 for _ in range(50):
                     point_on_mindist = np.array(
-                        [self.ot_spline_x(idx_fwd/10), self.ot_spline_y(idx_fwd/10)])
+                        [self.ot_spline_x(s_m_fwd), self.ot_spline_y(s_m_fwd)])
                     vector = point_on_mindist-coordinate
                     vector /= np.linalg.norm(vector)
                     perp_fwd = np.abs(np.dot(direction, vector))
@@ -249,11 +254,11 @@ class OvertakingInterpolator:
                             point_fwd = copy.deepcopy(point_on_mindist)
                         else:
                             break
-                    idx_fwd += 0.01
+                    s_m_fwd += 0.001  # Increment by 1mm in arc length
                 # look backward
                 for _ in range(50):
                     point_on_mindist = np.array(
-                        [self.ot_spline_x(idx_bwd/10), self.ot_spline_y(idx_bwd/10)])
+                        [self.ot_spline_x(s_m_bwd), self.ot_spline_y(s_m_bwd)])
                     vector = point_on_mindist-coordinate
                     vector /= np.linalg.norm(vector)
                     perp_bwd = np.abs(np.dot(direction, vector))
@@ -267,14 +272,14 @@ class OvertakingInterpolator:
                         else:
                             break
 
-                    idx_bwd -= 0.01
+                    s_m_bwd -= 0.001  # Decrement by 1mm in arc length
 
                 if min_perp_bwd < min_perp_fwd:
                     point_chosen = point_bwd
-                    idx_chosen = idx_bwd
+                    s_m_chosen = s_m_bwd
                 else:
                     point_chosen = point_fwd
-                    idx_chosen = idx_fwd
+                    s_m_chosen = s_m_fwd
 
                 # interpolate
                 new_point = schedule[i]*point_chosen + \
@@ -282,7 +287,7 @@ class OvertakingInterpolator:
 
                 # interpolate for speed
                 # speed_scaling = self.glb_wpnts_scaled.wpnts[i].vx_mps/self.glb_wpnts_og.wpnts[i].vx_mps
-                # new_point_speed = schedule[i]*self.ot_spline_speed(idx_chosen/10) + (1-schedule[i])*self.glb_wpnts_og.wpnts[i].vx_mps
+                # new_point_speed = schedule[i]*self.ot_spline_speed(s_m_chosen) + (1-schedule[i])*self.glb_wpnts_og.wpnts[i].vx_mps
                 # new_point_speed *= speed_scaling*self.yeet_factor
                 new_point_speed = self.glb_wpnts_scaled.wpnts[i].vx_mps * \
                     self.yeet_factor
@@ -325,20 +330,21 @@ class OvertakingInterpolator:
         spline_y = Spline(coords[:i, 0], coords[:i, 2])
         spline_speed = Spline(coords[:i, 0], coords[:i, 3])
 
-        # rewrite whole array
+        # rewrite whole array with 0.1m spacing
         self.interp_wpnt = WpntArray()
         wpnts = []
         for i in range(0, int(tot_len*10)):
+            s_m_val = i / 10.0  # Convert index to arc length (0.1m spacing)
             new_wpnt = Wpnt()
             new_wpnt.id = i
-            new_wpnt.x_m = spline_x(i/10)
-            new_wpnt.y_m = spline_y(i/10)
-            new_wpnt.vx_mps = spline_speed(i/10)
+            new_wpnt.x_m = spline_x(s_m_val)
+            new_wpnt.y_m = spline_y(s_m_val)
+            new_wpnt.vx_mps = spline_speed(s_m_val)
             # curvature
-            x_d = spline_x(i/10, 1)
-            x_dd = spline_x(i/10, 2)
-            y_d = spline_y(i/10, 1)
-            y_dd = spline_y(i/10, 2)
+            x_d = spline_x(s_m_val, 1)
+            x_dd = spline_x(s_m_val, 2)
+            y_d = spline_y(s_m_val, 1)
+            y_dd = spline_y(s_m_val, 2)
             curvature = (
                 np.abs(x_d * y_dd - y_d * x_dd)/pow((x_d**2 + y_d ** 2), 1.5)
             )

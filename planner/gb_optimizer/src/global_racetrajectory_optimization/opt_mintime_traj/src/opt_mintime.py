@@ -72,7 +72,8 @@ def opt_mintime(reftrack: np.ndarray,
 
         # relcalculate splines
         refpath_cl = np.vstack((reftrack[:, :2], reftrack[0, :2]))
-        coeffs_x, coeffs_y, a_interp, normvectors = tph.calc_splines.calc_splines(path=refpath_cl)
+        coeffs_x, coeffs_y, a_interp, normvectors = tph.calc_splines.calc_splines(
+            path=refpath_cl)
 
     else:
         discr_points = np.arange(reftrack.shape[0])
@@ -98,7 +99,8 @@ def opt_mintime(reftrack: np.ndarray,
 
     # close track
     kappa_refline_cl = np.append(kappa_refline, kappa_refline[0])
-    discr_points_cl = np.append(discr_points, no_points_orig)  # add virtual index of last/first point for closed track
+    # add virtual index of last/first point for closed track
+    discr_points_cl = np.append(discr_points, no_points_orig)
     w_tr_left_cl = np.append(reftrack[:, 3], reftrack[0, 3])
     w_tr_right_cl = np.append(reftrack[:, 2], reftrack[0, 2])
 
@@ -117,11 +119,14 @@ def opt_mintime(reftrack: np.ndarray,
     s_opt = np.asarray(discr_points_cl) * h
 
     # interpolate curvature of reference line in terms of steps
-    kappa_interp = ca.interpolant('kappa_interp', 'linear', [steps], kappa_refline_cl)
+    kappa_interp = ca.interpolant('kappa_interp', 'linear', [
+                                  steps], kappa_refline_cl)
 
     # interpolate track width (left and right to reference line) in terms of steps
-    w_tr_left_interp = ca.interpolant('w_tr_left_interp', 'linear', [steps], w_tr_left_cl)
-    w_tr_right_interp = ca.interpolant('w_tr_right_interp', 'linear', [steps], w_tr_right_cl)
+    w_tr_left_interp = ca.interpolant(
+        'w_tr_left_interp', 'linear', [steps], w_tr_left_cl)
+    w_tr_right_interp = ca.interpolant(
+        'w_tr_right_interp', 'linear', [steps], w_tr_right_cl)
 
     # describe friction coefficients from friction map with linear equations or gaussian basis functions
     if pars["optim_opts"]["var_friction"] is not None:
@@ -215,16 +220,20 @@ def opt_mintime(reftrack: np.ndarray,
     if pars["pwr_params_mintime"]["pwr_behavior"]:
 
         # Initialize e-machine object
-        machine = opt_mintime_traj.powertrain_src.src.EMachine.EMachineModel(pwr_pars=pars["pwr_params_mintime"])
+        machine = opt_mintime_traj.powertrain_src.src.EMachine.EMachineModel(
+            pwr_pars=pars["pwr_params_mintime"])
 
         # Initialize battery object
-        batt = opt_mintime_traj.powertrain_src.src.Battery.BattModel(pwr_pars=pars["pwr_params_mintime"])
+        batt = opt_mintime_traj.powertrain_src.src.Battery.BattModel(
+            pwr_pars=pars["pwr_params_mintime"])
 
         # Initialize inverter object
-        inverter = opt_mintime_traj.powertrain_src.src.Inverter.InverterModel(pwr_pars=pars["pwr_params_mintime"])
+        inverter = opt_mintime_traj.powertrain_src.src.Inverter.InverterModel(
+            pwr_pars=pars["pwr_params_mintime"])
 
         # Initialize radiator objects (2 in total)
-        radiators = opt_mintime_traj.powertrain_src.src.Radiators.RadiatorModel(pwr_pars=pars["pwr_params_mintime"])
+        radiators = opt_mintime_traj.powertrain_src.src.Radiators.RadiatorModel(
+            pwr_pars=pars["pwr_params_mintime"])
 
         # scaling factors for state variables
         x_s = np.array([v_s, beta_s, omega_z_s, n_s, xi_s,
@@ -296,10 +305,14 @@ def opt_mintime(reftrack: np.ndarray,
     f_xdrag = pars["veh_params"]["dragcoeff"] * v ** 2
 
     # rolling resistance forces [N]
-    f_xroll_fl = 0.5 * tire["c_roll"] * mass * g * veh["wheelbase_rear"] / veh["wheelbase"]
-    f_xroll_fr = 0.5 * tire["c_roll"] * mass * g * veh["wheelbase_rear"] / veh["wheelbase"]
-    f_xroll_rl = 0.5 * tire["c_roll"] * mass * g * veh["wheelbase_front"] / veh["wheelbase"]
-    f_xroll_rr = 0.5 * tire["c_roll"] * mass * g * veh["wheelbase_front"] / veh["wheelbase"]
+    f_xroll_fl = 0.5 * tire["c_roll"] * mass * \
+        g * veh["wheelbase_rear"] / veh["wheelbase"]
+    f_xroll_fr = 0.5 * tire["c_roll"] * mass * \
+        g * veh["wheelbase_rear"] / veh["wheelbase"]
+    f_xroll_rl = 0.5 * tire["c_roll"] * mass * g * \
+        veh["wheelbase_front"] / veh["wheelbase"]
+    f_xroll_rr = 0.5 * tire["c_roll"] * mass * g * \
+        veh["wheelbase_front"] / veh["wheelbase"]
     f_xroll = tire["c_roll"] * mass * g
 
     # static normal tire forces [N]
@@ -355,17 +368,22 @@ def opt_mintime(reftrack: np.ndarray,
                                                 * (tire["B_rear"] * alpha_rr - ca.atan(tire["B_rear"] * alpha_rr)))))
 
     # longitudinal tire forces [N]
-    f_x_fl = 0.5 * f_drive * veh["k_drive_front"] + 0.5 * f_brake * veh["k_brake_front"] - f_xroll_fl
-    f_x_fr = 0.5 * f_drive * veh["k_drive_front"] + 0.5 * f_brake * veh["k_brake_front"] - f_xroll_fr
-    f_x_rl = 0.5 * f_drive * (1 - veh["k_drive_front"]) + 0.5 * f_brake * (1 - veh["k_brake_front"]) - f_xroll_rl
-    f_x_rr = 0.5 * f_drive * (1 - veh["k_drive_front"]) + 0.5 * f_brake * (1 - veh["k_brake_front"]) - f_xroll_rr
+    f_x_fl = 0.5 * f_drive * veh["k_drive_front"] + \
+        0.5 * f_brake * veh["k_brake_front"] - f_xroll_fl
+    f_x_fr = 0.5 * f_drive * veh["k_drive_front"] + \
+        0.5 * f_brake * veh["k_brake_front"] - f_xroll_fr
+    f_x_rl = 0.5 * f_drive * (1 - veh["k_drive_front"]) + \
+        0.5 * f_brake * (1 - veh["k_brake_front"]) - f_xroll_rl
+    f_x_rr = 0.5 * f_drive * (1 - veh["k_drive_front"]) + \
+        0.5 * f_brake * (1 - veh["k_brake_front"]) - f_xroll_rr
 
     # longitudinal acceleration [m/s²]
     ax = (f_x_rl + f_x_rr + (f_x_fl + f_x_fr) * ca.cos(delta) - (f_y_fl + f_y_fr) * ca.sin(delta)
           - pars["veh_params"]["dragcoeff"] * v ** 2) / mass
 
     # lateral acceleration [m/s²]
-    ay = ((f_x_fl + f_x_fr) * ca.sin(delta) + f_y_rl + f_y_rr + (f_y_fl + f_y_fr) * ca.cos(delta)) / mass
+    ay = ((f_x_fl + f_x_fr) * ca.sin(delta) + f_y_rl +
+          f_y_rr + (f_y_fl + f_y_fr) * ca.cos(delta)) / mass
 
     # ------------------------------------------------------------------------------------------------------------------
     # POWERTRAIN BEHAVIOR ----------------------------------------------------------------------------------------------
@@ -422,11 +440,13 @@ def opt_mintime(reftrack: np.ndarray,
 
     # model equations for two track model (ordinary differential equations)
     dv = (sf / mass) * ((f_x_rl + f_x_rr) * ca.cos(beta) + (f_x_fl + f_x_fr) * ca.cos(delta - beta)
-                        + (f_y_rl + f_y_rr) * ca.sin(beta) - (f_y_fl + f_y_fr) * ca.sin(delta - beta)
+                        + (f_y_rl + f_y_rr) * ca.sin(beta) -
+                        (f_y_fl + f_y_fr) * ca.sin(delta - beta)
                         - f_xdrag * ca.cos(beta))
 
     dbeta = sf * (-omega_z + (-(f_x_rl + f_x_rr) * ca.sin(beta) + (f_x_fl + f_x_fr) * ca.sin(delta - beta)
-                              + (f_y_rl + f_y_rr) * ca.cos(beta) + (f_y_fl + f_y_fr) * ca.cos(delta - beta)
+                              + (f_y_rl + f_y_rr) * ca.cos(beta) +
+                              (f_y_fl + f_y_fr) * ca.cos(delta - beta)
                               + f_xdrag * ca.sin(beta)) / (mass * v))
 
     domega_z = (sf / veh["I_z"]) * ((f_x_rr - f_x_rl) * veh["track_width_rear"] / 2
@@ -481,12 +501,18 @@ def opt_mintime(reftrack: np.ndarray,
 
     delta_min = -veh["delta_max"] / delta_s         # min. steer angle [rad]
     delta_max = veh["delta_max"] / delta_s          # max. steer angle [rad]
-    f_drive_min = 0.0                               # min. longitudinal drive force [N]
-    f_drive_max = veh["f_drive_max"] / f_drive_s    # max. longitudinal drive force [N]
-    f_brake_min = -veh["f_brake_max"] / f_brake_s   # min. longitudinal brake force [N]
-    f_brake_max = 0.0                               # max. longitudinal brake force [N]
-    gamma_y_min = -np.inf                           # min. lateral wheel load transfer [N]
-    gamma_y_max = np.inf                            # max. lateral wheel load transfer [N]
+    # min. longitudinal drive force [N]
+    f_drive_min = 0.0
+    # max. longitudinal drive force [N]
+    f_drive_max = veh["f_drive_max"] / f_drive_s
+    # min. longitudinal brake force [N]
+    f_brake_min = -veh["f_brake_max"] / f_brake_s
+    # max. longitudinal brake force [N]
+    f_brake_max = 0.0
+    # min. lateral wheel load transfer [N]
+    gamma_y_min = -np.inf
+    # max. lateral wheel load transfer [N]
+    gamma_y_max = np.inf
 
     # ------------------------------------------------------------------------------------------------------------------
     # STATE BOUNDARIES -------------------------------------------------------------------------------------------------
@@ -494,12 +520,16 @@ def opt_mintime(reftrack: np.ndarray,
 
     v_min = 1.0 / v_s                               # min. velocity [m/s]
     v_max = pars["veh_params"]["v_max"] / v_s       # max. velocity [m/s]
-    beta_min = -0.5 * np.pi / beta_s                # min. side slip angle [rad]
-    beta_max = 0.5 * np.pi / beta_s                 # max. side slip angle [rad]
+    # min. side slip angle [rad]
+    beta_min = -0.5 * np.pi / beta_s
+    # max. side slip angle [rad]
+    beta_max = 0.5 * np.pi / beta_s
     omega_z_min = - 0.5 * np.pi / omega_z_s         # min. yaw rate [rad/s]
     omega_z_max = 0.5 * np.pi / omega_z_s           # max. yaw rate [rad/s]
-    xi_min = - 0.5 * np.pi / xi_s                   # min. relative angle to tangent on reference line [rad]
-    xi_max = 0.5 * np.pi / xi_s                     # max. relative angle to tangent on reference line [rad]
+    # min. relative angle to tangent on reference line [rad]
+    xi_min = - 0.5 * np.pi / xi_s
+    # max. relative angle to tangent on reference line [rad]
+    xi_max = 0.5 * np.pi / xi_s
 
     # ------------------------------------------------------------------------------------------------------------------
     # INITIAL GUESS FOR DECISION VARIABLES -----------------------------------------------------------------------------
@@ -511,7 +541,8 @@ def opt_mintime(reftrack: np.ndarray,
     # ------------------------------------------------------------------------------------------------------------------
 
     # continuous time dynamics
-    f_dyn = ca.Function('f_dyn', [x, u, kappa], [dx, sf], ['x', 'u', 'kappa'], ['dx', 'sf'])
+    f_dyn = ca.Function('f_dyn', [x, u, kappa], [dx, sf], [
+                        'x', 'u', 'kappa'], ['dx', 'sf'])
 
     # longitudinal tire forces [N]
     f_fx = ca.Function('f_fx', [x, u], [f_x_fl, f_x_fr, f_x_rl, f_x_rr],
@@ -664,20 +695,23 @@ def opt_mintime(reftrack: np.ndarray,
             # add contribution to scaling factor (for calculating lap time)
             sf_opt.append(B[j] * qj * h[k])
 
-        # calculate used energy 
+        # calculate used energy
         dt_opt.append(sf_opt[0] + sf_opt[1] + sf_opt[2])
         if pars["pwr_params_mintime"]["pwr_behavior"]:
             # Add battery output power [kW] and battery loss power [kW] to retireve entire system power [W] and
             # multiply by dt for energy consumption [Ws]
-            ec_opt.append((batt.f_nlp(Xk, Uk)[0] + batt.f_nlp(Xk, Uk)[1]) * 1000 * dt_opt[-1])
+            ec_opt.append(
+                (batt.f_nlp(Xk, Uk)[0] + batt.f_nlp(Xk, Uk)[1]) * 1000 * dt_opt[-1])
         else:
             ec_opt.append(Xk[0] * v_s * Uk[1] * f_drive_s * dt_opt[-1])
 
         # add new decision variables for state at end of the collocation interval
         Xk = ca.MX.sym('X_' + str(k + 1), nx)
         w.append(Xk)
-        n_min = (-w_tr_right_interp(k + 1) + pars["optim_opts"]["width_opt"] / 2.0) / n_s
-        n_max = (w_tr_left_interp(k + 1) - pars["optim_opts"]["width_opt"] / 2.0) / n_s
+        n_min = (-w_tr_right_interp(k + 1) +
+                 pars["optim_opts"]["width_opt"] / 2.0) / n_s
+        n_max = (w_tr_left_interp(k + 1) -
+                 pars["optim_opts"]["width_opt"] / 2.0) / n_s
         if pars["pwr_params_mintime"]["pwr_behavior"]:
             lbw.append([v_min, beta_min, omega_z_min, n_min, xi_min,
                         machine.temp_min, batt.temp_min, inverter.temp_min,
@@ -734,26 +768,36 @@ def opt_mintime(reftrack: np.ndarray,
             # gaussian basis functions
             sigma = 2.0 * center_dist[k + 1, 0]
             n_gauss = pars["optim_opts"]["n_gauss"]
-            n_q = np.linspace(-n_gauss, n_gauss, 2 * n_gauss + 1) * center_dist[k + 1, 0]
+            n_q = np.linspace(-n_gauss, n_gauss, 2 *
+                              n_gauss + 1) * center_dist[k + 1, 0]
 
             gauss_basis = []
             for i in range(2 * n_gauss + 1):
-                gauss_basis.append(ca.exp(-(Xk[3] * n_s - n_q[i]) ** 2 / (2 * (sigma ** 2))))
+                gauss_basis.append(
+                    ca.exp(-(Xk[3] * n_s - n_q[i]) ** 2 / (2 * (sigma ** 2))))
             gauss_basis = ca.vertcat(*gauss_basis)
 
-            mue_fl = ca.dot(w_mue_fl[k + 1, :-1], gauss_basis) + w_mue_fl[k + 1, -1]
-            mue_fr = ca.dot(w_mue_fr[k + 1, :-1], gauss_basis) + w_mue_fr[k + 1, -1]
-            mue_rl = ca.dot(w_mue_rl[k + 1, :-1], gauss_basis) + w_mue_rl[k + 1, -1]
-            mue_rr = ca.dot(w_mue_rr[k + 1, :-1], gauss_basis) + w_mue_rr[k + 1, -1]
+            mue_fl = ca.dot(w_mue_fl[k + 1, :-1],
+                            gauss_basis) + w_mue_fl[k + 1, -1]
+            mue_fr = ca.dot(w_mue_fr[k + 1, :-1],
+                            gauss_basis) + w_mue_fr[k + 1, -1]
+            mue_rl = ca.dot(w_mue_rl[k + 1, :-1],
+                            gauss_basis) + w_mue_rl[k + 1, -1]
+            mue_rr = ca.dot(w_mue_rr[k + 1, :-1],
+                            gauss_basis) + w_mue_rr[k + 1, -1]
 
         else:
             raise ValueError("No friction coefficients are available!")
 
         # path constraint: Kamm's Circle for each wheel
-        g.append(((f_x_flk / (mue_fl * f_z_flk)) ** 2 + (f_y_flk / (mue_fl * f_z_flk)) ** 2))
-        g.append(((f_x_frk / (mue_fr * f_z_frk)) ** 2 + (f_y_frk / (mue_fr * f_z_frk)) ** 2))
-        g.append(((f_x_rlk / (mue_rl * f_z_rlk)) ** 2 + (f_y_rlk / (mue_rl * f_z_rlk)) ** 2))
-        g.append(((f_x_rrk / (mue_rr * f_z_rrk)) ** 2 + (f_y_rrk / (mue_rr * f_z_rrk)) ** 2))
+        g.append(((f_x_flk / (mue_fl * f_z_flk)) ** 2 +
+                 (f_y_flk / (mue_fl * f_z_flk)) ** 2))
+        g.append(((f_x_frk / (mue_fr * f_z_frk)) ** 2 +
+                 (f_y_frk / (mue_fr * f_z_frk)) ** 2))
+        g.append(((f_x_rlk / (mue_rl * f_z_rlk)) ** 2 +
+                 (f_y_rlk / (mue_rl * f_z_rlk)) ** 2))
+        g.append(((f_x_rrk / (mue_rr * f_z_rrk)) ** 2 +
+                 (f_y_rrk / (mue_rr * f_z_rrk)) ** 2))
         lbg.append([0.0] * 4)
         ubg.append([1.0] * 4)
 
@@ -772,9 +816,12 @@ def opt_mintime(reftrack: np.ndarray,
         # path constraint: actor dynamic
         if k > 0:
             sigma = (1 - kappa_interp(k) * Xk[3] * n_s) / (Xk[0] * v_s)
-            g.append((Uk - w[1 + (k - 1) * (nx - nx_pwr)]) / (h[k - 1] * sigma))
-            lbg.append([delta_min / (veh["t_delta"]), -np.inf, f_brake_min / (veh["t_brake"]), -np.inf])
-            ubg.append([delta_max / (veh["t_delta"]), f_drive_max / (veh["t_drive"]), np.inf, np.inf])
+            g.append((Uk - w[1 + (k - 1) * (nx - nx_pwr)]) /
+                     (h[k - 1] * sigma))
+            lbg.append([delta_min / (veh["t_delta"]), -np.inf,
+                       f_brake_min / (veh["t_brake"]), -np.inf])
+            ubg.append([delta_max / (veh["t_delta"]),
+                       f_drive_max / (veh["t_drive"]), np.inf, np.inf])
 
         # path constraint: safe trajectories with acceleration ellipse
         if pars["optim_opts"]["safe_traj"]:
@@ -806,8 +853,10 @@ def opt_mintime(reftrack: np.ndarray,
     # boundary constraint: start states = final states
     g.append(w[0] - Xk)
     if pars["pwr_params_mintime"]["pwr_behavior"]:
-        lbg.append([0.0, 0.0, 0.0, 0.0, 0.0, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf])
-        ubg.append([0.0, 0.0, 0.0, 0.0, 0.0, np.inf, np.inf, np.inf, np.inf, np.inf, np.inf])
+        lbg.append([0.0, 0.0, 0.0, 0.0, 0.0, -np.inf, -
+                   np.inf, -np.inf, -np.inf, -np.inf, -np.inf])
+        ubg.append([0.0, 0.0, 0.0, 0.0, 0.0, np.inf,
+                   np.inf, np.inf, np.inf, np.inf, np.inf])
     else:
         lbg.append([0.0, 0.0, 0.0, 0.0, 0.0])
         ubg.append([0.0, 0.0, 0.0, 0.0, 0.0])
@@ -835,7 +884,8 @@ def opt_mintime(reftrack: np.ndarray,
     Jp_f = ca.dot(Jp_f, Jp_f)
 
     # formulate objective
-    J = J + pars["optim_opts"]["penalty_F"] * Jp_f + pars["optim_opts"]["penalty_delta"] * Jp_delta
+    J = J + pars["optim_opts"]["penalty_F"] * Jp_f + \
+        pars["optim_opts"]["penalty_delta"] * Jp_delta
 
     # concatenate NLP vectors
     w = ca.vertcat(*w)
@@ -870,7 +920,7 @@ def opt_mintime(reftrack: np.ndarray,
     # solver options
     opts = {"expand": True,
             "verbose": print_debug,
-            "ipopt.max_iter": 2000,
+            "ipopt.max_iter": 5000,  # Increased from 2000 for complex tracks with safety constraints
             "ipopt.tol": 1e-7}
 
     # solver options for warm start
@@ -889,12 +939,14 @@ def opt_mintime(reftrack: np.ndarray,
             lam_x0 = np.loadtxt(os.path.join(export_path, 'lam_x0.csv'))
             lam_g0 = np.loadtxt(os.path.join(export_path, 'lam_g0.csv'))
         except IOError:
-            print('\033[91m' + 'WARNING: Failed to load warm start files!' + '\033[0m')
+            print(
+                '\033[91m' + 'WARNING: Failed to load warm start files!' + '\033[0m')
             sys.exit(1)
 
     # check warm start files
     if pars["optim_opts"]["warm_start"] and not len(w0) == len(lbw):
-        print('\033[91m' + 'WARNING: Warm start files do not fit to the dimension of the NLP!' + '\033[0m')
+        print(
+            '\033[91m' + 'WARNING: Warm start files do not fit to the dimension of the NLP!' + '\033[0m')
         sys.exit(1)
 
     # create solver instance
@@ -909,7 +961,8 @@ def opt_mintime(reftrack: np.ndarray,
 
     # solve NLP
     if pars["optim_opts"]["warm_start"]:
-        sol = solver(x0=w0, lbx=lbw, ubx=ubw, lbg=lbg, ubg=ubg, lam_x0=lam_x0, lam_g0=lam_g0)
+        sol = solver(x0=w0, lbx=lbw, ubx=ubw, lbg=lbg,
+                     ubg=ubg, lam_x0=lam_x0, lam_g0=lam_g0)
     else:
         sol = solver(x0=w0, lbx=lbw, ubx=ubw, lbg=lbg, ubg=ubg)
 
