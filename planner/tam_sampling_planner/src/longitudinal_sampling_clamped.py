@@ -741,23 +741,34 @@ class LongitudinalSampling:
 
         # set end conditions
         if raceline_tendency:
-            s_dot_end_max = s_dot_end_rl * self.params.v_sampling_scale
-            s_dot_end_min = self.params.relative_s_dot_min_percentage * s_dot_end_max
+            s_dot_end_max = min(
+                s_dot_end_rl * self.params.v_sampling_scale, self.params.max_velocity)
+            s_dot_end_min = max(
+                self.params.relative_s_dot_min_percentage * s_dot_end_max, self.params.s_dot_end_min)
             # Dense sampling around raceline
-            s_dot_dense_end_values = np.linspace(
-                self.params.s_dot_dense_min + s_dot_end_rl, self.params.s_dot_dense_max + s_dot_end_rl, self.params.s_dot_dense_samples)
+            s_dot_dense_end_values = np.linspace(max(self.params.s_dot_dense_min + s_dot_end_rl, self.params.s_dot_end_min), min(
+                self.params.s_dot_dense_max + s_dot_end_rl, self.params.max_velocity), self.params.s_dot_dense_samples)
             s_dot_coarse_end_values = np.arange(
                 s_dot_end_min, s_dot_end_max, self.params.s_dot_discretization)
             s_dot_end_values_tmp = np.concatenate(
                 (s_dot_dense_end_values, s_dot_coarse_end_values))
         else:
-            s_dot_end_max = s_dot_start + self.params.s_dot_max_positive_delta
+            s_dot_end_max = min(
+                s_dot_start + self.params.s_dot_max_positive_delta, self.params.max_velocity)
             s_dot_end_values_tmp = np.arange(
                 self.params.s_dot_end_min, s_dot_end_max, self.params.s_dot_discretization)
 
         # always sample raceline s_dot end and target speed
+        # CRITICAL: Clamp to respect max_velocity limit
         s_dot_end_values = np.concatenate(
             (s_dot_end_values_tmp, [max(V_target, 1.0), s_dot_end_rl]))
+        # Start | Part of neg time horizon fix
+        s_dot_end_values = np.minimum(
+            s_dot_end_values, self.params.max_velocity)
+
+        # Remove duplicates that might result from clamping
+        s_dot_end_values = np.unique(s_dot_end_values)
+        # End | Part of neg time horizon fix
 
         # assign array sizes depending on number of s_dot end values
         target_shape = (
@@ -778,11 +789,31 @@ class LongitudinalSampling:
 
             # set end acceleration between 0 and raceline acceleration dependent on sampled velocity
             s_ddot_end = np.interp(s_dot_end, [0.0, s_dot_end_rl], [
-                                   0.0, s_ddot_end_rl])
+                0.0, s_ddot_end_rl])
 
             # transform s_ddot(t) to s_ddot(s)
+            # CRITICAL: This transformation amplifies derivatives when velocity is low
+            # s_pprime = s_ddot / s_dot can become very large when s_dot is small
             s_pprime_start = s_ddot_start / s_dot_start
             s_pprime_end = s_ddot_end / s_dot_end
+
+            # Start | Part of neg time horizon fix
+            # SAFETY: Clamp derivatives to prevent polynomial overshoot
+            # A cubic polynomial with unconstrained derivatives can create negative valleys
+            # even when both endpoints are positive
+            # Rule of thumb: |s_pprime| should be less than velocity_change / distance
+            max_safe_derivative = 2.0 * \
+                abs(s_dot_end - s_dot_start) / max(s_end_loc, 1.0)
+            if abs(s_pprime_start) > max_safe_derivative or abs(s_pprime_end) > max_safe_derivative:
+                rospy.logwarn_throttle(5.0,
+                                       f"LongitudinalSampling: Large derivatives detected (s_pprime_start={s_pprime_start:.3f}, "
+                                       f"s_pprime_end={s_pprime_end:.3f}, max_safe={max_safe_derivative:.3f}). "
+                                       f"This can cause negative velocity valleys. Clamping derivatives.")
+                s_pprime_start = np.clip(
+                    s_pprime_start, -max_safe_derivative, max_safe_derivative)
+                s_pprime_end = np.clip(
+                    s_pprime_end, -max_safe_derivative, max_safe_derivative)
+            # End | Part of neg time horizon fix
 
             # do the same for the raceline
             s_pprime_start_rl = postprocessed_raceline["s_ddot_post"][0] / \
@@ -798,31 +829,116 @@ class LongitudinalSampling:
                     [0, 1, 2 * s_end_loc, 3 * s_end_loc**2],
                 ]
             )
+
+            # Start | Part of neg time horizon fix
+            # Track whether we're using absolute or relative sampling for this trajectory
+            use_absolute_sampling = False
+            # End | Part of neg time horizon fix
+
             if raceline_tendency:  # sample curves relative to raceline
-                b = np.array(
-                    [
-                        s_dot_start - postprocessed_raceline["s_dot_post"][0],
+                # Start | Part of neg time horizon fix
+                # CRITICAL: When velocities differ significantly from raceline,
+                # relative sampling creates extreme negative values that cubic
+                # polynomials can't handle (e.g., 1.0 - 8.0 = -7.0 m/s relative)
+                v_start_rel = s_dot_start - \
+                    postprocessed_raceline["s_dot_post"][0]
+                v_end_rel = s_dot_end - s_dot_end_rl
+
+                # If relative velocities are extreme (more than 70% difference),
+                # switch to absolute sampling for this trajectory
+                raceline_v_start = postprocessed_raceline["s_dot_post"][0]
+                raceline_v_end = s_dot_end_rl
+                if abs(v_start_rel) > 0.7 * raceline_v_start or abs(v_end_rel) > 0.7 * raceline_v_end:
+                    # rospy.logwarn_throttle(5.0,
+                    #                        f"LongitudinalSampling: Large velocity difference from raceline detected "
+                    #                        f"(v_start={s_dot_start:.2f} vs rl={raceline_v_start:.2f}, "
+                    #                        f"v_end={s_dot_end:.2f} vs rl={raceline_v_end:.2f}). "
+                    #                        f"Switching to absolute sampling for this trajectory to avoid negative velocities.")
+                    # Use absolute sampling instead
+                    use_absolute_sampling = True
+                    b = np.array([s_dot_start,
+                                  s_pprime_start,
+                                  s_dot_end,
+                                  0.0])  # Zero end derivative for stability
+                else:
+                    # Use relative sampling
+                    b = np.array([
+                        v_start_rel,
                         s_pprime_start - s_pprime_start_rl,
-                        s_dot_end - s_dot_end_rl,
+                        v_end_rel,
                         s_pprime_end - s_pprime_end_rl,
-                    ]
-                )
+                    ])
             else:  # sample curves absolute
+                use_absolute_sampling = True
+                # End | Part of neg time horizon fix
                 b = np.array([s_dot_start,
                               s_pprime_start,
                               s_dot_end,
                               0.0])
 
-            # calculate coefficients of quartic polynomial
-            c = np.linalg.solve(a=A, b=b)
+            # Start | Part of neg time horizon fix
+            # CRITICAL FIX: If both derivatives are near zero, cubic can create negative valleys
+            # This happens because the polynomial must "connect" endpoints with flat slopes,
+            # creating an S-curve that can overshoot negatively
+            # PREVENT this by using monotonic interpolation when derivatives are zero
+            use_monotonic_interpolation = (
+                abs(b[1]) < 0.01 and abs(b[3]) < 0.01)
 
-            # sampled s dot curve with fixed spatial horizon
-            s_dot_sample = c[0] + c[1] * s_loc_vector + c[2] * \
-                s_loc_vector ** 2 + c[3] * s_loc_vector ** 3
-            s_pprime_sample = c[1] + 2 * c[2] * \
-                s_loc_vector + 3 * c[3] * s_loc_vector ** 2
+            if use_monotonic_interpolation:
+                # rospy.logwarn_throttle(5.0,
+                #                        f"LongitudinalSampling: Zero derivatives detected (v_start={b[0]:.2f}, v_end={b[2]:.2f}). "
+                #                        f"Using monotonic interpolation to prevent negative velocity valleys.")
 
-            if raceline_tendency:
+                # For absolute sampling: b[0] and b[2] are actual velocities
+                # For relative sampling: b[0] and b[2] are velocity differences
+                # Either way, linear interpolation between them is monotonic
+                if b[0] * b[2] >= 0:  # Same sign or one is zero
+                    # Linear interpolation guarantees no overshoot
+                    s_dot_sample = b[0] + (b[2] - b[0]) * \
+                        (s_loc_vector / s_end_loc)
+                    s_pprime_sample = (b[2] - b[0]) / \
+                        s_end_loc * np.ones_like(s_loc_vector)
+                else:
+                    # Different signs - one endpoint negative, use quadratic through zero
+                    # This ensures smooth transition through zero without undershooting
+                    t_norm = s_loc_vector / s_end_loc  # Normalize to [0, 1]
+                    s_dot_sample = b[0] * (1 - t_norm)**2 + b[2] * t_norm**2
+                    s_pprime_sample = 2 * \
+                        (b[2] * t_norm - b[0] * (1 - t_norm)) / s_end_loc
+            else:
+                # Use cubic polynomial as normal
+                # calculate coefficients of quartic polynomial
+                c = np.linalg.solve(a=A, b=b)
+            # End | Part of neg time horizon fix
+
+                # Start | Part of neg time horizon fix
+                # sampled s dot curve with fixed spatial horizon
+                s_dot_sample = c[0] + c[1] * s_loc_vector + c[2] * \
+                    s_loc_vector ** 2 + c[3] * s_loc_vector ** 3
+                s_pprime_sample = c[1] + 2 * c[2] * \
+                    s_loc_vector + 3 * c[3] * s_loc_vector ** 2
+            # End | Part of neg time horizon fix
+
+            # Start | Part of neg time horizon fix
+            # CRITICAL FIX: Detect negative velocities from polynomial fitting
+            # This can happen when boundary conditions are poorly conditioned
+            # ROOT CAUSE: Cubic polynomials can have negative valleys even with positive endpoints
+            # when derivatives (s_pprime) are mismatched or too large
+            if np.any(s_dot_sample < 0):
+                min_velocity = np.min(s_dot_sample)
+                min_idx = np.argmin(s_dot_sample)
+                # rospy.logerr(
+                #     f"LongitudinalSampling: Polynomial fitting produced negative velocity {min_velocity:.3f} m/s at s={s_loc_vector[min_idx]:.2f}m. "
+                #     f"Boundary conditions: s_dot_start={s_dot_start:.2f} m/s, s_dot_end={s_dot_end:.2f} m/s, distance={s_end_loc:.2f}m. "
+                #     f"Derivatives: s_pprime_start={s_pprime_start:.3f}, s_pprime_end={s_pprime_end:.3f}. "
+                #     f"This indicates derivative mismatch (s_ddot/s_dot transformation amplifies at low velocities). "
+                #     f"Clamping to minimum 0.5 m/s.")
+                # Clamp to safe minimum
+                s_dot_sample = np.maximum(s_dot_sample, 0.5)
+
+            # Add raceline values only if we used relative sampling
+            if raceline_tendency and not use_absolute_sampling:
+                # End | Part of neg time horizon fix
                 s_dot_rl_eval = interpolate_with_period(
                     s_glob_interval, postprocessed_raceline['s_post'], postprocessed_raceline['s_dot_post'], period=track_handler.get_track_length())
                 s_pprime_rl_eval = interpolate_with_period(
@@ -832,20 +948,42 @@ class LongitudinalSampling:
                 s_dot = s_dot_sample + s_dot_rl_eval
                 s_ddot = s_pprime_sample + s_pprime_rl_eval
             else:
+                # Absolute sampling - use values directly
                 s_dot = s_dot_sample
                 s_ddot = s_pprime_sample
 
             # consider track length
             s_vals = s_loc_vector + s_start
 
-            # postprocessing 1: omit everything that is not in the horizon
-            # add value at horizon to s_array
+            # postprocessing 1: omit everything that is not in the spatial horizon
+            # Use distance-based cutoff (s_glob_end) instead of time-based cutoff
+            # s_glob_end was calculated at line 716: s_start + self.params.tracjectory_length
 
             t = self.calc_time_vector(
-                track_handler, s_glob_interval, np.zeros_like(s_glob_interval), s_dot, raceline_tendency)
+                track_handler, s_glob_interval, np.zeros_like(s_glob_interval), s_dot)
 
             # transform s_ddot(s) back to s_ddot(t)
             s_ddot = s_ddot * s_dot
+
+            # Start | Part of neg time horizon fix
+            # CRITICAL: Enforce physical limits on velocity and acceleration
+            # Clamp velocity to [0, max_velocity]
+            max_vel = np.max(s_dot)
+            if max_vel > self.params.max_velocity:
+                # rospy.logwarn_throttle(5.0,
+                #                        f"LongitudinalSampling: Trajectory exceeds max velocity "
+                #                        f"({max_vel:.2f} > {self.params.max_velocity:.2f} m/s). Clamping.")
+                s_dot = np.minimum(s_dot, self.params.max_velocity)
+
+            # Clamp acceleration to [-max_acceleration, max_acceleration]
+            max_accel = np.max(np.abs(s_ddot))
+            if max_accel > self.params.max_acceleration:
+                # rospy.logwarn_throttle(5.0,
+                #                        f"LongitudinalSampling: Trajectory exceeds max acceleration "
+                #                        f"({max_accel:.2f} > {self.params.max_acceleration:.2f} m/s²). Clamping.")
+                s_ddot = np.clip(
+                    s_ddot, -self.params.max_acceleration, self.params.max_acceleration)
+            # End | Part of neg time horizon fix
 
             # Cut trajectories at spatial horizon (distance-based, not time-based)
             # Use s_glob_end which is s_start + trajectory_length
@@ -888,7 +1026,25 @@ class LongitudinalSampling:
 
             # recalc shorter time vector
             t = self.calc_time_vector(
-                track_handler, s_vals, np.zeros_like(s_vals), s_dot, raceline_tendency)
+                track_handler, s_vals, np.zeros_like(s_vals), s_dot)
+
+            # Start | Part of neg time horizon fix
+            # FINAL VALIDATION: Check if trajectory respects physical limits
+            # This is a final safety check after all transformations
+            max_vel_violation = np.max(s_dot) - self.params.max_velocity
+            max_accel_violation = np.max(
+                np.abs(s_ddot)) - self.params.max_acceleration
+
+            if max_vel_violation > 0.1:  # More than 0.1 m/s over limit
+                rospy.logwarn_throttle(10.0,
+                                       f"LongitudinalSampling: Trajectory {i} exceeds velocity limit by {max_vel_violation:.2f} m/s. "
+                                       f"This should have been prevented earlier - check velocity sampling.")
+
+            if max_accel_violation > 0.5:  # More than 0.5 m/s² over limit
+                rospy.logwarn_throttle(10.0,
+                                       f"LongitudinalSampling: Trajectory {i} exceeds acceleration limit by {max_accel_violation:.2f} m/s². "
+                                       f"Consider adjusting derivative constraints or using smoother velocity profiles.")
+            # End | Part of neg time horizon fix
 
             # add postprocessed values
             s_array[i * n_samples: (i + 1) * n_samples,
@@ -911,34 +1067,6 @@ class LongitudinalSampling:
 
             # save last values
             s_end_values[i] = s_vals[-1]
-
-        # Check final trajectories for boundary violations
-        all_neg_vel = np.sum(s_dot_array < 0)
-        all_over_max_vel = np.sum(s_dot_array > self.params.max_velocity)
-        all_below_min_accel = np.sum(
-            s_ddot_array < -self.params.max_acceleration)
-        all_over_max_accel = np.sum(
-            s_ddot_array > self.params.max_acceleration)
-
-        # Only warn if boundaries are exceeded
-        if all_neg_vel > 0 or all_over_max_vel > 0 or all_below_min_accel > 0 or all_over_max_accel > 0:
-            total_traj_points = s_dot_array.size
-            violations = []
-            if all_neg_vel > 0:
-                violations.append(
-                    f"negative velocities: {all_neg_vel} ({100*all_neg_vel/total_traj_points:.2f}%)")
-            if all_over_max_vel > 0:
-                violations.append(
-                    f"over max_velocity ({self.params.max_velocity:.1f} m/s): {all_over_max_vel} ({100*all_over_max_vel/total_traj_points:.2f}%)")
-            if all_below_min_accel > 0:
-                violations.append(
-                    f"below -max_accel ({-self.params.max_acceleration:.1f} m/s²): {all_below_min_accel} ({100*all_below_min_accel/total_traj_points:.2f}%)")
-            if all_over_max_accel > 0:
-                violations.append(
-                    f"over max_accel ({self.params.max_acceleration:.1f} m/s²): {all_over_max_accel} ({100*all_over_max_accel/total_traj_points:.2f}%)")
-
-            rospy.logwarn(
-                f"[calc_samples_s_based] Trajectory boundary violations: {', '.join(violations)}")
 
         return s_array, s_dot_array, s_ddot_array, s_dot_end_values, s_end_values, rel_long_sampling_array, t_array
 
@@ -1223,7 +1351,6 @@ class LongitudinalSampling:
             s: np.ndarray,
             n: np.ndarray,
             V: np.ndarray,
-            raceline_tendency: bool = False
 
     ):
         """
@@ -1257,19 +1384,20 @@ class LongitudinalSampling:
         # Calculate mean velocity between points
         V_mean = (V[:-1] + V[1:]) / 2.0
 
-        # # CRITICAL: Clamp velocities to prevent division by zero or negative values
-        # # If polynomial fitting produced bad velocities, this prevents catastrophic failure
-        # V_mean_safe = np.maximum(V_mean, 0.1)  # Minimum 0.1 m/s
+        # CRITICAL: Clamp velocities to prevent division by zero or negative values
+        # If polynomial fitting produced bad velocities, this prevents catastrophic failure
+        V_mean_safe = np.maximum(V_mean, 0.1)  # Minimum 0.1 m/s
 
-        # # Check if we had to clamp any velocities (indicates upstream problem)
-        # if np.any(V_mean < 0.1):
-        #     num_clamped = np.sum(V_mean < 0.1)
-        #     min_v = np.min(V_mean)
-        #     rospy.logerr(f"LongitudinalSampling.calc_time_vector: Clamped {num_clamped} velocity values "
-        #                  f"(min={min_v:.3f} m/s). This indicates polynomial fitting produced invalid velocities.")
+        # Check if we had to clamp any velocities (indicates upstream problem)
+        if np.any(V_mean < 0.1):
+            num_clamped = np.sum(V_mean < 0.1)
+            min_v = np.min(V_mean)
+            rospy.logwarn_throttle(5.0,
+                                   f"LongitudinalSampling.calc_time_vector: Clamped {num_clamped} velocity values "
+                                   f"(min={min_v:.3f} m/s). This indicates polynomial fitting produced invalid velocities.")
 
         # Calculate time increments: dt = ds / v_mean
-        dt = ds / V_mean
+        dt = ds / V_mean_safe
 
         # Cumulative sum to get absolute time array
         t_vector = np.concatenate(([0.0], np.cumsum(dt)))
@@ -1283,7 +1411,6 @@ class LongitudinalSampling:
             rospy.logerr(f"  ds range: [{np.min(ds):.3f}, {np.max(ds):.3f}]")
             rospy.logerr(
                 f"  V_mean range: [{np.min(V_mean):.3f}, {np.max(V_mean):.3f}]")
-            rospy.logerr(f"  raceline_tendency: {raceline_tendency}")
 
         return t_vector
 

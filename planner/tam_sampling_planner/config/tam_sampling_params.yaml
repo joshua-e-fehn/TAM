@@ -28,7 +28,7 @@ s_dot_end_min: 1.0              # Minimum end velocity (m/s)
 s_dot_discretization: 1.0       # Velocity discretization step (m/s)
 s_dot_max_positive_delta: 10.0  # Max positive velocity change (m/s)
 v_sampling_scale: 1.1           # Velocity sampling scale factor
-relative_s_dot_min_percentage: 0.5  # Relative minimum velocity percentage
+relative_s_dot_min_percentage: 0.7  # Relative minimum velocity percentage
 
 # Dense velocity sampling around current velocity
 s_dot_dense_min: -4.0           # Minimum dense velocity offset (m/s)
