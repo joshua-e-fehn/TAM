@@ -10,7 +10,19 @@ It subscribes to debug topics and plots:
 - Valid vs invalid trajectories
 
 Usage:
+    # Single car mode:
+    rosrun tam_sampling_planner visualize_tam_sampling.py _single_car_mode:=true
+    
+    # Multi-car mode (default, for car1):
     rosrun tam_sampling_planner visualize_tam_sampling.py
+    
+    # Multi-car mode (for car2):
+    rosrun tam_sampling_planner visualize_tam_sampling.py _car_namespace:=car2
+    
+Parameters:
+    ~single_car_mode (bool, default: false): Set to true for single-car simulation
+    ~car_namespace (str, default: 'car1'): Car namespace for multi-car mode
+    ~update_rate_hz (float, default: 80.0): Visualization update rate in Hz
 """
 
 import rospy
@@ -39,21 +51,52 @@ class TAMSamplingVisualizer:
         rospy.loginfo(
             f"Visualization update rate: {self.update_rate_hz} Hz ({self.update_interval_ms} ms)")
 
+        # Determine if single-car or multi-car mode
+        # Check for car namespace parameter (default to 'car1' for multi-car compatibility)
+        self.car_namespace = rospy.get_param('~car_namespace', 'car1')
+        self.single_car_mode = rospy.get_param('~single_car_mode', False)
+
+        # Build topic names based on mode
+        if self.single_car_mode:
+            # Single car mode - no namespace prefix
+            global_wp_topic = '/global_waypoints'
+            frenet_odom_topic = '/car_state/odom_frenet'
+            markers_topic = '/planner/avoidance/markers'
+            all_samples_topic = '/planner/avoidance/all_samples'
+            rospy.loginfo("Running in SINGLE CAR mode")
+        else:
+            # Multi-car mode - use car namespace
+            global_wp_topic = f'/{self.car_namespace}/global_waypoints'
+            frenet_odom_topic = f'/{self.car_namespace}/car_state/odom_frenet'
+            markers_topic = f'/{self.car_namespace}/planner/avoidance/markers'
+            all_samples_topic = f'/{self.car_namespace}/planner/avoidance/all_samples'
+            rospy.loginfo(
+                f"Running in MULTI CAR mode for {self.car_namespace}")
+
         # Create figure with subplots (removed velocity profile, now 1x3)
         self.fig, self.axes = plt.subplots(1, 3, figsize=(18, 6))
-        self.fig.suptitle('TAM Sampling Planner Visualization', fontsize=16)
+        title = f'TAM Sampling Planner Visualization'
+        if not self.single_car_mode:
+            title += f' ({self.car_namespace})'
+        self.fig.suptitle(title, fontsize=16)
 
-        # Subscribe to topics
+        # Subscribe to topics with dynamic topic names
+        rospy.loginfo(f"Subscribing to: {global_wp_topic}")
         self.global_wp_sub = rospy.Subscriber(
-            '/car1/global_waypoints', WpntArray, self.global_waypoints_callback)
+            global_wp_topic, WpntArray, self.global_waypoints_callback)
+
+        rospy.loginfo(f"Subscribing to: {frenet_odom_topic}")
         self.state_sub = rospy.Subscriber(
-            '/car1/car_state/odom_frenet', Odometry, self.state_callback)
+            frenet_odom_topic, Odometry, self.state_callback)
+
+        rospy.loginfo(f"Subscribing to: {markers_topic}")
         self.markers_sub = rospy.Subscriber(
-            '/car1/planner/avoidance/markers', MarkerArray, self.markers_callback)
+            markers_topic, MarkerArray, self.markers_callback)
 
         # NEW: Subscribe to all sampled trajectories
+        rospy.loginfo(f"Subscribing to: {all_samples_topic}")
         self.all_samples_sub = rospy.Subscriber(
-            '/car1/planner/avoidance/all_samples', MarkerArray, self.all_samples_callback)
+            all_samples_topic, MarkerArray, self.all_samples_callback)
 
         rospy.loginfo("TAM Sampling Visualizer started. Waiting for data...")
 
