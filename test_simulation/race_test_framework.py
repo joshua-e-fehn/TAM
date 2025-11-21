@@ -1077,13 +1077,17 @@ class RaceTestFramework:
 
         # Mode-specific setup
         if test_mode == 'multi_car':
-            # Check overtaking sectors are enabled (multi-car only)
+            # Check overtaking sectors are enabled
             self.check_overtaking_sectors()
 
             # Wait for cars to be ready
             if not self.wait_for_cars_ready(timeout=30):
                 print("⚠️  Cars did not reach READY state, starting race anyway...")
         else:
+            if test_mode == 'single_car_obstacle':
+                # Check overtaking sectors are enabled
+                self.check_overtaking_sectors()
+
             # Single-car mode - wait for single car (and obstacle if enabled)
             if not self.wait_for_single_car_ready(test_config, timeout=30):
                 print("⚠️  Car did not reach READY state, starting race anyway...")

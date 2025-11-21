@@ -412,7 +412,7 @@ def find_available_maps():
     maps = []
 
     # Search in tam/maps/output directory
-    tam_output_dir = "/home/atlas/catkin_ws/src/race_stack/tam/maps/output"
+    tam_output_dir = "/home/atlas/catkin_ws/src/race_stack/tam_to_eth_map_parser/maps/output"
     if os.path.exists(tam_output_dir):
         for map_dir in os.listdir(tam_output_dir):
             map_path = os.path.join(tam_output_dir, map_dir)
@@ -681,7 +681,7 @@ def main():
     print("=== Marina Race Track Plotting Tool ===")
 
     # Ensure plots directory exists
-    plots_dir = "/home/atlas/catkin_ws/src/race_stack/tam/plots"
+    plots_dir = "/home/atlas/catkin_ws/src/race_stack/tam_to_eth_map_parser/plots"
     os.makedirs(plots_dir, exist_ok=True)
 
     # Find available maps

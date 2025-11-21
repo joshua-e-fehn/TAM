@@ -665,7 +665,7 @@ class BasicTAMToETHMapParser:
     def create_output_directory(self) -> str:
         """Create output directory structure."""
         base_path = os.path.expanduser(
-            "~/catkin_ws/src/race_stack/tam/maps/output")
+            "~/catkin_ws/src/race_stack/tam_to_eth_map_parser/maps/output")
         output_dir = os.path.join(base_path, self.output_map_name)
         os.makedirs(output_dir, exist_ok=True)
         print(f"📁 Created output directory: {output_dir}")
@@ -1058,6 +1058,10 @@ class BasicTAMToETHMapParser:
                 print(
                     f"✅ Converted to {len(sp_waypoints)} shortest path waypoints")
 
+                # Recalculate track widths based on actual shortest path positions
+                sp_waypoints = self._recalculate_track_widths(
+                    sp_waypoints, trackbounds_left, trackbounds_right)
+
                 # Interpolate SP to match IQP resolution if needed
                 if len(centerline_waypoints) != len(sp_waypoints):
                     target_count = len(centerline_waypoints)
@@ -1159,6 +1163,10 @@ class BasicTAMToETHMapParser:
                 print(f"🔄 Converting optimizer output to waypoint format...")
                 racing_waypoints = self._convert_optimizer_result_to_waypoints(
                     optimized_trajectory, centerline_waypoints)
+
+                # Recalculate track widths based on actual racing line positions
+                racing_waypoints = self._recalculate_track_widths(
+                    racing_waypoints, trackbounds_left, trackbounds_right)
 
                 # Check for constant velocity and apply optimization if needed
                 print(f"🔍 Checking velocity profile...")
@@ -1398,6 +1406,63 @@ class BasicTAMToETHMapParser:
         print(
             f"   ✅ Created ax_max curve (conservative: {safe_accel:.1f}m/s² base limit with power curve)")
 
+    def _recalculate_track_widths(self, waypoints: List[Dict], trackbounds_left: List[Dict],
+                                  trackbounds_right: List[Dict]) -> List[Dict]:
+        """
+        Recalculate d_left and d_right for waypoints based on actual distances to track boundaries.
+
+        This is critical for racing line and shortest path waypoints which deviate from the centerline.
+        The original d_left/d_right values in the CSV are relative to the centerline, not the racing line.
+
+        Args:
+            waypoints: List of waypoint dictionaries with x_m, y_m coordinates
+            trackbounds_left: List of left track boundary points
+            trackbounds_right: List of right track boundary points
+
+        Returns:
+            List of waypoints with corrected d_left and d_right values
+        """
+        if not trackbounds_left or not trackbounds_right:
+            print("   ⚠️  No track boundaries available, keeping original d_left/d_right")
+            return waypoints
+
+        print("   📏 Recalculating d_left and d_right based on actual distances to boundaries...")
+
+        # Pre-convert to numpy arrays for faster distance calculations
+        tb_left_array = np.array([[tb['x_m'], tb['y_m']]
+                                 for tb in trackbounds_left])
+        tb_right_array = np.array([[tb['x_m'], tb['y_m']]
+                                  for tb in trackbounds_right])
+
+        for wp in waypoints:
+            wp_pos = np.array([wp['x_m'], wp['y_m']])
+
+            # Calculate distances to all left boundary points
+            left_distances = np.sqrt(
+                np.sum((tb_left_array - wp_pos)**2, axis=1))
+            min_left_dist = np.min(left_distances)
+
+            # Calculate distances to all right boundary points
+            right_distances = np.sqrt(
+                np.sum((tb_right_array - wp_pos)**2, axis=1))
+            min_right_dist = np.min(right_distances)
+
+            # Update waypoint with actual distances
+            wp['d_left'] = min_left_dist
+            wp['d_right'] = min_right_dist
+
+        # Calculate statistics
+        d_left_values = [wp['d_left'] for wp in waypoints]
+        d_right_values = [wp['d_right'] for wp in waypoints]
+
+        print(f"   ✅ Recalculated track widths:")
+        print(
+            f"      Left:  min={min(d_left_values):.3f}m, max={max(d_left_values):.3f}m, mean={np.mean(d_left_values):.3f}m")
+        print(
+            f"      Right: min={min(d_right_values):.3f}m, max={max(d_right_values):.3f}m, mean={np.mean(d_right_values):.3f}m")
+
+        return waypoints
+
     def _convert_optimizer_result_to_waypoints(self, optimized_trajectory: np.ndarray,
                                                reference_waypoints: List[Dict]) -> List[Dict]:
         """Convert optimizer output to waypoint format (maintains SCALED data)."""
@@ -1411,7 +1476,7 @@ class BasicTAMToETHMapParser:
             vx_mps = optimized_trajectory[i, 5]  # velocity
             ax_mps2 = optimized_trajectory[i, 6]  # acceleration
 
-            # Get track bounds from nearest reference waypoint
+            # Temporarily use reference waypoint values (will be recalculated later)
             if i < len(reference_waypoints):
                 ref_wp = reference_waypoints[i]
                 d_right = ref_wp['d_right']

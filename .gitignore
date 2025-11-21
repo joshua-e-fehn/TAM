@@ -67,5 +67,5 @@ planner/graph_based_planner/src/GraphBasedPlanner/inputs/traj_ltpl_cl/*.csv
 planner/graph_based_planner/tests/*.csv
 
 # TAM
-tam/maps/output/
-tam/plots/
+tam_to_eth_map_parser/maps/output/
+tam_to_eth_map_parser/plots/
