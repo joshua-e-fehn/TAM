@@ -132,6 +132,7 @@ class RaceEventMonitor:
         self.race_complete = False
         self.race_complete_reason = None
         self.race_start_time = rospy.Time.now()
+        self.race_started = False  # Track if race has actually started
 
         # Event logging
         self.events = []
@@ -168,6 +169,27 @@ class RaceEventMonitor:
         """Setup global subscribers and publishers"""
         rospy.Subscriber("global_waypoints", WpntArray,
                          self.global_waypoints_callback, queue_size=1)
+
+        # Subscribe to race start signals
+        if self.race_mode.startswith('single_car'):
+            rospy.Subscriber("/state_machine_cmd", String,
+                             self.race_start_callback, queue_size=1)
+        else:
+            rospy.Subscriber("/car1/state_machine_cmd", String,
+                             self.race_start_callback, queue_size=1)
+
+    def race_start_callback(self, msg):
+        """Detect race start signal and log the exact timestamp"""
+        if not self.race_started and msg.data == "GB_TRACK":
+            self.race_started = True
+            # Update race start time to the actual start moment
+            self.race_start_time = rospy.Time.now()
+
+            # Log race start event with timestamp 0.000 (start of race)
+            self.log_event('race_start',
+                           car1_name=self.car_names[0] if self.car_names else None,
+                           details=f"Race started - GO signal received")
+            rospy.loginfo("[Race Monitor] 🏁 RACE STARTED - Logging timestamp")
 
     def global_waypoints_callback(self, msg: WpntArray):
         """Process global waypoints and setup Frenet converter"""
@@ -384,7 +406,7 @@ class RaceEventMonitor:
         # List of (timestamp, s_position) tuples
         self.ego_car_movement_history = []
         self.stall_check_duration = 15.0  # seconds
-        self.stall_distance_threshold = 3.0  # meters
+        self.stall_distance_threshold = 5.0  # meters
 
     def setup_obstacle_topics(self):
         """Setup subscribers for obstacle monitoring (single_car_obstacle mode)"""
