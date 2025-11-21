@@ -1,0 +1,23 @@
+car_init_theta: 0.14018275476724262
+car_init_x: !!python/object/apply:numpy.core.multiarray.scalar
+- &id001 !!python/object/apply:numpy.dtype
+  args:
+  - f8
+  - 0
+  - 1
+  state: !!python/tuple
+  - 3
+  - <
+  - null
+  - null
+  - null
+  - -1
+  - -1
+  - 0
+- !!binary |
+  AAAAAAAAAAA=
+car_init_y: !!python/object/apply:numpy.core.multiarray.scalar
+- *id001
+- !!binary |
+  AAAAAAAAAAA=
+description: Starting position at waypoint 0

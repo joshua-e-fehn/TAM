@@ -1,0 +1,9 @@
+timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
+0.000,race_start,car,,,0.03,0.00,-0.09,0.00,0,0,Race started - GO signal received
+57.280,state_transition,car,,,254.85,0.00,0.00,0.00,0,0,car state transition: TRAILING -> OVERTAKE
+60.880,state_transition,car,,,257.86,0.00,0.39,0.00,0,0,car state transition: OVERTAKE -> TRAILING
+151.498,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 1
+210.739,state_transition,car,,,258.32,0.00,0.50,0.00,0,0,car state transition: TRAILING -> OVERTAKE
+214.328,state_transition,car,,,258.44,0.00,0.52,0.00,0,0,car state transition: OVERTAKE -> TRAILING
+304.915,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 2
+304.923,enemy_overlapped,car,obstacle,,258.64,0.00,0.54,0.00,0,0,"obstacle_overlapped_car (obstacle_lap=2, car_lap=0, obstacle is 2 laps ahead)"

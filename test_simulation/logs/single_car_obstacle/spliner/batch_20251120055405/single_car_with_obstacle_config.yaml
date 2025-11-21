@@ -1,0 +1,346 @@
+# Single Car With Obstacle Test Configuration
+# Car vs dummy obstacle mode - tests overtaking and avoidance
+# Tests different planners vs various obstacle speeds
+
+test_matrix:
+  - simulation_id: "scwo_0001"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.6
+    spliner_pre_apex_dist0: 4
+    spliner_pre_apex_dist1: 3
+    spliner_pre_apex_dist2: 2
+    spliner_post_apex_dist0: 4.5
+    spliner_post_apex_dist1: 5.0
+    spliner_post_apex_dist2: 5.5
+
+  - simulation_id: "scwo_0002"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.925
+    spliner_pre_apex_dist0: 4
+    spliner_pre_apex_dist1: 3
+    spliner_pre_apex_dist2: 2
+    spliner_post_apex_dist0: 4.5
+    spliner_post_apex_dist1: 5.0
+    spliner_post_apex_dist2: 5.5
+
+  - simulation_id: "scwo_0003"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 1.25
+    spliner_pre_apex_dist0: 4
+    spliner_pre_apex_dist1: 3
+    spliner_pre_apex_dist2: 2
+    spliner_post_apex_dist0: 4.5
+    spliner_post_apex_dist1: 5.0
+    spliner_post_apex_dist2: 5.5
+
+  - simulation_id: "scwo_0004"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.6
+    spliner_pre_apex_dist0: 3
+    spliner_pre_apex_dist1: 2
+    spliner_pre_apex_dist2: 1
+    spliner_post_apex_dist0: 3
+    spliner_post_apex_dist1: 4
+    spliner_post_apex_dist2: 5
+
+  - simulation_id: "scwo_0005"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.925
+    spliner_pre_apex_dist0: 3
+    spliner_pre_apex_dist1: 2
+    spliner_pre_apex_dist2: 1
+    spliner_post_apex_dist0: 3
+    spliner_post_apex_dist1: 4
+    spliner_post_apex_dist2: 5
+
+  - simulation_id: "scwo_0006"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 1.25
+    spliner_pre_apex_dist0: 3
+    spliner_pre_apex_dist1: 2
+    spliner_pre_apex_dist2: 1
+    spliner_post_apex_dist0: 3
+    spliner_post_apex_dist1: 4
+    spliner_post_apex_dist2: 5
+
+  - simulation_id: "scwo_0007"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.6
+    spliner_pre_apex_dist0: 4
+    spliner_pre_apex_dist1: 3
+    spliner_pre_apex_dist2: 2
+    spliner_post_apex_dist0: 4
+    spliner_post_apex_dist1: 5
+    spliner_post_apex_dist2: 6
+
+  - simulation_id: "scwo_0008"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.925
+    spliner_pre_apex_dist0: 4
+    spliner_pre_apex_dist1: 3
+    spliner_pre_apex_dist2: 2
+    spliner_post_apex_dist0: 4
+    spliner_post_apex_dist1: 5
+    spliner_post_apex_dist2: 6
+
+  - simulation_id: "scwo_0009"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 1.25
+    spliner_pre_apex_dist0: 4
+    spliner_pre_apex_dist1: 3
+    spliner_pre_apex_dist2: 2
+    spliner_post_apex_dist0: 4
+    spliner_post_apex_dist1: 5
+    spliner_post_apex_dist2: 6
+
+  - simulation_id: "scwo_0010"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.6
+    spliner_pre_apex_dist0: 4
+    spliner_pre_apex_dist1: 3
+    spliner_pre_apex_dist2: 2
+    spliner_post_apex_dist0: 4.5
+    spliner_post_apex_dist1: 6.0
+    spliner_post_apex_dist2: 7.5
+
+  - simulation_id: "scwo_0011"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.925
+    spliner_pre_apex_dist0: 4
+    spliner_pre_apex_dist1: 3
+    spliner_pre_apex_dist2: 2
+    spliner_post_apex_dist0: 4.5
+    spliner_post_apex_dist1: 6.0
+    spliner_post_apex_dist2: 7.5
+
+  - simulation_id: "scwo_0012"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 1.25
+    spliner_pre_apex_dist0: 4
+    spliner_pre_apex_dist1: 3
+    spliner_pre_apex_dist2: 2
+    spliner_post_apex_dist0: 4.5
+    spliner_post_apex_dist1: 6.0
+    spliner_post_apex_dist2: 7.5
+
+  - simulation_id: "scwo_0013"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.6
+    spliner_pre_apex_dist0: 5.0
+    spliner_pre_apex_dist1: 4.0
+    spliner_pre_apex_dist2: 2.5
+    spliner_post_apex_dist0: 4.75
+    spliner_post_apex_dist1: 6.5
+    spliner_post_apex_dist2: 8.25
+
+  - simulation_id: "scwo_0014"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.925
+    spliner_pre_apex_dist0: 5.0
+    spliner_pre_apex_dist1: 4.0
+    spliner_pre_apex_dist2: 2.5
+    spliner_post_apex_dist0: 4.75
+    spliner_post_apex_dist1: 6.5
+    spliner_post_apex_dist2: 8.25
+
+  - simulation_id: "scwo_0015"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 1.25
+    spliner_pre_apex_dist0: 5.0
+    spliner_pre_apex_dist1: 4.0
+    spliner_pre_apex_dist2: 2.5
+    spliner_post_apex_dist0: 4.75
+    spliner_post_apex_dist1: 6.5
+    spliner_post_apex_dist2: 8.25
+
+  - simulation_id: "scwo_0016"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.6
+    spliner_pre_apex_dist0: 6.25
+    spliner_pre_apex_dist1: 4.5
+    spliner_pre_apex_dist2: 2.75
+    spliner_post_apex_dist0: 5
+    spliner_post_apex_dist1: 7
+    spliner_post_apex_dist2: 9
+
+  - simulation_id: "scwo_0017"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 0.925
+    spliner_pre_apex_dist0: 6.25
+    spliner_pre_apex_dist1: 4.5
+    spliner_pre_apex_dist2: 2.75
+    spliner_post_apex_dist0: 5
+    spliner_post_apex_dist1: 7
+    spliner_post_apex_dist2: 9
+
+  - simulation_id: "scwo_0018"
+    name: "single_vs_obstacle_spliner"
+    mode: "single_car_obstacle"
+    planner: "spliner"
+    global_map: "f"
+    obstacle_speed: 0.55
+    obstacle_start_s: 33
+    show_simulation_output: false
+
+    spliner_spline_bound_mindist: 0.2
+
+    spliner_evasion_dist: 1.25
+    spliner_pre_apex_dist0: 6.25
+    spliner_pre_apex_dist1: 4.5
+    spliner_pre_apex_dist2: 2.75
+    spliner_post_apex_dist0: 5
+    spliner_post_apex_dist1: 7
+    spliner_post_apex_dist2: 9

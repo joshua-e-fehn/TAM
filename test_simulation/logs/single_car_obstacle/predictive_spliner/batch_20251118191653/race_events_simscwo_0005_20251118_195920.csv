@@ -1,0 +1,11 @@
+timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
+17.144,state_transition,car,,,36.14,0.00,-0.14,0.00,0,0,car state transition: GB_TRACK -> OVERTAKE
+18.345,state_transition,car,,,41.06,0.00,-0.29,0.00,0,0,car state transition: OVERTAKE -> TRAILING
+20.603,state_transition,car,,,41.20,0.00,-0.29,0.00,0,0,car state transition: GB_TRACK -> OVERTAKE
+22.710,track_crash,car,,,41.25,0.00,-0.29,0.00,0,0,"track_boundary_collision (car off-track RIGHT: x=11.60m, y=-3.32m, s=41.25m, d=-0.29m)"
+23.040,state_transition,car,,,41.26,0.00,-0.29,0.00,0,0,car state transition: OVERTAKE -> GB_TRACK
+27.962,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 1
+39.873,track_crash,car,,,60.78,0.00,-0.23,0.00,0,0,"track_boundary_collision (car off-track RIGHT: x=6.76m, y=-13.04m, s=60.78m, d=-0.23m)"
+43.993,track_crash,car,,,76.14,0.00,-0.25,0.00,0,0,"track_boundary_collision (car off-track RIGHT: x=-4.58m, y=-21.45m, s=76.14m, d=-0.25m)"
+44.096,lap_complete,car,,,0.02,0.00,-0.24,0.00,1,0,car finished lap 1
+947.549,overtake_lead,car,obstacle,11.600,72.00,0.00,4743.81,0.00,1,0,"successful_overtake #1 (car ahead by 11.60m, threshold: 10.0m, car_lap=1, obstacle_lap=1)"

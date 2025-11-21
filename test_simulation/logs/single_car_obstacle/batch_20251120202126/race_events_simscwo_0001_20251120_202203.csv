@@ -1,0 +1,14 @@
+timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
+0.047,overtake_lead,car,obstacle,24.235,27.23,0.00,-0.52,0.00,0,0,"successful_overtake #1 (car ahead by 24.23m locally, car_abs=27.23m, obs_abs=3.00m, car_lap=0, obstacle_lap=0)"
+28.149,track_crash,car,,,76.24,0.00,-0.25,0.00,0,0,"track_boundary_collision (car off-track RIGHT: x=-4.66m, y=-21.46m, s=76.24m, d=-0.25m)"
+28.228,lap_complete,car,,,0.02,0.00,-0.24,0.00,1,0,car finished lap 1
+35.147,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 1
+46.543,lap_complete,car,,,0.01,0.00,-0.24,0.00,2,0,car finished lap 2
+58.907,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 2
+66.417,lap_complete,car,,,0.01,0.00,-0.25,0.00,3,0,car finished lap 3
+77.124,overtake_state_change,car,obstacle,-9.977,49.22,0.00,0.07,0.00,3,0,"Car is now locally behind obstacle (local_diff=-9.98m, car_lap=3, obs_lap=2)"
+78.920,state_transition,car,,,55.18,0.00,0.13,0.00,3,0,car state transition: TRAILING -> OVERTAKE
+79.969,state_transition,car,,,58.49,0.00,-0.09,0.00,3,0,car state transition: OVERTAKE -> TRAILING
+82.667,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 3
+86.363,lap_complete,car,,,0.03,0.00,-0.23,0.00,4,0,car finished lap 4
+86.374,race_complete,car,,,0.13,0.00,-0.23,0.00,4,0,single_car_lap_completion (car completed 4 laps)

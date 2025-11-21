@@ -1,0 +1,23 @@
+timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
+27.577,state_transition,car1,,,31.70,0.00,-0.03,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+27.627,state_transition,car1,,,31.90,0.00,-0.02,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+27.778,state_transition,car1,,,32.45,0.00,-0.02,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+29.779,state_transition,car1,,,39.53,0.00,-0.13,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+30.329,state_transition,car1,,,40.99,0.00,-0.13,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+30.927,state_transition,car1,,,42.44,0.00,-0.10,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+32.678,state_transition,car1,,,46.89,0.00,0.33,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+32.927,state_transition,car1,,,47.54,0.00,0.57,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+35.877,state_transition,car1,,,53.82,0.00,0.05,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+37.079,state_transition,car1,,,56.52,0.00,0.35,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+39.828,state_transition,car1,,,61.29,0.00,0.06,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+41.330,state_transition,car1,,,64.81,0.00,-0.45,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+44.959,lap_complete,car2,,,0.02,0.00,-0.16,0.00,1,0,car2 finished lap 1
+46.529,state_transition,car1,,,76.45,0.00,-0.09,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+46.538,lap_complete,car1,,,0.00,0.00,-0.09,0.00,1,0,car1 finished lap 1
+51.081,state_transition,car1,,,12.65,0.00,-0.76,0.00,1,0,car1 state transition: OVERTAKE -> TRAILING
+54.341,state_transition,car1,,,23.17,0.00,-0.06,0.00,1,0,car1 state transition: TRAILING -> OVERTAKE
+57.729,state_transition,car1,,,36.09,0.00,-1.37,0.00,1,0,car1 state transition: OVERTAKE -> TRAILING
+58.684,near_miss,car1,car2,0.799,38.78,38.86,-0.97,-0.16,1,1,Close encounter: 0.80m
+59.146,collision,car1,car2,0.395,39.82,39.85,-0.57,-0.16,1,1,collision #1 (distance: 0.40m between car1 and car2)
+60.209,near_miss,car1,car2,0.405,42.13,41.76,-0.13,-0.16,1,1,Close encounter: 0.40m
+62.796,overtake_lead,car1,car2,5.025,49.27,44.25,0.05,-0.03,1,1,"car1_overtake_lead (car1 ahead by 5.02m locally, car1_abs=125.75m, car2_abs=120.73m, threshold: 5.0m, car1_lap=1, car2_lap=1)"

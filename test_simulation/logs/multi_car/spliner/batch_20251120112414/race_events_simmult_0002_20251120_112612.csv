@@ -1,0 +1,10 @@
+timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
+24.855,state_transition,car1,,,25.27,0.00,0.03,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+26.559,state_transition,car1,,,28.36,0.00,-0.03,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+29.918,state_transition,car1,,,38.69,0.00,-0.12,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+31.222,state_transition,car1,,,40.82,0.00,0.55,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+31.285,state_transition,car1,,,40.91,0.00,0.56,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+33.660,state_transition,car1,,,45.06,0.00,0.95,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+36.418,state_transition,car2,,,49.35,0.00,0.07,0.00,0,0,car2 state transition: TRAILING -> OVERTAKE
+36.453,state_transition,car2,,,49.40,0.00,0.08,0.00,0,0,car2 state transition: OVERTAKE -> TRAILING
+38.122,overtake_lead,car1,car2,5.024,56.10,51.07,0.05,-0.33,0,0,"car1_overtake_lead (car1 ahead by 5.02m locally, car1_abs=56.10m, car2_abs=51.07m, threshold: 5.0m, car1_lap=0, car2_lap=0)"

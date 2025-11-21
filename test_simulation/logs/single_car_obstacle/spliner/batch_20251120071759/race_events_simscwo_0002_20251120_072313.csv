@@ -1,0 +1,101 @@
+timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
+20.620,state_transition,car,,,49.40,0.00,0.07,0.00,0,0,car state transition: TRAILING -> OVERTAKE
+20.721,state_transition,car,,,49.80,0.00,0.10,0.00,0,0,car state transition: OVERTAKE -> TRAILING
+20.871,state_transition,car,,,50.40,0.00,0.14,0.00,0,0,car state transition: TRAILING -> OVERTAKE
+20.971,state_transition,car,,,50.75,0.00,0.16,0.00,0,0,car state transition: OVERTAKE -> TRAILING
+22.521,state_transition,car,,,55.62,0.00,0.14,0.00,0,0,car state transition: TRAILING -> OVERTAKE
+23.632,state_transition,car,,,59.33,0.00,-0.18,0.00,0,0,car state transition: OVERTAKE -> TRAILING
+26.073,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 1
+30.503,track_crash,car,,,76.28,0.00,-0.25,0.00,0,0,"track_boundary_collision (car off-track RIGHT: x=-4.70m, y=-21.46m, s=76.28m, d=-0.25m)"
+30.563,lap_complete,car,,,0.00,0.00,-0.25,0.00,1,0,car finished lap 1
+36.020,state_transition,car,,,25.60,0.00,-0.05,0.00,1,0,car state transition: TRAILING -> OVERTAKE
+36.271,state_transition,car,,,26.96,0.00,-0.05,0.00,1,0,car state transition: OVERTAKE -> TRAILING
+37.233,state_transition,car,,,32.73,0.00,-0.08,0.00,1,0,car state transition: TRAILING -> OVERTAKE
+39.095,state_transition,car,,,40.88,0.00,0.10,0.00,1,0,car state transition: OVERTAKE -> TRAILING
+39.114,state_transition,car,,,40.91,0.00,0.10,0.00,1,0,car state transition: TRAILING -> OVERTAKE
+39.221,state_transition,car,,,41.25,0.00,0.08,0.00,1,0,car state transition: OVERTAKE -> TRAILING
+39.671,state_transition,car,,,42.59,0.00,0.13,0.00,1,0,car state transition: TRAILING -> OVERTAKE
+40.120,state_transition,car,,,44.03,0.00,0.16,0.00,1,0,car state transition: OVERTAKE -> TRAILING
+41.074,state_transition,car,,,47.34,0.00,0.38,0.00,1,0,car state transition: TRAILING -> OVERTAKE
+41.321,state_transition,car,,,48.25,0.00,0.67,0.00,1,0,car state transition: OVERTAKE -> TRAILING
+45.470,state_transition,car,,,60.37,0.00,-0.20,0.00,1,0,car state transition: TRAILING -> OVERTAKE
+46.571,state_transition,car,,,63.85,0.00,-0.30,0.00,1,0,car state transition: OVERTAKE -> TRAILING
+49.007,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 2
+49.870,state_transition,car,,,75.89,0.00,-0.23,0.00,1,0,car state transition: TRAILING -> OVERTAKE
+50.086,lap_complete,car,,,0.02,0.00,-0.24,0.00,2,0,car finished lap 2
+53.571,state_transition,car,,,13.23,0.00,-0.79,0.00,2,0,car state transition: OVERTAKE -> TRAILING
+55.426,track_crash,car,,,20.57,0.00,-0.33,0.00,2,0,"track_boundary_collision (car off-track RIGHT: x=-5.54m, y=-2.88m, s=20.57m, d=-0.33m)"
+56.471,state_transition,car,,,24.06,0.00,-0.06,0.00,2,0,car state transition: TRAILING -> OVERTAKE
+60.245,state_transition,car,,,40.86,0.00,-0.22,0.00,2,0,car state transition: OVERTAKE -> GB_TRACK
+70.189,track_crash,car,,,76.25,0.00,-0.25,0.00,2,0,"track_boundary_collision (car off-track RIGHT: x=-4.67m, y=-21.46m, s=76.25m, d=-0.25m)"
+70.253,lap_complete,car,,,0.03,0.00,-0.25,0.00,3,0,car finished lap 3
+71.927,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 3
+74.151,overtake_lead,car,obstacle,10.025,17.14,0.00,-0.14,0.00,3,0,"successful_overtake #1 (car ahead by 10.03m locally, car_abs=246.58m, obs_abs=236.55m, car_lap=3, obstacle_lap=3)"
+88.543,lap_complete,car,,,0.01,0.00,-0.24,0.00,4,0,car finished lap 4
+94.867,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 4
+108.695,lap_complete,car,,,0.02,0.00,-0.24,0.00,5,0,car finished lap 5
+117.787,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 5
+129.194,lap_complete,car,,,0.00,0.00,-0.24,0.00,6,0,car finished lap 6
+140.707,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 6
+147.513,lap_complete,car,,,0.02,0.00,-0.24,0.00,7,0,car finished lap 7
+157.339,overtake_state_change,car,obstacle,-9.962,45.96,0.00,-0.09,0.00,7,0,"Car is now locally behind obstacle (local_diff=-9.96m, car_lap=7, obs_lap=6)"
+158.120,state_transition,car,,,49.16,0.00,0.06,0.00,7,0,car state transition: TRAILING -> OVERTAKE
+158.270,state_transition,car,,,49.70,0.00,0.09,0.00,7,0,car state transition: OVERTAKE -> TRAILING
+158.320,state_transition,car,,,49.94,0.00,0.10,0.00,7,0,car state transition: TRAILING -> OVERTAKE
+158.571,state_transition,car,,,50.83,0.00,0.17,0.00,7,0,car state transition: OVERTAKE -> TRAILING
+160.121,state_transition,car,,,55.77,0.00,0.13,0.00,7,0,car state transition: TRAILING -> OVERTAKE
+161.220,state_transition,car,,,59.33,0.00,-0.16,0.00,7,0,car state transition: OVERTAKE -> TRAILING
+163.653,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 7
+167.995,lap_complete,car,,,0.01,0.00,-0.25,0.00,8,0,car finished lap 8
+173.121,state_transition,car,,,23.89,0.00,-0.06,0.00,8,0,car state transition: TRAILING -> OVERTAKE
+173.821,state_transition,car,,,27.95,0.00,-0.06,0.00,8,0,car state transition: OVERTAKE -> TRAILING
+174.820,state_transition,car,,,33.89,0.00,-0.37,0.00,8,0,car state transition: TRAILING -> OVERTAKE
+176.508,state_transition,car,,,40.88,0.00,0.20,0.00,8,0,car state transition: OVERTAKE -> TRAILING
+176.564,state_transition,car,,,41.05,0.00,0.19,0.00,8,0,car state transition: TRAILING -> OVERTAKE
+176.821,state_transition,car,,,41.76,0.00,0.17,0.00,8,0,car state transition: OVERTAKE -> TRAILING
+177.271,state_transition,car,,,43.14,0.00,0.26,0.00,8,0,car state transition: TRAILING -> OVERTAKE
+177.671,state_transition,car,,,44.29,0.00,0.31,0.00,8,0,car state transition: OVERTAKE -> TRAILING
+178.670,state_transition,car,,,47.82,0.00,0.60,0.00,8,0,car state transition: TRAILING -> OVERTAKE
+178.870,state_transition,car,,,48.57,0.00,0.81,0.00,8,0,car state transition: OVERTAKE -> TRAILING
+181.522,state_transition,car,,,55.75,0.00,-0.10,0.00,8,0,car state transition: TRAILING -> OVERTAKE
+181.571,state_transition,car,,,55.89,0.00,-0.08,0.00,8,0,car state transition: OVERTAKE -> TRAILING
+186.572,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 8
+187.470,state_transition,car,,,75.68,0.00,-0.21,0.00,8,0,car state transition: TRAILING -> OVERTAKE
+187.767,lap_complete,car,,,0.02,0.00,-0.24,0.00,9,0,car finished lap 9
+191.121,state_transition,car,,,12.62,0.00,-0.54,0.00,9,0,car state transition: OVERTAKE -> TRAILING
+193.076,track_crash,car,,,20.66,0.00,-0.31,0.00,9,0,"track_boundary_collision (car off-track RIGHT: x=-5.50m, y=-2.80m, s=20.66m, d=-0.31m)"
+194.020,state_transition,car,,,23.93,0.00,-0.08,0.00,9,0,car state transition: TRAILING -> OVERTAKE
+197.771,state_transition,car,,,40.81,0.00,-0.22,0.00,9,0,car state transition: OVERTAKE -> GB_TRACK
+204.514,collision,car,obstacle,0.365,60.52,0.00,-0.24,0.00,9,0,"car_obstacle_collision (distance: 0.37m, collision #1)"
+204.670,state_transition,car,,,60.52,0.00,-0.24,0.00,9,0,car state transition: TRAILING -> OVERTAKE
+204.721,state_transition,car,,,60.54,0.00,-0.24,0.00,9,0,car state transition: OVERTAKE -> TRAILING
+205.970,state_transition,car,,,61.38,0.00,0.25,0.00,9,0,car state transition: TRAILING -> OVERTAKE
+207.182,state_transition,car,,,63.67,0.00,-0.15,0.00,9,0,car state transition: OVERTAKE -> TRAILING
+209.507,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 9
+210.371,state_transition,car,,,75.15,0.00,-0.23,0.00,9,0,car state transition: TRAILING -> OVERTAKE
+210.726,track_crash,car,,,76.24,0.00,-0.25,0.00,9,0,"track_boundary_collision (car off-track RIGHT: x=-4.66m, y=-21.47m, s=76.24m, d=-0.25m)"
+210.827,lap_complete,car,,,0.02,0.00,-0.24,0.00,10,0,car finished lap 10
+214.071,state_transition,car,,,11.93,0.00,-0.21,0.00,10,0,car state transition: OVERTAKE -> TRAILING
+215.976,track_crash,car,,,20.37,0.00,-0.38,0.00,10,0,"track_boundary_collision (car off-track RIGHT: x=-5.61m, y=-3.07m, s=20.37m, d=-0.38m)"
+216.971,state_transition,car,,,21.40,0.00,-0.12,0.00,10,0,car state transition: TRAILING -> OVERTAKE
+219.721,state_transition,car,,,32.21,0.00,-0.26,0.00,10,0,car state transition: OVERTAKE -> TRAILING
+221.894,track_crash,car,,,41.15,0.00,-0.34,0.00,10,0,"track_boundary_collision (car off-track RIGHT: x=11.55m, y=-3.23m, s=41.15m, d=-0.34m)"
+222.820,state_transition,car,,,41.78,0.00,-0.18,0.00,10,0,car state transition: TRAILING -> OVERTAKE
+223.620,state_transition,car,,,43.26,0.00,-0.09,0.00,10,0,car state transition: OVERTAKE -> TRAILING
+224.471,state_transition,car,,,45.47,0.00,-0.05,0.00,10,0,car state transition: TRAILING -> OVERTAKE
+224.871,state_transition,car,,,46.65,0.00,-0.05,0.00,10,0,car state transition: OVERTAKE -> TRAILING
+228.972,state_transition,car,,,59.22,0.00,-0.12,0.00,10,0,car state transition: TRAILING -> OVERTAKE
+230.021,state_transition,car,,,62.49,0.00,-0.16,0.00,10,0,car state transition: OVERTAKE -> TRAILING
+232.427,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 10
+233.321,state_transition,car,,,74.51,0.00,-0.18,0.00,10,0,car state transition: TRAILING -> OVERTAKE
+233.979,lap_complete,car,,,0.00,0.00,-0.23,0.00,11,0,car finished lap 11
+237.021,state_transition,car,,,10.78,0.00,-0.03,0.00,11,0,car state transition: OVERTAKE -> TRAILING
+238.964,track_crash,car,,,20.30,0.00,-0.43,0.00,11,0,"track_boundary_collision (car off-track RIGHT: x=-5.61m, y=-3.14m, s=20.30m, d=-0.43m)"
+239.870,state_transition,car,,,20.46,0.00,-0.40,0.00,11,0,car state transition: TRAILING -> OVERTAKE
+242.970,state_transition,car,,,20.84,0.00,-0.27,0.00,11,0,car state transition: OVERTAKE -> TRAILING
+251.771,state_transition,car,,,55.04,0.00,0.15,0.00,11,0,car state transition: TRAILING -> OVERTAKE
+252.970,state_transition,car,,,58.95,0.00,-0.16,0.00,11,0,car state transition: OVERTAKE -> TRAILING
+255.367,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 11
+259.314,track_crash,car,,,76.19,0.00,-0.26,0.00,11,0,"track_boundary_collision (car off-track RIGHT: x=-4.63m, y=-21.45m, s=76.19m, d=-0.26m)"
+259.426,race_complete,car,,,0.01,0.00,-0.25,0.00,12,0,single_car_lap_completion (car completed 12 laps)
+259.427,lap_complete,car,,,0.01,0.00,-0.25,0.00,12,0,car finished lap 12

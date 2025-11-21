@@ -1,0 +1,13 @@
+timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
+26.182,track_crash,car,,,76.25,0.00,-0.24,0.00,0,0,"track_boundary_collision (car off-track RIGHT: x=-4.67m, y=-21.47m, s=76.25m, d=-0.24m, limit=right=-0.19233164078672096m)"
+26.259,lap_complete,car,,,0.03,0.00,-0.24,0.00,1,0,car finished lap 1
+44.558,lap_complete,car,,,0.02,0.00,-0.25,0.00,2,0,car finished lap 2
+62.902,lap_complete,car,,,0.02,0.00,-0.25,0.00,3,0,car finished lap 3
+81.159,lap_complete,car,,,0.01,0.00,-0.25,0.00,4,0,car finished lap 4
+100.868,lap_complete,car,,,0.02,0.00,-0.24,0.00,5,0,car finished lap 5
+120.908,lap_complete,car,,,0.02,0.00,-0.25,0.00,6,0,car finished lap 6
+139.242,lap_complete,car,,,0.02,0.00,-0.24,0.00,7,0,car finished lap 7
+158.890,lap_complete,car,,,0.00,0.00,-0.24,0.00,8,0,car finished lap 8
+177.186,lap_complete,car,,,0.01,0.00,-0.25,0.00,9,0,car finished lap 9
+199.546,lap_complete,car,,,0.02,0.00,-0.25,0.00,10,0,car finished lap 10
+199.557,race_complete,car,,,0.17,0.00,-0.24,0.00,10,0,single_car_lap_completion (car completed 10 laps)

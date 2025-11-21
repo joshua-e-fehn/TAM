@@ -1,0 +1,26 @@
+timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
+27.529,state_transition,car1,,,31.32,0.00,-0.04,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+27.582,state_transition,car1,,,31.52,0.00,-0.04,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+27.732,state_transition,car1,,,32.15,0.00,-0.04,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+29.729,state_transition,car1,,,39.30,0.00,-0.13,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+30.479,state_transition,car1,,,41.23,0.00,-0.11,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+31.030,state_transition,car1,,,42.58,0.00,-0.07,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+32.842,state_transition,car1,,,47.17,0.00,0.51,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+33.129,state_transition,car1,,,47.99,0.00,0.75,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+36.132,state_transition,car1,,,53.99,0.00,0.08,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+37.443,state_transition,car1,,,56.97,0.00,0.42,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+40.223,state_transition,car1,,,61.65,0.00,0.04,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+41.529,state_transition,car1,,,64.77,0.00,-0.48,0.00,0,0,car1 state transition: OVERTAKE -> TRAILING
+45.323,lap_complete,car2,,,0.00,0.00,-0.16,0.00,1,0,car2 finished lap 1
+46.848,state_transition,car1,,,76.42,0.00,-0.09,0.00,0,0,car1 state transition: TRAILING -> OVERTAKE
+46.875,lap_complete,car1,,,0.00,0.00,-0.09,0.00,1,0,car1 finished lap 1
+51.531,state_transition,car1,,,13.03,0.00,-0.89,0.00,1,0,car1 state transition: OVERTAKE -> TRAILING
+54.880,state_transition,car1,,,23.51,0.00,-0.05,0.00,1,0,car1 state transition: TRAILING -> OVERTAKE
+58.130,state_transition,car1,,,35.97,0.00,-1.37,0.00,1,0,car1 state transition: OVERTAKE -> TRAILING
+60.021,state_transition,car2,,,40.49,0.00,-0.17,0.00,1,0,car2 state transition: TRAILING -> OVERTAKE
+60.245,state_transition,car2,,,40.89,0.00,-0.13,0.00,1,0,car2 state transition: OVERTAKE -> TRAILING
+60.294,state_transition,car2,,,40.93,0.00,-0.12,0.00,1,0,car2 state transition: TRAILING -> OVERTAKE
+61.569,state_transition,car2,,,42.78,0.00,0.51,0.00,1,0,car2 state transition: OVERTAKE -> TRAILING
+62.170,state_transition,car2,,,43.67,0.00,0.60,0.00,1,0,car2 state transition: TRAILING -> OVERTAKE
+62.569,state_transition,car2,,,44.29,0.00,0.50,0.00,1,0,car2 state transition: OVERTAKE -> TRAILING
+63.193,overtake_lead,car1,car2,5.010,50.31,45.30,0.08,0.14,1,1,"car1_overtake_lead (car1 ahead by 5.01m locally, car1_abs=126.79m, car2_abs=121.78m, threshold: 5.0m, car1_lap=1, car2_lap=1)"

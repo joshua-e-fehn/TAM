@@ -1,0 +1,34 @@
+# Single Car No Obstacle Test Configuration
+# Time trial mode - single car on track without obstacles
+# Tests different planners and speed configurations
+
+test_matrix:
+  # - simulation_id: "scno_0001"
+  #   name: "single_baseline_spliner"
+  #   mode: "single_car_no_obstacle"
+  #   planner: "spliner"
+  #   global_map: "my_map_12%s_129%w_NUC2_mintime"
+  #   show_simulation_output: false
+    
+  # - simulation_id: "scno_0002"
+  #   name: "single_baseline_predictive_spliner"
+  #   mode: "single_car_no_obstacle"
+  #   planner: "predictive_spliner"
+  #   global_map: "my_map_12%s_129%w_NUC2_mintime"
+  #   show_simulation_output: false
+  #   use_global_prediction: true
+    
+  - simulation_id: "scno_0003"
+    name: "single_baseline_tam_sampling"
+    mode: "single_car_no_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    show_simulation_output: false
+    
+  # - simulation_id: "scno_0004"
+  #   name: "single_baseline_predictive_sampler"
+  #   mode: "single_car_no_obstacle"
+  #   planner: "predictive_sampler"
+  #   global_map: "my_map_12%s_129%w_NUC2_mintime"
+  #   show_simulation_output: false
+  #   use_global_prediction: true
