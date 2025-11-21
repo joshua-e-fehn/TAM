@@ -138,13 +138,13 @@ Visualization Manager:
               Queue Size: 100
               Value: true
             - Class: rviz/MarkerArray
-              Enabled: true
+              Enabled: false
               Marker Topic: /opponent_traj_markerarray
               Name: OpponentTrajectory
               Namespaces:
                 {}
               Queue Size: 100
-              Value: true
+              Value: false
             - Class: rviz/Marker
               Enabled: true
               Marker Topic: /collision_predict/end

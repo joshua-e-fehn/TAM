@@ -239,10 +239,6 @@ class SQPAvoidanceNode:
             self.current_d = frenet_state.pose.pose.position.y
             self.cur_s = frenet_state.pose.pose.position.x
 
-            # DEBUG: Log SQP processing details
-            # rospy.logwarn_throttle(
-            #     2.0, f"[SQP DEBUG] Processing: total_obstacles={len(obs.obstacles)}, cur_s={self.cur_s:.2f}, cur_d={self.current_d:.2f}, ot_section_check={self.ot_section_check}")
-
             # Obstacle pre-processing
             obs.obstacles = sorted(obs.obstacles, key=lambda obs: obs.s_start)
             considered_obs = []
@@ -253,48 +249,20 @@ class SQPAvoidanceNode:
                 within_traj_thresh = traj_dist < self.obs_traj_tresh
                 within_lookahead = dist_to_obs < self.lookahead
 
-                # DEBUG: Log each obstacle evaluation
-                # rospy.logwarn_throttle(
-                #     2.0, f"[SQP DEBUG] Obs{i}: s_start={obs_item.s_start:.2f}, d_center={obs_item.d_center:.2f}, dist_to_obs={dist_to_obs:.2f}, traj_dist={traj_dist:.2f}, traj_thresh={self.obs_traj_tresh:.2f}, lookahead={self.lookahead:.2f}, within_traj={within_traj_thresh}, within_lookahead={within_lookahead}")
-
                 if within_traj_thresh and within_lookahead:
                     considered_obs.append(obs_item)
-                    # rospy.logwarn_throttle(
-                    #     2.0, f"[SQP DEBUG] Obs{i} ACCEPTED for consideration")
-                # else:
-                #     # rospy.logwarn_throttle(
-                #     #     2.0, f"[SQP DEBUG] Obs{i} REJECTED: traj_thresh={within_traj_thresh}, lookahead={within_lookahead}")
-
-                #     # DEBUG: Log final consideration results
-                #     # rospy.logwarn_throttle(
-                    #     2.0, f"[SQP DEBUG] Considered obstacles: {len(considered_obs)}, OT section check: {self.ot_section_check}")
 
                     # If there is an obstacle and we are in OT section
             if len(considered_obs) > 0 and self.ot_section_check == True:
-                # rospy.logwarn_throttle(
-                #     2.0, f"[SQP DEBUG] CALLING SQP SOLVER with {len(considered_obs)} obstacles")
                 evasion_x, evasion_y, evasion_s, evasion_d, evasion_v = self.sqp_solver(
                     considered_obs, frenet_state.pose.pose.position.x)
-                # rospy.logwarn_throttle(
-                #     2.0, f"[SQP DEBUG] SQP SOLVER RESULT: evasion_points={len(evasion_s)}")
                 # Publish merge reagion if evasion track has been found
                 if len(evasion_s) > 0:
-                    # rospy.logwarn_throttle(
-                    #     2.0, f"[SQP DEBUG] PUBLISHING EVASION WAYPOINTS: {len(evasion_s)} points")
                     self.merger_pub.publish(Float32MultiArray(
                         data=[considered_obs[-1].s_end % self.scaled_max_s, evasion_s[-1] % self.scaled_max_s]))
-                # else:
-                #     # rospy.logwarn_throttle(
-                #     #     2.0, f"[SQP DEBUG] SQP SOLVER FAILED: No evasion points generated")
 
             # IF there is no point in overtaking anymore delte all markers
             else:
-                # if len(considered_obs) == 0:
-                #     # rospy.logwarn_throttle(
-                #     #     2.0, f"[SQP DEBUG] NO OBSTACLES CONSIDERED: no waypoints published")
-                # if not self.ot_section_check:
-                #     # rospy.logwarn_throttle(
-                #     #     2.0, f"[SQP DEBUG] NOT IN OT SECTION: no waypoints published")
                 mrks = MarkerArray()
                 del_mrk = Marker(header=rospy.Header(stamp=rospy.Time.now()))
                 del_mrk.action = Marker.DELETEALL
@@ -309,14 +277,10 @@ class SQPAvoidanceNode:
             self.rate.sleep()
 
     def sqp_solver(self, considered_obs: list, cur_s: float):
-        # rospy.logwarn_throttle(
-        #     2.0, f"[SQP SOLVER DEBUG] Starting solver with {len(considered_obs)} obstacles, cur_s={cur_s:.2f}")
 
         danger_flag = False
         # Get the initial guess of the overtaking side (see spliner)
         initial_guess_object = self.group_objects(considered_obs)
-        # rospy.logwarn_throttle(
-        #     2.0, f"[SQP SOLVER DEBUG] Grouped object: s_start={initial_guess_object.s_start:.2f}, s_end={initial_guess_object.s_end:.2f}, s_center={initial_guess_object.s_center:.2f}")
 
         initial_guess_object_start_idx = np.abs(
             self.scaled_wpnts - initial_guess_object.s_start).argmin()
@@ -330,13 +294,8 @@ class SQPAvoidanceNode:
             gb_idxs = [int(initial_guess_object.s_center / self.scaled_delta_s + i) %
                        self.scaled_max_idx for i in range(20)]
 
-        # rospy.logwarn_throttle(
-        #     2.0, f"[SQP SOLVER DEBUG] ROC analysis: gb_idxs_length={len(gb_idxs)}, start_idx={initial_guess_object_start_idx}, end_idx={initial_guess_object_end_idx}")
-
         side, initial_apex = self._more_space(
             initial_guess_object, self.scaled_wpnts_msg.wpnts, gb_idxs)
-        # rospy.logwarn_throttle(
-        #     2.0, f"[SQP SOLVER DEBUG] Overtaking side: {side}, initial_apex={initial_apex:.2f}")
 
         kappas = np.array(
             [self.scaled_wpnts_msg.wpnts[gb_idx].kappa_radpm for gb_idx in gb_idxs])
@@ -345,8 +304,6 @@ class SQPAvoidanceNode:
 
         # Enlongate the ROC if our initial guess suggests that we are overtaking on the outside
         if side == outside:
-            # rospy.logwarn_throttle(
-            #     2.0, f"[SQP SOLVER DEBUG] Elongating ROC: side={side} == outside={outside}")
             for i in range(len(considered_obs)):
                 considered_obs[i].s_end = considered_obs[i].s_end + (
                     considered_obs[i].s_end - considered_obs[i].s_start) % self.max_s_updated * max_kappa * (self.width_car + self.evasion_dist)
@@ -381,6 +338,14 @@ class SQPAvoidanceNode:
         # Get the boundaries for every s avoidance point
         bounds = np.array([(-wpnt.d_right + self.spline_bound_mindist, wpnt.d_left -
                           self.spline_bound_mindist) for wpnt in corresponding_scaled_wpnts])
+
+        # Debug: Log track boundary information
+        d_left_arr = np.array(
+            [wpnt.d_left for wpnt in corresponding_scaled_wpnts])
+        d_right_arr = np.array(
+            [wpnt.d_right for wpnt in corresponding_scaled_wpnts])
+        track_width = d_left_arr + d_right_arr
+        usable_width = track_width - 2 * self.spline_bound_mindist
 
         # Calculate curvature at each point using numerical differentiation
         # k = (x'y'' - y'x'') / (x'^2 + y'^2)^(3/2)
@@ -433,11 +398,6 @@ class SQPAvoidanceNode:
                         self.obs_downsampled_center_d, d_opp_downsampled_array)
                     self.obs_downsampled_min_dist = np.append(self.obs_downsampled_min_dist, np.full(
                         obs_idx_end - obs_idx_start + 1, self.width_car + self.evasion_dist))
-            # else:
-            #     # rospy.loginfo(
-            #     #     "[OBS Spliner] Obstacle end index is smaller than start index")
-            #     # rospy.loginfo("[OBS Spliner] len obs: " + str(len(considered_obs)) + "obs_start:" + str(obs.s_start) + "obs_end:" + str(obs.s_end) + " obs_idx_start: " + str(obs_idx_start) +
-                #               " obs_idx_end: " + str(obs_idx_end) + " len s_avoidance: " + str(len(s_avoidance)) + "s avoidance 0:" + str(s_avoidance[0]) + " s avoidance -1: " + str(s_avoidance[-1]))
 
         self.obs_downsampled_indices = self.obs_downsampled_indices.astype(int)
 
@@ -499,7 +459,6 @@ class SQPAvoidanceNode:
                 self.last_ot_side = "left"
             else:
                 self.last_ot_side = "right"
-            # print("[OBS Spliner] SQP solver successfull")
 
         else:
             evasion_x = []
@@ -515,9 +474,6 @@ class SQPAvoidanceNode:
         self.evasion_pub.publish(evasion_wpnts_msg)
         self.visualize_sqp(evasion_s, evasion_d,
                            evasion_x, evasion_y, evasion_v)
-
-        # rospy.logwarn_throttle(
-        #     2.0, f"[SQP SOLVER DEBUG] FINAL RESULT: evasion_points={len(evasion_s)}, evasion_x={len(evasion_x)}, evasion_y={len(evasion_y)}")
 
         return evasion_x, evasion_y, evasion_s, evasion_d, evasion_v
 
