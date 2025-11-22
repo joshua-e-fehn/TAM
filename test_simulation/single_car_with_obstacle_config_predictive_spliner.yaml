@@ -7,7 +7,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.50
     obstacle_start_s: 3
     show_simulation_output: false
@@ -31,7 +31,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.50
     obstacle_start_s: 3
     show_simulation_output: false
@@ -55,7 +55,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.50
     obstacle_start_s: 3
     show_simulation_output: false
@@ -79,7 +79,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.50
     obstacle_start_s: 3
     show_simulation_output: false
@@ -103,7 +103,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.50
     obstacle_start_s: 3
     show_simulation_output: false
@@ -127,7 +127,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.55
     obstacle_start_s: 3
     show_simulation_output: false
@@ -151,7 +151,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.55
     obstacle_start_s: 3
     show_simulation_output: false
@@ -175,7 +175,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.55
     obstacle_start_s: 3
     show_simulation_output: false
@@ -199,7 +199,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.55
     obstacle_start_s: 3
     show_simulation_output: false
@@ -223,7 +223,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.55
     obstacle_start_s: 3
     show_simulation_output: false
@@ -247,7 +247,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.60
     obstacle_start_s: 3
     show_simulation_output: false
@@ -271,7 +271,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.60
     obstacle_start_s: 3
     show_simulation_output: false
@@ -295,7 +295,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.60
     obstacle_start_s: 3
     show_simulation_output: false
@@ -319,7 +319,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.60
     obstacle_start_s: 3
     show_simulation_output: false
@@ -343,7 +343,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.60
     obstacle_start_s: 3
     show_simulation_output: false
@@ -367,7 +367,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.65
     obstacle_start_s: 3
     show_simulation_output: false
@@ -391,7 +391,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.65
     obstacle_start_s: 3
     show_simulation_output: false
@@ -415,7 +415,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.65
     obstacle_start_s: 3
     show_simulation_output: false
@@ -439,7 +439,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.65
     obstacle_start_s: 3
     show_simulation_output: false
@@ -463,7 +463,7 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "my_map_12%s_129%w_NUC2_mintime"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.65
     obstacle_start_s: 3
     show_simulation_output: false

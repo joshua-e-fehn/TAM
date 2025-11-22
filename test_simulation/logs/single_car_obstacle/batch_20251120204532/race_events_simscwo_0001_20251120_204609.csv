@@ -1,2 +1,0 @@
-timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
-0.000,race_start,car,,,0.03,0.00,-0.09,0.00,0,0,Race started - GO signal received

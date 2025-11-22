@@ -7,10 +7,10 @@ test_matrix:
     name: "single_vs_obstacle_predictive_spliner"
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
-    global_map: "f"
-    obstacle_speed: 0.45
-    obstacle_start_s: 33
-    show_simulation_output: true
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.55
+    obstacle_start_s: 3
+    show_simulation_output: false
     use_global_prediction: true
 
     predictive_spliner_spline_bound_mindist: 0.15

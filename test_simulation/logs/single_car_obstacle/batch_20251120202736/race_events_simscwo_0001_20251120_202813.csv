@@ -1,8 +1,0 @@
-timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
-72.901,state_transition,car,,,255.43,0.00,0.03,0.00,0,0,car state transition: TRAILING -> OVERTAKE
-76.501,state_transition,car,,,258.38,0.00,0.38,0.00,0,0,car state transition: OVERTAKE -> TRAILING
-168.755,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 1
-229.251,state_transition,car,,,259.15,0.00,0.54,0.00,0,0,car state transition: TRAILING -> OVERTAKE
-232.851,state_transition,car,,,259.16,0.00,0.55,0.00,0,0,car state transition: OVERTAKE -> TRAILING
-324.933,lap_complete,obstacle,,,0.00,0.00,0.00,0.00,0,0,obstacle finished lap 2
-324.945,enemy_overlapped,car,obstacle,,259.85,0.00,0.58,0.00,0,0,"obstacle_overlapped_car (obstacle_lap=2, car_lap=0, obstacle is 2 laps ahead)"
