@@ -194,20 +194,11 @@
     <node pkg="topic_tools" type="relay" name="scan_relay" 
           args="f1tenth_simulator/scan scan" />
     
-    <!-- CRITICAL: Global-to-Namespaced Topic Bridging -->
-    <!-- Note: These are essential for multi-car coordination -->
-    <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
-          args="/$(arg car1)/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
-    
     <!-- CRITICAL: Global Waypoint Relays -->
     <node pkg="topic_tools" type="relay" name="global_waypoints_relay" 
           args="/global_waypoints global_waypoints" />
     <node pkg="topic_tools" type="relay" name="global_waypoints_scaled_relay" 
           args="/global_waypoints_scaled global_waypoints_scaled" />
-    
-    <!-- REMOVED: planner_to_controller_relay - this bypassed the state machine -->
-    <!-- The correct flow is: planner -> state_machine -> controller -->
-    <!-- State machine converts OTWpntArray to WpntArray as required by controller -->
     
     <!-- CRITICAL: Control Pipeline Relays (Required for mux architecture) -->
     <node pkg="topic_tools" type="relay" name="controller_to_mux_relay" 
@@ -321,19 +312,11 @@
     <node pkg="topic_tools" type="relay" name="scan_relay" 
           args="f1tenth_simulator/scan scan" />
     
-    <!-- CRITICAL: Global-to-Namespaced Topic Bridging -->
-    <node pkg="topic_tools" type="relay" name="planner_waypoints_relay" 
-          args="/$(arg car2)/planner/avoidance/otwpnts planner/avoidance/otwpnts" />
-    
     <!-- CRITICAL: Global Waypoint Relays -->
     <node pkg="topic_tools" type="relay" name="global_waypoints_relay" 
           args="/global_waypoints global_waypoints" />
     <node pkg="topic_tools" type="relay" name="global_waypoints_scaled_relay" 
           args="/global_waypoints_scaled global_waypoints_scaled" />
-    
-    <!-- REMOVED: planner_to_controller_relay - this bypassed the state machine -->
-    <!-- The correct flow is: planner -> state_machine -> controller -->
-    <!-- State machine converts OTWpntArray to WpntArray as required by controller -->
     
     <!-- CRITICAL: Control Pipeline Relays (Required for mux architecture) -->
     <node pkg="topic_tools" type="relay" name="controller_to_mux_relay" 
