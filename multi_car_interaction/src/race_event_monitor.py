@@ -246,7 +246,7 @@ class RaceEventMonitor:
 
         # Base log directory - use logs folder in catkin workspace
         base_log_dir = rospy.get_param('/race_test/log_directory',
-                                       os.path.join(os.path.expanduser('~'), 'catkin_ws', 'testSimulation', 'logs'))
+                                       os.path.join(os.path.expanduser('~'), 'catkin_ws', 'src', 'race_stack', 'test_simulation', 'logs'))
 
         # Create mode-specific subdirectory
         mode_dir = os.path.join(base_log_dir, self.race_mode)
@@ -380,9 +380,11 @@ class RaceEventMonitor:
         self.successful_overtakes_count = 0
         self.obstacle_collision_count = 0
         self.boundary_collision_count = 0
-        self.max_overtakes = 2
-        self.max_obstacle_collisions = 2
-        self.max_boundary_collisions = 5
+        self.max_overtakes = rospy.get_param('/race_test/max_overtakes', 2)
+        self.max_obstacle_collisions = rospy.get_param(
+            '/race_test/max_obstacle_collisions', 2)
+        self.max_boundary_collisions = rospy.get_param(
+            '/race_test/max_boundary_collisions', 5)
 
         # Collision tracking with separation distance requirement
         # Track if currently in collision with obstacle
@@ -390,9 +392,15 @@ class RaceEventMonitor:
         # Track if car1 and car2 are currently in collision
         self.in_collision_car1_car2 = False
         self.car_collision_count = 0  # Count collisions between cars in multi-car mode
-        self.max_car_collisions = 2  # Maximum car-to-car collisions before ending race
+        # Maximum car-to-car collisions before ending race
+        self.max_car_collisions = rospy.get_param(
+            '/race_test/max_car_collisions', 2)
         # meters - must separate by this much before counting another collision
         self.min_separation_distance = 2.0
+
+        # Boundary collision behavior switch
+        self.end_race_on_boundary_collision = rospy.get_param(
+            '/race_test/end_race_on_boundary_collision', False)
 
         # Overtake state tracking
         # Track if car is locally behind obstacle (within overtake range)
@@ -678,10 +686,26 @@ class RaceEventMonitor:
                         'timestamp': rospy.Time.now()
                     }
 
-                    # Log the boundary collision but don't end the race (all modes)
+                    # Log the boundary collision
                     reason = f"track_boundary_collision ({car_name} off-track {violation_side}: x={x_coord:.2f}m, y={y_coord:.2f}m, s={s:.2f}m, d={d:.2f}m)"
                     self.log_event('track_crash', car1_name=car_name,
                                    details=reason)
+
+                    # Increment boundary collision counter
+                    self.boundary_collision_count += 1
+                    rospy.logwarn(
+                        f"[Race Monitor] ⚠️  Total boundary collisions: {self.boundary_collision_count}/{self.max_boundary_collisions}")
+
+                    # Check if we've reached the maximum number of boundary collisions
+                    if self.boundary_collision_count >= self.max_boundary_collisions:
+                        if self.end_race_on_boundary_collision:
+                            self.set_race_complete(
+                                f"Track boundary collision limit reached ({self.boundary_collision_count})")
+                            race_ending_collision = True
+                            break
+                        else:
+                            rospy.logwarn(
+                                f"[Race Monitor] ⚠️  Boundary collision limit reached but continuing race (end_race_on_boundary_collision=False)")
             else:
                 # Car is within acceptable bounds (including tolerance)
                 pass

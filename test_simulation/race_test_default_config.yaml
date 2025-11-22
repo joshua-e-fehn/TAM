@@ -7,7 +7,7 @@ collision_distance: 0.4  # meters
 check_rate: 80.0  # Hz
 
 # Race completion parameters
-target_laps: 4
+target_laps: 3
 overtake_lead_distance: 5.0  # meters
 boundary_safety_margin: 0.0  # meters - additional safety margin
 boundary_violation_tolerance: 0.05  # meters - tolerance for minor boundary scratches
@@ -16,3 +16,12 @@ boundary_violation_tolerance: 0.05  # meters - tolerance for minor boundary scra
 car_model: 'NUC2'
 car_length: 0.58  # meters
 car_width: 0.31    # meters
+
+# Event count thresholds
+max_overtakes: 1  # Maximum successful overtakes before ending race (single_car_obstacle mode)
+max_obstacle_collisions: 2  # Maximum collisions with obstacle before ending race
+max_boundary_collisions: 3  # Maximum track boundary collisions before ending race
+max_car_collisions: 2  # Maximum car-to-car collisions before ending race (multi_car mode)
+
+# Boundary collision behavior
+end_race_on_boundary_collision: true  # If true, end race when max_boundary_collisions reached. If false, only log boundary collisions.

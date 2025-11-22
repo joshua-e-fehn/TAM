@@ -132,7 +132,7 @@ class RaceTestFramework:
         """Save test configuration files to batch log directory for cross-reference"""
         # Base log directory
         base_log_dir = os.path.join(os.path.expanduser(
-            '~'), 'catkin_ws', 'testSimulation', 'logs')
+            '~'), 'catkin_ws', 'src', 'race_stack', 'test_simulation', 'logs')
 
         # Create mode-specific subdirectory
         mode_dir = os.path.join(base_log_dir, self.mode)
