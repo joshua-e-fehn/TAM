@@ -19,10 +19,10 @@ import tf2_geometry_msgs
 import math
 from geometry_msgs.msg import PoseStamped, Point
 from nav_msgs.msg import Odometry
-from f110_msgs.msg import ObstacleArray, Obstacle, WpntArray
+from f110_msgs.msg import ObstacleArray, Obstacle, WpntArray, OpponentTrajectory, OppWpnt
 from visualization_msgs.msg import MarkerArray, Marker
 from std_msgs.msg import Header, ColorRGBA
-from frenet_conversion.srv import Glob2FrenetArr
+from frenet_conversion.srv import Glob2FrenetArr, Frenet2GlobArr
 from tf2_geometry_msgs import do_transform_pose
 
 
@@ -38,7 +38,7 @@ class MultiCarObstaclePublisher:
         else:
             self.car_names = car_names_param
         self.publish_rate = rospy.get_param(
-            '~publish_rate', 8012.0)  # Hz - Updated to 50Hz
+            '~publish_rate', 50)  # Hz - Updated to 50Hz
 
         # Car model and dimensions
         self.car_model = rospy.get_param('~car_model', 'NUC2')
@@ -50,7 +50,7 @@ class MultiCarObstaclePublisher:
 
         # Detection range (only consider cars within this distance)
         self.max_detection_range = rospy.get_param(
-            '~max_detection_range', 15.0)  # meters
+            '~max_detection_range', 20.0)  # meters
 
         # Track length for handling wraparound in relative coordinate calculation
         # Try to get actual track length from global parameter, fallback to default
@@ -80,6 +80,7 @@ class MultiCarObstaclePublisher:
         # Publishers for obstacles (per car) - Using f110_msgs/ObstacleArray
         self.obstacle_publishers = {}
         self.marker_publishers = {}
+        self.opponent_waypoints_publishers = {}
 
         # Frenet Conversion Services (per car)
         self.frenet_converters = {}
@@ -173,6 +174,12 @@ class MultiCarObstaclePublisher:
             viz_topic = f"/{car_name}/car_obstacles_viz"
             self.marker_publishers[car_name] = rospy.Publisher(
                 viz_topic, MarkerArray, queue_size=10
+            )
+
+            # Publisher for opponent waypoints (full trajectory)
+            opponent_waypoints_topic = f"/{car_name}/opponent_waypoints"
+            self.opponent_waypoints_publishers[car_name] = rospy.Publisher(
+                opponent_waypoints_topic, OpponentTrajectory, queue_size=10
             )
 
             rospy.loginfo(
@@ -453,51 +460,10 @@ class MultiCarObstaclePublisher:
                         f"Stale data for {other_car_name}: {age:.2f}s old")
                     continue
 
-                # Check if within detection range using Frenet distance
-                if car_name in self.car_positions:
-                    # Use Frenet-based distance calculation
-                    frenet_dist = self.calculate_frenet_distance(
-                        car_name,
-                        self.car_positions[car_name]['pose'],
-                        other_car_data['pose']
-                    )
-
-                    if frenet_dist is not None:
-                        track_dist, lateral_dist, car_s, other_s = frenet_dist
-
-                        # Filter based on track distance (primary filter)
-                        # Use max_detection_range as track distance threshold
-                        if track_dist > self.max_detection_range:
-                            rospy.logdebug_throttle(2.0,
-                                                    f"{car_name} filters out {other_car_name}: "
-                                                    f"track_dist={track_dist:.2f}m > {self.max_detection_range}m")
-                            continue  # Too far along track
-
-                        # DISABLED: Lateral distance check
-                        # Cars are detected based ONLY on track distance (s), not lateral position (d)
-                        # This allows detection of opponents on different racing lines
-                        # max_lateral_separation = rospy.get_param('~max_lateral_separation', 5.0)
-                        # if lateral_dist > max_lateral_separation:
-                        #     rospy.logdebug_throttle(2.0,
-                        #         f"{car_name} filters out {other_car_name}: "
-                        #         f"lateral_dist={lateral_dist:.2f}m > {max_lateral_separation}m")
-                        #     continue  # Too far laterally
-
-                        rospy.logdebug_throttle(1.0,
-                                                f"{car_name} DETECTS {other_car_name}: "
-                                                f"track={track_dist:.2f}m, lateral={lateral_dist:.2f}m "
-                                                f"(s: {car_s:.1f} vs {other_s:.1f})")
-                    else:
-                        # Fallback to Cartesian distance if Frenet conversion fails
-                        rospy.logwarn_throttle(5.0,
-                                               f"Frenet distance calculation failed for {car_name}, "
-                                               f"using Cartesian fallback")
-                        cartesian_dist = self.calculate_distance(
-                            self.car_positions[car_name]['pose'],
-                            other_car_data['pose']
-                        )
-                        if cartesian_dist > self.max_detection_range:
-                            continue  # Too far away (Cartesian fallback)
+                # REMOVED: Detection range filtering
+                # Like the dummy obstacle publisher, we now publish all other cars
+                # regardless of distance. This matches the behavior where the dummy
+                # obstacle is always published when in GB_TRACK state.
 
                 # Create obstacle message (f110_msgs/Obstacle)
                 obstacle = self.create_car_obstacle(
@@ -513,26 +479,26 @@ class MultiCarObstaclePublisher:
                     markers.markers.append(viz_marker)
                     marker_id += 1
 
-                    # Log detection for debugging with both distances
-                    if car_name in self.car_positions:
-                        frenet_dist = self.calculate_frenet_distance(
-                            car_name,
-                            self.car_positions[car_name]['pose'],
-                            other_car_data['pose']
-                        )
-                        if frenet_dist is not None:
-                            track_dist, lateral_dist, car_s, other_s = frenet_dist
-                            rospy.loginfo_throttle(2.0,
-                                                   f"{car_name} published {other_car_name} as obstacle: "
-                                                   f"track_dist={track_dist:.2f}m, lateral={lateral_dist:.2f}m, "
-                                                   f"s_coords=({car_s:.1f}, {other_s:.1f})")
-                        else:
-                            cartesian_dist = self.calculate_distance(
-                                self.car_positions[car_name]['pose'],
-                                other_car_data['pose']
-                            )
-                            rospy.logdebug(f"{car_name} detects {other_car_name} at {cartesian_dist:.2f}m "
-                                           f"(s={obstacle.s_center:.2f}, d={obstacle.d_center:.2f})")
+                    # # Log detection for debugging with both distances
+                    # if car_name in self.car_positions:
+                    #     frenet_dist = self.calculate_frenet_distance(
+                    #         car_name,
+                    #         self.car_positions[car_name]['pose'],
+                    #         other_car_data['pose']
+                    #     )
+                    #     if frenet_dist is not None:
+                    #         track_dist, lateral_dist, car_s, other_s = frenet_dist
+                    #         rospy.loginfo_throttle(2.0,
+                    #                                f"{car_name} published {other_car_name} as obstacle: "
+                    #                                f"track_dist={track_dist:.2f}m, lateral={lateral_dist:.2f}m, "
+                    #                                f"s_coords=({car_s:.1f}, {other_s:.1f})")
+                    #     else:
+                    #         cartesian_dist = self.calculate_distance(
+                    #             self.car_positions[car_name]['pose'],
+                    #             other_car_data['pose']
+                    #         )
+                    #         rospy.logdebug(f"{car_name} detects {other_car_name} at {cartesian_dist:.2f}m "
+                    #                        f"(s={obstacle.s_center:.2f}, d={obstacle.d_center:.2f})")
 
             # Publish obstacle array for this car (integrates with existing perception pipeline)
             if obstacle_array.obstacles:
@@ -543,6 +509,59 @@ class MultiCarObstaclePublisher:
             # Publish visualization markers
             if markers.markers:
                 self.marker_publishers[car_name].publish(markers)
+
+            # Publish opponent waypoints (full trajectory) for each opponent
+            # This matches the dummy obstacle behavior of publishing opponent_waypoints
+            self.publish_opponent_waypoints(car_name, obstacle_array)
+
+    def publish_opponent_waypoints(self, car_name, obstacle_array):
+        """
+        Publish opponent trajectory waypoints using the global waypoints.
+        This uses the car's global waypoints as the opponent trajectory,
+        similar to how dummy obstacle publisher works.
+        """
+        if not obstacle_array.obstacles:
+            return
+
+        # Get global waypoints for this car
+        try:
+            global_waypoints_topic = f"/{car_name}/global_waypoints"
+            global_wpnts_msg = rospy.wait_for_message(
+                global_waypoints_topic, WpntArray, timeout=0.1)
+        except:
+            # If we can't get car-specific waypoints, try global topic
+            try:
+                global_wpnts_msg = rospy.wait_for_message(
+                    "/global_waypoints", WpntArray, timeout=0.1)
+            except:
+                return  # No waypoints available
+
+        # Create opponent trajectory message
+        opponent_traj_msg = OpponentTrajectory()
+        opponent_traj_msg.header.stamp = rospy.Time.now()
+        opponent_traj_msg.header.frame_id = "map"
+
+        # Use lap count >= 2 to indicate trajectory is available (like dummy obstacle)
+        opponent_traj_msg.lap_count = 2
+
+        # Convert global waypoints to opponent waypoints format
+        # Exclude last point (because last point == first point in global waypoints)
+        for wpnt in global_wpnts_msg.wpnts[:-1]:
+            opp_wpnt = OppWpnt()
+            opp_wpnt.x_m = wpnt.x_m
+            opp_wpnt.y_m = wpnt.y_m
+            opp_wpnt.s_m = wpnt.s_m
+            opp_wpnt.d_m = 0.0  # Global waypoints are on centerline
+            opp_wpnt.proj_vs_mps = wpnt.vx_mps
+            opp_wpnt.vd_mps = 0.0
+            opp_wpnt.d_var = 0.3  # 30cm lateral uncertainty
+            opp_wpnt.vs_var = 0.5  # 0.5 m/s speed uncertainty
+            opponent_traj_msg.oppwpnts.append(opp_wpnt)
+
+        # Publish the opponent waypoints
+        if opponent_traj_msg.oppwpnts:
+            self.opponent_waypoints_publishers[car_name].publish(
+                opponent_traj_msg)
 
 
 def main():
