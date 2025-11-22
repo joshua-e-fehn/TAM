@@ -318,59 +318,14 @@ class StateMachine:
 
     def avoidance_cb(self, data: OTWpntArray):
         """spliniboi waypoints"""
-        callback_start = rospy.Time.now()
-
-        # Reject messages published BEFORE this node started (backlog from connection establishment)
-        # This prevents processing 100+ queued messages when subscriber first connects
-        if data.header.stamp < self.node_start_time:
-            # Silently ignore old messages from before node startup
-            return
-
-        # Calculate message age
-        msg_age = (callback_start - data.header.stamp).to_sec()
-
-        # Reject stale messages (older than 200ms) to prevent using outdated trajectories
-        # At 20Hz planning rate, 200ms = 4 planning cycles is reasonable tolerance
-        if msg_age > 0.6:
-            # rospy.logwarn_throttle(5.0,  # Only log every 5 seconds to avoid spam
-            #                        f"[{self.name}] 🕐 REJECTING STALE MESSAGE | "
-            #                        f"msg_age={msg_age*1000:.1f}ms | "
-            #                        f"wpnts={len(data.wpnts)} | "
-            #                        f"Ignoring outdated trajectory")
-            return
-
-        # Additional check: Only accept messages newer than the last one we processed
-        if not hasattr(self, 'last_trajectory_timestamp'):
-            self.last_trajectory_timestamp = rospy.Time(0)
-
-        if data.header.stamp <= self.last_trajectory_timestamp:
-            # This message is older than or equal to the last one we processed
-            rospy.logdebug(
-                f"[{self.name}] Skipping message with duplicate/old timestamp")
-            return
-
-        # Update last processed timestamp
-        self.last_trajectory_timestamp = data.header.stamp
 
         if len(data.wpnts) > 0:
             self.splini_ttl_counter = int(self.splini_ttl * self.rate_hz)
             self.avoidance_wpnts = data
 
-            # DEBUG: Log receipt of avoidance waypoints
-            rospy.loginfo_throttle(2.0,
-                                   f"[{self.name}] ✓ Received {len(data.wpnts)} avoidance waypoints | "
-                                   f"s_range=[{data.wpnts[0].s_m:.2f}, {data.wpnts[-1].s_m:.2f}] | "
-                                   f"First wpnt: x={data.wpnts[0].x_m:.2f}, y={data.wpnts[0].y_m:.2f} | "
-                                   f"msg_age={msg_age*1000:.1f}ms")
+        # Otherwise we don't overwrite the avoidance waypoints
         else:
-            # Empty trajectory received - planner failed or no valid trajectory
-            # Clear avoidance_wpnts to trigger fallback in states.py
-            self.avoidance_wpnts = None
-            callback_time = (rospy.Time.now() - callback_start).to_sec()
-            # rospy.logwarn(
-            #     f"[{self.name}] ⚠️ Received EMPTY avoidance waypoints - setting to None | "
-            #     f"msg_age={msg_age*1000:.1f}ms | callback_time={callback_time*1000:.1f}ms | "
-            #     f"(published at {data.header.stamp.to_sec():.3f}, received at {callback_start.to_sec():.3f})")
+            pass
 
     def frenet_pose_cb(self, data: Odometry):
         self.cur_s = data.pose.pose.position.x
@@ -608,7 +563,6 @@ class StateMachine:
 
                 # Use frenet conversion service to convert (s, d) wrt min curv trajectory to (x, y) in map
                 for obs in self.obstacles:
-                    # FIXED: predictive_spliner should check both static AND dynamic obstacles
                     # The Gaussian prediction handles dynamic obstacle trajectory, so we need to check if overtaking path is clear
                     if self.ot_planner == "spliner" or self.ot_planner == "predictive_spliner" or self.ot_planner == "tam_sampling" or self.ot_planner == "predictive_sampler":
                         obs_s = obs.s_center
@@ -626,7 +580,7 @@ class StateMachine:
                             if abs(ot_obs_dist) < self.lateral_width_ot_m:
                                 o_free = False
                                 rospy.loginfo(
-                                    "[State Machine] O_FREE False, obs dist to ot lane: {} m".format(ot_obs_dist))
+                                    f"[State Machine] O_FREE False, obs dist to ot lane: {ot_obs_dist} m")
                                 break
             else:
                 o_free = True
