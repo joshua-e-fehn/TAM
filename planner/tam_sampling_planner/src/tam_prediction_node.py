@@ -84,6 +84,9 @@ class TAMConstantOffsetPredictor:
         self.cached_predictions = {}
         self.prediction_buffer = {}  # Store recent predictions with timestamps
 
+        # Velocity scale smoothing (exponential moving average)
+        self.velocity_scale_history = {}  # obstacle_id -> smoothed scale factor
+
         # Tracking for existing markers
         self.active_marker_ids = set()
 
@@ -95,7 +98,7 @@ class TAMConstantOffsetPredictor:
         self.setup_ros_interface()
 
         rospy.loginfo(
-            f"{self.log_name} Initialized - prediction points will match global waypoints length")
+            f"{self.log_name} Initialized - predictions use raceline velocities and relative lateral offset")
 
     def declare_and_update_parameters(self):
         if not self.initialized_params:
@@ -105,7 +108,15 @@ class TAMConstantOffsetPredictor:
             self.prediction_dt = yaml_defaults.get(
                 'prediction_dt', rospy.get_param("prediction_dt", 0.1))  # time step
             rospy.set_param("prediction_dt", self.prediction_dt)
-            # prediction_points will be set dynamically based on global waypoints length
+
+            # Prediction horizon parameters (match TAM planner)
+            self.prediction_horizon = yaml_defaults.get(
+                'planning_horizon', rospy.get_param("prediction_horizon", 4.0))  # seconds
+            rospy.set_param("prediction_horizon", self.prediction_horizon)
+
+            self.prediction_distance = yaml_defaults.get(
+                'trajectory_length', rospy.get_param("prediction_distance", 10.0))  # meters
+            rospy.set_param("prediction_distance", self.prediction_distance)
 
             # Safety parameters
             self.safety_margin = yaml_defaults.get(
@@ -125,7 +136,12 @@ class TAMConstantOffsetPredictor:
         else:
             self.prediction_dt = rospy.get_param(
                 "prediction_dt", self.prediction_dt)  # time step
-            # prediction_points will be set dynamically based on global waypoints length
+
+            # Prediction horizon parameters (match TAM planner)
+            self.prediction_horizon = rospy.get_param(
+                "prediction_horizon", self.prediction_horizon)
+            self.prediction_distance = rospy.get_param(
+                "prediction_distance", self.prediction_distance)
 
             # Safety parameters
             self.safety_margin = rospy.get_param(
@@ -392,6 +408,12 @@ class TAMConstantOffsetPredictor:
         maintain that 20% relative position throughout the prediction, adapting to
         varying track widths.
 
+        Key improvements:
+        1. Uses raceline velocity at each waypoint (not constant)
+        2. Maintains relative lateral offset (scales with track width)
+        3. Starts from opponent's ACTUAL position (not full lap)
+        4. Trims to reasonable horizon (time or distance based)
+
         Args:
             obstacle: Current obstacle state
             obstacle_id: Unique identifier for the obstacle
@@ -402,55 +424,99 @@ class TAMConstantOffsetPredictor:
 
         try:
             # Obstacles are already in Frenet coordinates
-            d_current = obstacle.d_center  # Current lateral offset from centerline
-
-            # Get velocity for reference (not used in waypoint-based prediction)
-            vs_current = obstacle.vs
-            if vs_current < 0.5:  # Minimum velocity assumption
-                vs_current = 2.0
+            s_current = obstacle.s_center
+            d_current = obstacle.d_center
 
             # Calculate the relative position at the obstacle's current location
-            # This requires finding the current track boundaries
+            # This is the percentage position between track boundaries
             relative_position = self.calculate_relative_position(obstacle)
 
+            # Calculate relative velocity scale factor with smoothing
+            # If opponent drives at 60% of raceline speed, maintain 60% in prediction
+            velocity_scale = self.calculate_velocity_scale_factor(
+                obstacle, obstacle_id)
+
             # rospy.loginfo_throttle(
-            #     2.0, f"{self.log_name} Obstacle {obstacle_id}: s={obstacle.s_center:.2f}, d={d_current:.2f}, relative_pos={relative_position:.2%}")
+            #     2.0, f"{self.log_name} Obstacle {obstacle_id}: s={s_current:.2f}, d={d_current:.2f}, "
+            #          f"relative_pos={relative_position:.2%}, vel_scale={velocity_scale:.2%}")
 
-            # Generate prediction points based on global waypoints
+            # Find starting waypoint index (closest to opponent's current position)
+            start_idx = self.find_closest_waypoint_index(s_current)
+
+            # Generate prediction points starting from opponent's actual position
             predicted_waypoints = []
+            num_waypoints = len(self.global_waypoints.wpnts)
 
-            # Iterate through all global waypoints and apply relative offset
-            for waypoint in self.global_waypoints.wpnts:
+            # Track accumulated distance and time for horizon limits
+            distance_accumulated = 0.0
+            time_accumulated = 0.0
+
+            # Iterate forward from opponent's position with wraparound
+            for i in range(num_waypoints):
+                # Wraparound index
+                idx = (start_idx + i) % num_waypoints
+                waypoint = self.global_waypoints.wpnts[idx]
+
+                # Calculate distance increment
+                if i > 0:
+                    prev_idx = (start_idx + i - 1) % num_waypoints
+                    prev_waypoint = self.global_waypoints.wpnts[prev_idx]
+                    ds = waypoint.s_m - prev_waypoint.s_m
+
+                    # Handle wraparound at track start/finish
+                    if ds < -self.track_length / 2.0:
+                        ds += self.track_length
+                    elif ds > self.track_length / 2.0:
+                        ds -= self.track_length
+
+                    distance_accumulated += abs(ds)
+
+                    # Use raceline velocity for time calculation
+                    v_raceline = waypoint.vx_mps if waypoint.vx_mps > 0.5 else 2.0
+                    time_accumulated += abs(ds) / v_raceline
+
+                # Check horizon limits (use 2× for safety margin)
+                if distance_accumulated > 2.0 * self.prediction_distance:
+                    break
+                if time_accumulated > 2.0 * self.prediction_horizon:
+                    break
+
                 # Calculate future d offset based on relative position and local track width
                 d_future = self.apply_relative_position_at_waypoint(
                     waypoint, relative_position)
 
-                # # Convert s and d to Cartesian coordinates using Frenet converter
+                # Convert s and d to Cartesian coordinates using Frenet converter
                 try:
                     x_future, y_future = self.converter.get_cartesian(
-                        [waypoint.s_m], [waypoint.d_m + d_future])
+                        [waypoint.s_m], [d_future])
                     x_future = x_future[0]
                     y_future = y_future[0]
                 except Exception as e:
                     rospy.logwarn_throttle(
                         10.0, f"{self.log_name} Error converting Frenet to Cartesian: {e}")
-                    # Fallback: use centerline position
+                    # Fallback: use centerline position with offset
                     x_future = waypoint.x_m
                     y_future = waypoint.y_m
+
+                # Use raceline velocity at this waypoint with opponent's velocity scale
+                v_raceline_base = waypoint.vx_mps if waypoint.vx_mps > 0.5 else 2.0
+                # Scale by opponent's driving style
+                v_predicted = v_raceline_base * velocity_scale
 
                 # Create predicted waypoint
                 pred_waypoint = OppWpnt()
                 pred_waypoint.x_m = x_future
                 pred_waypoint.y_m = y_future
                 pred_waypoint.s_m = waypoint.s_m
-                pred_waypoint.d_m = waypoint.d_m + d_current
-                pred_waypoint.proj_vs_mps = vs_current
-                pred_waypoint.vd_mps = 0.0  # Constant offset = zero lateral velocity
+                pred_waypoint.d_m = d_future  # Use calculated offset (FIX #2)
+                pred_waypoint.proj_vs_mps = v_predicted  # Scaled raceline velocity
+                pred_waypoint.vd_mps = 0.0  # Constant relative offset = zero lateral velocity
 
                 predicted_waypoints.append(pred_waypoint)
 
             # rospy.loginfo_throttle(
-            #     1.0, f"{self.log_name} Generated {len(predicted_waypoints)} prediction waypoints with relative position {relative_position:.2%}")
+            #     1.0, f"{self.log_name} Generated {len(predicted_waypoints)} prediction waypoints "
+            #          f"(relative_pos={relative_position:.2%}, distance={distance_accumulated:.1f}m, time={time_accumulated:.1f}s)")
             return predicted_waypoints
 
         except Exception as e:
@@ -511,6 +577,68 @@ class TAMConstantOffsetPredictor:
             rospy.logwarn_throttle(
                 10.0, f"{self.log_name} Error calculating relative position: {e}")
             return 0.0  # Default to centerline
+
+    def calculate_velocity_scale_factor(self, obstacle: Obstacle, obstacle_id: int) -> float:
+        """
+        Calculate the velocity scale factor for the obstacle relative to raceline.
+
+        If opponent is driving at 60% of raceline speed at current position,
+        return 0.6 so predictions maintain that conservative driving style.
+
+        Uses exponential moving average for smoothing to avoid jittery predictions
+        from noisy velocity measurements.
+
+        Args:
+            obstacle: Current obstacle state with s_center and vs
+            obstacle_id: Unique obstacle identifier for tracking history
+
+        Returns:
+            float: Velocity scale factor (0.4 to 1.2)
+                   - 1.0 = matching raceline speed
+                   - 0.6 = driving at 60% of raceline (conservative)
+                   - 1.1 = driving 10% faster than raceline (aggressive)
+        """
+        try:
+            # Get opponent's current velocity
+            v_opponent = obstacle.vs
+            if v_opponent < 0.1:  # Avoid division by zero
+                v_opponent = 1.0
+
+            # Find raceline velocity at opponent's current position
+            waypoint_idx = self.find_closest_waypoint_index(obstacle.s_center)
+            waypoint = self.global_waypoints.wpnts[waypoint_idx]
+            v_raceline = waypoint.vx_mps if waypoint.vx_mps > 0.5 else 2.0
+
+            # Calculate raw scale factor
+            velocity_scale_raw = v_opponent / v_raceline
+
+            # Apply reasonable bounds:
+            # - Lower bound: 40% (prevents unrealistically slow predictions)
+            # - Upper bound: 120% (prevents unrealistic speeding)
+            velocity_scale_raw = max(0.4, min(1.2, velocity_scale_raw))
+
+            # Smooth using exponential moving average (EMA)
+            # alpha = 0.3 means: 30% new value, 70% old value
+            # This provides good responsiveness while filtering noise
+            alpha = 0.3
+
+            if obstacle_id in self.velocity_scale_history:
+                # Smooth with previous value
+                velocity_scale_smoothed = (alpha * velocity_scale_raw +
+                                           (1 - alpha) * self.velocity_scale_history[obstacle_id])
+            else:
+                # First observation - no smoothing needed
+                velocity_scale_smoothed = velocity_scale_raw
+
+            # Store for next iteration
+            self.velocity_scale_history[obstacle_id] = velocity_scale_smoothed
+
+            return velocity_scale_smoothed
+
+        except Exception as e:
+            rospy.logwarn_throttle(
+                10.0, f"{self.log_name} Error calculating velocity scale: {e}")
+            return 0.8  # Default to 80% of raceline (conservative fallback)
 
     def apply_relative_position_at_waypoint(self, waypoint, relative_position: float) -> float:
         """

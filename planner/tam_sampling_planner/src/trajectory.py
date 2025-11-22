@@ -541,13 +541,6 @@ class Trajectory():
                         self.params.extension_emergency_time_offset
                     mask = performance_trajectory["t"] <= t_emergency_start
 
-                    # Safety check: ensure mask has at least some True values
-                    if not np.any(mask):
-                        rospy.logwarn(
-                            "Emergency trajectory: mask filtered out all points, using full trajectory")
-                        mask = np.ones_like(
-                            performance_trajectory["t"], dtype=bool)
-
                     start_idx = np.min(
                         np.argpartition(
                             np.abs(performance_trajectory["t"] - t_emergency_start), 2)[:2]
@@ -559,21 +552,9 @@ class Trajectory():
                         except:
                             pass
 
-                    # Safety check: ensure s_loc array is not empty after masking
-                    if len(emergency_trajectory["s_loc"]) == 0:
-                        rospy.logerr(
-                            "Emergency trajectory s_loc is empty after masking, cannot continue")
-                        return None
-
                     s_min = performance_trajectory["s_loc"][-1] - \
                         emergency_trajectory["s_loc"][-1]
                 else:
-                    # Safety check: ensure emergency trajectory has points
-                    if len(emergency_trajectory["t"]) == 0:
-                        rospy.logerr(
-                            "Emergency trajectory is empty, cannot extend")
-                        return None
-
                     t_emergency_start = emergency_trajectory["t"][-1]
                     s_min = 5.0
 

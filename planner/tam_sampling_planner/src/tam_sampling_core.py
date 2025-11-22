@@ -279,7 +279,7 @@ class LocalSamplingPlanner:
             vel_n_all = np.array([wp.vd_mps if hasattr(
                 wp, 'vd_mps') else wp.get('vd_mps', 0.0) for wp in oppwpnts])
 
-            # Find closest waypoint index to ego position (handle wraparound)
+            # Find first waypoint ahead of ego position (not just closest)
             s_diff = s_all - ego_s
             # Adjust for wraparound
             s_diff = np.where(s_diff > track_length / 2.0,
@@ -287,36 +287,45 @@ class LocalSamplingPlanner:
             s_diff = np.where(s_diff < -track_length / 2.0,
                               s_diff + track_length, s_diff)
 
-            closest_idx = np.argmin(np.abs(s_diff))
+            # Find first waypoint ahead (s_diff >= 0) or closest if all behind
+            ahead_mask = s_diff >= 0
+            if np.any(ahead_mask):
+                # Use first waypoint ahead of ego
+                start_idx = np.argmax(ahead_mask)
+            else:
+                # All waypoints behind - use closest (should rarely happen)
+                start_idx = np.argmin(np.abs(s_diff))
+                rospy.logwarn_throttle(
+                    5.0, f"[Prediction] All opponent waypoints behind ego (s_diff_min={np.min(s_diff):.2f}m)")
 
-            # Extract relevant segment: from ego position forward through 2x trajectory length
-            # Use same distance limit as postprocess_raceline for consistency
-            time_horizon = 2.0 * self.horizon  # 2x planning horizon for time-based prediction
+            # Extract relevant segment: from start_idx forward
+            # Prediction node now provides pre-trimmed trajectory, but double-check limits
+            time_horizon = 2.0 * self.horizon  # 2x planning horizon for safety margin
+            distance_horizon = 2.0 * self.trajectory_length
 
-            # Start from closest point to ego
-            start_idx = closest_idx
-
-            # Find end index based on time/distance
-            # Calculate accumulated time from start
+            # Find end index based on time/distance (whichever comes first)
+            # Calculate accumulated time and distance from start
             t_accumulated = 0.0
+            d_accumulated = 0.0
             end_idx = start_idx
 
             for i in range(start_idx + 1, len(s_all)):
-                # Calculate distance and time
+                # Calculate distance increment
                 ds = s_all[i] - s_all[i-1]
                 if ds < 0:  # Handle wraparound
                     ds += track_length
+                d_accumulated += abs(ds)
 
+                # Calculate time increment
                 v_avg = 0.5 * (vel_s_all[i-1] + vel_s_all[i])
                 if v_avg > 0.1:
                     dt = ds / v_avg
                 else:
                     dt = 0.0
-
                 t_accumulated += dt
 
-                # Keep first point beyond time limit, then break
-                if t_accumulated > time_horizon:
+                # Stop if we exceed either limit
+                if t_accumulated > time_horizon or d_accumulated > distance_horizon:
                     end_idx = i + 1
                     break
                 end_idx = i
@@ -476,7 +485,7 @@ class LocalSamplingPlanner:
         }
 
         # Case 1: No previous trajectory - return current state estimates
-        if not performance_trajectory or 's' not in performance_trajectory or len(performance_trajectory['s']) == 0 or self.const_trajectory_time == 0.0:
+        if not performance_trajectory or 's' not in performance_trajectory or len(performance_trajectory['s']) == 0:
             return ({}, default_state['s_start'], default_state['s_dot_start'], default_state['s_ddot_start'],
                     default_state['n_start'], default_state['n_dot_start'], default_state['n_ddot_start'],
                     {}, default_state['t_start'], default_state['s_loc_start'])
@@ -530,22 +539,26 @@ class LocalSamplingPlanner:
             const_part_traj = slice_trajectory_dict(
                 aligned_traj, end_idx=const_end_idx)
 
-        # Step 6: Extract initial conditions from end of constant segment
-        if new_N > 0 and const_end_idx > 0:
-            # Warm-starting: Use trajectory state at end of constant segment
-            s_start = aligned_traj['s'][const_end_idx]
+        # Step 6: Extract initial conditions from trajectory
+        if new_N > 0:
+            # When const_trajectory_time == 0, const_end_idx is 0, so extract from first point
+            # When const_trajectory_time > 0, extract from end of constant segment
+            extract_idx = max(const_end_idx, 0)
+
+            # Extract state from trajectory
+            s_start = aligned_traj['s'][extract_idx]
             s_dot_start = max(s_dot_min, aligned_traj.get(
-                's_dot', [s_dot_min] * new_N)[const_end_idx])
+                's_dot', [s_dot_min] * new_N)[extract_idx])
             s_ddot_start = aligned_traj.get(
-                's_ddot', [0.0] * new_N)[const_end_idx]
-            n_start = aligned_traj.get('n', [0.0] * new_N)[const_end_idx]
+                's_ddot', [0.0] * new_N)[extract_idx]
+            n_start = aligned_traj.get('n', [0.0] * new_N)[extract_idx]
             n_dot_start = aligned_traj.get(
-                'n_dot', [0.0] * new_N)[const_end_idx]
+                'n_dot', [0.0] * new_N)[extract_idx]
             n_ddot_start = aligned_traj.get(
-                'n_ddot', [0.0] * new_N)[const_end_idx]
-            t_start = aligned_traj.get('t', [0.0] * new_N)[const_end_idx]
+                'n_ddot', [0.0] * new_N)[extract_idx]
+            t_start = aligned_traj.get('t', [0.0] * new_N)[extract_idx]
             s_loc_start = aligned_traj.get(
-                's_loc', [0.0] * new_N)[const_end_idx]
+                's_loc', [0.0] * new_N)[extract_idx]
         else:
             # No warm-starting: Use current state estimate
             s_start = default_state['s_start']
@@ -805,17 +818,7 @@ class LocalSamplingPlanner:
             prediction: dict,
             planning_requests: dict,
     ):
-        # rospy.loginfo("="*80)
-        # rospy.loginfo("🚗 calc_trajectory: STARTING trajectory calculation")
-        # rospy.loginfo(
-        #     f"  State: s={state_estimate.get('s', 0.0):.2f}, n={state_estimate.get('n', 0.0):.3f}, vel={state_estimate.get('vel_current', 0.0):.2f}")
-        # rospy.loginfo(
-        #     f"  Planning requests: V_max={planning_requests.get('V_max', 0.0):.2f}, following_dist={planning_requests.get('following_distance', 0.0):.2f}")
-        # rospy.loginfo(
-        #     f"  Status: {self.status} (stillstand={self.status_dict['stillstand']}, driving={self.status_dict['driving']})")
-
         self.declare_and_update_parameters()
-        # rospy.loginfo("✓ Step 1: Parameters loaded")
 
         following_distance_target = planning_requests["following_distance"]
 
@@ -827,9 +830,6 @@ class LocalSamplingPlanner:
         s_loc_start = 0.0
 
         try:
-            # rospy.loginfo(
-            #     "▶ Step 2: Starting state projection to Frenet coordinates...")
-            # project state estimation of x and y into s and n
             state_estimate_sn = self.track_handler.project_2d_point_on_track_global(
                 state_estimate["x_current"], state_estimate["y_current"], state_estimate["z_current"], 6.0)
             state_estimate['s'] = state_estimate_sn[0]
@@ -838,23 +838,10 @@ class LocalSamplingPlanner:
                 state_estimate['s'],
                 state_estimate["psi_current"],
             )
-            # rospy.loginfo(
-            #     f"✓ Step 2: State projected - s={state_estimate['s']:.2f}, n={state_estimate['n']:.3f}, chi={state_estimate['chi']:.3f}")
-
-            # F1TENTH NOTE: Lap counter not used in F1TENTH mode (designed for endurance racing)
-            # Original TAM code: lap_update_bool = self.lap_counter.check_lapupdate(...)
-            # For F1TENTH, we skip lap counting as it's not critical for sprint racing
-            lap_update_bool = False
 
             # delete previous trajectory to plan from current state estimate in stillstand mode
-            # CRITICAL: Clear BEFORE match_and_hold_constant so we don't advance along old trajectory
             if self.status == self.status_dict["stillstand"]:
-                # rospy.loginfo(
-                #     "  Clearing previous trajectory (stillstand mode)")
                 self.performance_trajectory.clear()
-
-            # rospy.loginfo(
-            #     "▶ Step 3: Matching and holding constant trajectory...")
 
             # match on previous trajectory (if existing)
             (self.performance_trajectory,
@@ -874,20 +861,13 @@ class LocalSamplingPlanner:
                 const_trajectory_time=self.const_trajectory_time,
                 s_dot_min=self.s_dot_min,
             )
-            # rospy.loginfo(
-            #     f"✓ Step 3: Trajectory matched - s_start={s_start:.2f}, s_dot_start={s_dot_start:.2f}, n_start={n_start:.3f}")
 
-            # rospy.loginfo("▶ Step 4: Handling state transitions...")
             self.handle_state_transitions(
                 planning_requests=planning_requests,
                 state_estimate=state_estimate,
                 V_thr_stillstand=self.V_thr_stillstand,
             )
-            # rospy.loginfo(
-            #     f"✓ Step 4: State transitions handled - current status={self.status}")
 
-            # postprocess prediction
-            # rospy.loginfo("▶ Step 5: Postprocessing prediction data...")
             postprocessed_prediction, self.following_vel, self.vehicle_ahead = self.postprocess_prediction(
                 raw_prediction=prediction,
                 state_estimate=state_estimate,
@@ -905,30 +885,19 @@ class LocalSamplingPlanner:
                 msgs_logger=self.msgs_logger,
                 debugging=self.debugging
             )
-            # rospy.loginfo(
-            #     f"✓ Step 5: Prediction processed - following_vel={self.following_vel:.2f}, vehicle_ahead={self.vehicle_ahead}, num_predictions={len(postprocessed_prediction)}")
 
             # set target speed
             # F1TENTH NOTE: No GGGV handler, use planning_requests["V_max"] as absolute max
-            # rospy.loginfo("▶ Step 6: Setting target velocities...")
             V_target = min(
                 planning_requests["V_max"], self.following_vel)
 
             # for ruling out trajectories that exceed the allowed maximum velocity
             V_target_rules = planning_requests["V_max"]
-            # rospy.loginfo(
-            #     f"✓ Step 6: Target velocities set - V_target={V_target:.2f}, V_target_rules={V_target_rules:.2f}")
 
             # postprocess raceline
-            # rospy.loginfo("▶ Step 7: Postprocessing raceline...")
             postprocessed_raceline = self.postprocess_raceline(
                 raw_raceline=raceline, s_start=s_start, horizon=self.horizon, track_handler=self.track_handler,
             )
-
-            raceline_points = len(postprocessed_raceline.get('s_post', []))
-
-            # rospy.loginfo(
-            #     f"✓ Step 7: Raceline processed - {raceline_points} points extracted")
 
             # raceline velocity to determine if relative sampling required
             s_dot_raceline_cur = postprocessed_raceline["s_dot_post"][0]
@@ -939,12 +908,8 @@ class LocalSamplingPlanner:
                  s_dot_start > self.relative_long_sampling_threshold * s_dot_raceline_cur) or
                 self.status != self.status_dict['stopping']
             )
-            # rospy.loginfo(
-            #     f"  Sampling mode: enable_relative={enable_relative_sampling}, s_dot_raceline={s_dot_raceline_cur:.2f}")
 
             # generate frenet curves
-            # rospy.loginfo(
-            #     "▶ Step 8: Performing trajectory sampling (CRITICAL STEP)...")
             s_array, s_dot_array, s_ddot_array, n_array, n_dot_array, n_ddot_array, rel_long_sampling_array, t_array = self.perform_trajectory_sampling(
                 track_handler=self.track_handler,
                 s_start=s_start,
@@ -961,7 +926,6 @@ class LocalSamplingPlanner:
             )
 
             # transform frenet curves to velocity frame
-            # rospy.loginfo("▶ Step 9: Transforming to velocity frame...")
             V_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array, kappa_vf_array = self.coordinate_transformation.transform_to_velocity_frame(
                 track_handler=self.track_handler,
                 s_array=s_array,
@@ -972,17 +936,12 @@ class LocalSamplingPlanner:
                 n_ddot_array=n_ddot_array,
                 postprocessed_raceline=postprocessed_raceline,
             )
-            # rospy.loginfo(
-            #     f"✓ Step 9: Transform complete - V_array shape={V_array.shape}, chi_array shape={chi_array.shape}")
 
             if self.status == self.status_dict["stillstand"]:
-                # rospy.loginfo(
-                #     "  Overriding velocity to near-zero (stillstand mode)")
                 V_array[:] = 0.0001
                 ax_vf_array[:] = 0.0
 
             # perform all trajectory checks
-            # rospy.loginfo("▶ Step 10: Performing trajectory safety checks...")
             # Note: kappa_vf_array contains path curvature (rad/m), not yaw rate
             valid_array, ax_tilde, ay_tilde, g_tilde, tire_util_array, invalid_array_info, track_bound = self.trajectory_checks.mandatory_checks_trajectory(
                 Omega_z_vf_array=kappa_vf_array,
@@ -1005,30 +964,25 @@ class LocalSamplingPlanner:
                 gggv_handler=self.gggv_handler,
                 postprocessed_raceline=postprocessed_raceline,
             )
-            num_valid = np.sum(valid_array)
-            num_total = len(valid_array)
-            # rospy.loginfo(
-            #     f"✓ Step 10: Safety checks complete - {num_valid}/{num_total} trajectories valid")
 
             # Store raw sampled trajectories for visualization (before filtering)
             self.last_s_array = s_array.copy() if s_array is not None else None
             self.last_n_array = n_array.copy() if n_array is not None else None
             self.last_valid_array = valid_array.copy() if valid_array is not None else None
 
+            # Check if any trajectories are valid
+            if not np.any(valid_array):
+                rospy.logerr(
+                    "[Sampling Core] ⚠️ ALL TRAJECTORIES INVALID! Planning will fail.")
+                rospy.logerr(
+                    f"[Sampling Core] Invalid reasons: {invalid_array_info}")
+                rospy.logerr(
+                    f"[Sampling Core] Total trajectories sampled: {len(valid_array)}")
+
             # for debugging
             V_upper = V_target + 1.0
 
-            # Check if we have any valid trajectories before cost calculation
-            if np.sum(valid_array) == 0:
-                # rospy.logerr(
-                #     "[Sampling Core] ⚠️⚠️⚠️ CRITICAL: No valid trajectories found!")
-                self.performance_trajectory.clear()
-                self.emergency_trajectory.clear()
-                # Return None to indicate no valid trajectory
-                return None
-
             # choose best trajectory
-            # rospy.loginfo("▶ Step 11: Calculating trajectory costs...")
             cost_array, cost_terms, cost_extensive_array = self.calculation_costs.calc_costs(
                 valid_array=valid_array,
                 rel_long_sampling_array=rel_long_sampling_array,
@@ -1049,42 +1003,20 @@ class LocalSamplingPlanner:
                 emergency_brake=self.emergency_brake,
                 vehicle_params=self.vehicle_params,
             )
-            min_cost = np.min(cost_array[valid_array]) if np.sum(
-                valid_array) > 0 else float('inf')
-            # rospy.loginfo(
-            #     f"✓ Step 11: Costs calculated - min_cost={min_cost:.2f}")
 
-            # rospy.loginfo("▶ Step 12: Sorting trajectories by cost...")
             sorted_idx = self.calculation_costs.sort_trajectories_by_cost(
                 valid_array=valid_array, cost_array=cost_array)
-            # rospy.loginfo(f"✓ Step 12: Trajectories sorted")
-
-            # rospy.loginfo("▶ Step 13: Selecting optimal trajectory...")
-            # Ensure trajectories are dictionaries before clearing
-            if not isinstance(self.performance_trajectory, dict):
-                self.performance_trajectory = {}
-            if not isinstance(self.emergency_trajectory, dict):
-                self.emergency_trajectory = {}
-
-            self.performance_trajectory.clear()
-            self.emergency_trajectory.clear()
 
             if np.sum(valid_array):
                 # set index of best trajectory
                 optimal_idx = np.arange(s_array.shape[0])[
                     valid_array][sorted_idx][0]
-                # rospy.loginfo(
-                #     f"  Selected optimal trajectory index: {optimal_idx} (cost={cost_array[optimal_idx]:.2f})")
 
                 # correct values if in stillstand
                 if self.status == self.status_dict["stillstand"]:
-                    # rospy.loginfo(
-                    #     "  Correcting trajectory for stillstand mode")
                     V_array[:] = 0.0001
                     ax_tilde[:] = 0.0
 
-                # rospy.loginfo(
-                #     "▶ Step 14: Building performance trajectory structure...")
                 # frenet values
                 self.performance_trajectory["pitlane_mode"] = self.pitlane_mode
                 self.performance_trajectory["emergency"] = False
@@ -1104,11 +1036,9 @@ class LocalSamplingPlanner:
                 self.performance_trajectory["ay_tilde"] = ay_tilde[optimal_idx]
                 self.performance_trajectory["g_tilde"] = g_tilde[optimal_idx]
                 self.performance_trajectory["tire_util"] = tire_util_array[optimal_idx]
-                # rospy.loginfo(
-                #     f"✓ Step 14: Performance trajectory built - {len(self.performance_trajectory['s'])} points")
 
-                # rospy.loginfo("▶ Step 15: Unwrapping s_loc coordinates...")
                 # Unwrap s_loc (compatible with NumPy < 1.21 which lacks 'period' parameter)
+                # TODO: Necessary?
                 s_traj = self.performance_trajectory["s"]
                 track_length = self.track_handler.get_track_length()
                 s_unwrapped = s_traj.copy()
@@ -1120,8 +1050,6 @@ class LocalSamplingPlanner:
                         s_unwrapped[i:] += track_length
                 self.performance_trajectory["s_loc"] = s_unwrapped - \
                     s_unwrapped[0] + s_loc_start
-                # rospy.loginfo(
-                #     f"✓ Step 15: s_loc unwrapped - s_loc range=[{self.performance_trajectory['s_loc'][0]:.2f}, {self.performance_trajectory['s_loc'][-1]:.2f}]")
 
                 # throw warning if selected trajectory exceeds 100 % of tire utilization
                 # include tolerance and only throw warning when friction violation occurs on first 30 points of trajectory
@@ -1141,7 +1069,6 @@ class LocalSamplingPlanner:
                         track_handler=self.track_handler
                     )
 
-                # rospy.loginfo("▶ Step 16: Calculating emergency trajectory...")
                 self.emergency_trajectory = self.trajectory.calc_emergency_trajectory(
                     track_handler=self.track_handler,
                     performance_trajectory=self.performance_trajectory,
@@ -1151,36 +1078,16 @@ class LocalSamplingPlanner:
                     msgs_logger=self.msgs_logger
                 )
 
-                # Handle case where emergency trajectory calculation fails
-                if self.emergency_trajectory is None:
-                    rospy.logwarn(
-                        "[Sampling Core] Emergency trajectory calculation failed, using performance trajectory as fallback")
-                    self.emergency_trajectory = copy.deepcopy(
-                        self.performance_trajectory)
-                    self.emergency_trajectory["emergency"] = True
-                    # rospy.loginfo(
-                    #     "✓ Step 16: Using performance trajectory as emergency fallback")
-                # else:
-                    # rospy.loginfo(
-                    #     f"✓ Step 16: Emergency trajectory calculated (length={len(self.emergency_trajectory.get('s', []))} points)")
-
                 if constant_part_trajectory:
-                    # rospy.loginfo(
-                    #     "▶ Step 17: Concatenating constant trajectory part...")
-                    const_len = len(constant_part_trajectory.get('s', []))
                     for trajectory in [self.performance_trajectory, self.emergency_trajectory]:
                         for key in trajectory:
                             if isinstance(trajectory[key], np.ndarray):
                                 trajectory[key] = np.concatenate(
                                     (constant_part_trajectory[key], trajectory[key]))
-                    # rospy.loginfo(
-                    #     f"✓ Step 17: Added {const_len} constant points to both trajectories")
 
                 # F1TENTH: Add Cartesian coordinates for controller compatibility
                 # The trajectories already have Frenet (s, n, chi) and velocity frame (V, ax, ay) fields
                 # We just need to add global Cartesian fields (x, y, psi, kappa) for Wpnt messages
-                # rospy.loginfo(
-                #     "▶ Step 18: Converting to Cartesian coordinates for F1TENTH controller...")
                 for trajectory in [self.performance_trajectory, self.emergency_trajectory]:
                     # Convert Frenet to Cartesian using track handler
                     xyz_array = self.track_handler.sn2cartesian(
@@ -1205,21 +1112,9 @@ class LocalSamplingPlanner:
 
                     # Add trajectory counter for debugging
                     trajectory["traj_cnt"] = self.traj_cnt
-                # rospy.loginfo(
-                #     f"✓ Step 18: Cartesian conversion complete (x, y, psi, kappa added to both trajectories)")
 
                 # Note: For F1TENTH, we don't need trajectory_N or complex GGGV calculations
                 # The tam_sampling_node.py will convert these trajectories to OTWpntArray directly
-
-                # Final success message
-                perf_pts = len(self.performance_trajectory.get('s', []))
-                emerg_pts = len(self.emergency_trajectory.get('s', []))
-                # rospy.loginfo("="*80)
-                # rospy.loginfo(f"✅ calc_trajectory COMPLETED SUCCESSFULLY")
-                # rospy.loginfo(f"   Performance trajectory: {perf_pts} points")
-                # rospy.loginfo(f"   Emergency trajectory: {emerg_pts} points")
-                # rospy.loginfo(f"   Trajectory counter: {self.traj_cnt}")
-                # rospy.loginfo("="*80)
 
         except Exception as e:
             rospy.logerr("="*80)

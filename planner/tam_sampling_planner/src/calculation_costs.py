@@ -913,9 +913,14 @@ class CalculationCosts():
             V_diff_array_unequal = np.where(
                 V_diff_array_equal >= 0.0, 1.0, self.params.velocity_excess_cost_multiplier) * V_diff_array_equal
             V_diff_array_unsaturated = np.abs(V_diff_array_unequal)
-            V_diff_max_cur = np.max(V_diff_array_unsaturated)
-            V_diff_array = V_diff_array_unsaturated / V_diff_max_cur * \
-                np.minimum(self.params.V_diff_max_costs, V_diff_max_cur)
+            
+            # Safety check: Handle empty array case when no valid trajectories
+            if V_diff_array_unsaturated.size > 0:
+                V_diff_max_cur = np.max(V_diff_array_unsaturated)
+                V_diff_array = V_diff_array_unsaturated / V_diff_max_cur * \
+                    np.minimum(self.params.V_diff_max_costs, V_diff_max_cur)
+            else:
+                V_diff_array = V_diff_array_unsaturated  # Empty array
 
         velocity_cost = V_diff_array ** 2
 

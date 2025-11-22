@@ -199,7 +199,7 @@ class TAMSamplingPlannerNode:
         # Performance monitoring
         self.last_planning_time = 0.0
         # 5 Hz to match actual planning computation time (was 20 Hz)
-        self.planning_rate = rospy.Rate(1)
+        self.planning_rate = rospy.Rate(0.5)
         self.planning_count = 0
 
         # Planning cycle protection
@@ -1554,10 +1554,8 @@ class TAMSamplingPlannerNode:
         # Always measure and log planning time
         planning_time = time.time() - planning_start_time
 
-        # Log planning time to detect slow cycles
-        # if planning_time > 0.05:  # Warn if planning takes more than 50ms (20Hz rate)
-        # rospy.logerr_throttle(2.0,
-        #                       f"{self.log_name} ⏱️ Slow planning cycle: {planning_time*1000:.1f}ms (target: 50ms @ 20Hz)")
+        rospy.loginfo(
+            f"{self.log_name} ⏱️ Time planning cycle: {planning_time*1000:.1f}ms")
 
         # Publish timing information if measuring
         if self.measuring:
