@@ -896,9 +896,12 @@ class StateMachine:
 
             with self.lock:  # to avoid crash when the waypoints are updated but we're looping here
                 for i, s in enumerate(splini_idxs):
-                    # splini_glob[s] = self.last_valid_avoidance_wpnts[i]
-                    splini_glob[s] = self.last_valid_avoidance_wpnts[min(
-                        i, len(self.last_valid_avoidance_wpnts) - 1)]
+                    # Ensure both i and s are within bounds
+                    if s < len(splini_glob) and i < len(self.last_valid_avoidance_wpnts):
+                        splini_glob[s] = self.last_valid_avoidance_wpnts[i]
+                    elif s < len(splini_glob):
+                        # If we've run out of avoidance waypoints, use the last one
+                        splini_glob[s] = self.last_valid_avoidance_wpnts[-1]
 
         # If the last valid points have been reset, then we just pass the global waypoints
         else:
