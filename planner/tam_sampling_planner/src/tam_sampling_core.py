@@ -178,6 +178,36 @@ class LocalSamplingPlanner:
         # Calculate derived quantities
         chi_rl = np.arctan2(np.gradient(y_rl), np.gradient(x_rl))
 
+        # Calculate time stamps by integrating t = ∫(ds/v)
+        t_rl = np.zeros_like(s_rl)
+        if len(s_rl) > 1:
+            for i in range(1, len(s_rl)):
+                ds = s_rl[i] - s_rl[i-1]
+                if ds < -track_length / 2:  # Handle wraparound
+                    ds += track_length
+                v_avg = 0.5 * (v_rl[i-1] + v_rl[i])
+                if v_avg > 1e-6:
+                    t_rl[i] = t_rl[i-1] + ds / v_avg
+                else:
+                    t_rl[i] = t_rl[i-1] + ds / 1e-6
+
+        # Calculate longitudinal acceleration from velocity gradient
+        # s_ddot = dv/dt = d(s_dot)/dt, approximate using finite differences
+        s_ddot_rl = np.zeros_like(v_rl)
+        if len(t_rl) > 1:
+            dt_arr = np.diff(t_rl)
+            dv_arr = np.diff(v_rl)
+            # Avoid division by zero
+            dt_safe = np.where(dt_arr > 1e-6, dt_arr, 1e-6)
+            s_ddot_interior = dv_arr / dt_safe
+            # Use forward difference for first point, backward for last
+            s_ddot_rl[0] = s_ddot_interior[0] if len(
+                s_ddot_interior) > 0 else 0.0
+            s_ddot_rl[1:-1] = 0.5 * (s_ddot_interior[:-1] +
+                                     s_ddot_interior[1:]) if len(s_ddot_interior) > 1 else 0.0
+            s_ddot_rl[-1] = s_ddot_interior[-1] if len(
+                s_ddot_interior) > 0 else 0.0
+
         # Return processed segment
         return {
             's_post': s_rl,
@@ -185,16 +215,19 @@ class LocalSamplingPlanner:
             'y_post': y_rl,
             'n_post': n_rl,
             'v_post': v_rl,
+            # Longitudinal velocity (same as v for raceline)
             's_dot_post': v_rl,
             'kappa_post': kappa_rl,
             'chi_post': chi_rl,
-            # Time not needed for distance-based sampling
-            't_post': np.zeros_like(s_rl),
-            # Not needed for raceline reference
-            'ax_post': np.zeros_like(v_rl),
-            'ay_post': v_rl**2 * kappa_rl,
-            's_ddot_post': np.zeros_like(v_rl),
+            't_post': t_rl,  # Time stamps from velocity integration
+            # DEPRECATED: use s_ddot_post (kept for backward compatibility)
+            'ax_post': s_ddot_rl,
+            'ay_post': v_rl**2 * kappa_rl,  # Centripetal acceleration
+            # Longitudinal acceleration (braking/accelerating)
+            's_ddot_post': s_ddot_rl,
+            # Zero (no lateral motion on raceline, n=const=0)
             'n_dot_post': np.zeros_like(v_rl),
+            # Zero (no lateral acceleration in raceline frame)
             'n_ddot_post': np.zeros_like(v_rl)
         }
 
