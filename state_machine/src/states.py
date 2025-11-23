@@ -120,14 +120,6 @@ def TAMTracking(state_machine: StateMachine) -> List[Wpnt]:
         selected_wpnts = [tam_wpts[(s + i) % state_machine.num_glb_wpnts]
                           for i in range(state_machine.n_loc_wpnts)]
 
-        # # DEBUG: Log extraction info
-        # if len(selected_wpnts) > 0:
-        #     first_wpnt = selected_wpnts[0]
-        #     rospy.loginfo_throttle(2.0,
-        #                            f"[{state_machine.name}] TAMTracking (fusion): s_idx={s}, returning {len(selected_wpnts)} wpnts | "
-        #                            f"First wpnt: x={first_wpnt.x_m:.2f}, y={first_wpnt.y_m:.2f}, s={first_wpnt.s_m:.2f} | "
-        #                            f"Car s={state_machine.cur_s:.2f}")
-
         # Mark source as TAM planner for visualization
         state_machine.tam_waypoint_source = 'tam_planner'
 

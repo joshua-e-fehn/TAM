@@ -242,19 +242,6 @@ class LocalSamplingPlanner:
         significant_reductions = np.sum(v_reduction > 0.5)
         max_reduction = np.max(v_reduction)
 
-        if significant_reductions > 0:
-            rospy.loginfo_throttle(
-                10.0,
-                f"[Raceline Preprocessing] Applied vehicle limits: "
-                f"max_speed={self.max_speed:.1f}m/s (slack={max_velocity_limit:.1f}m/s), "
-                f"max_accel={self.max_accel:.1f}m/s² (slack={max_accel_limit:.1f}m/s²), "
-                f"max_decel={self.max_accel:.1f}m/s² (slack={max_decel_limit:.1f}m/s²)")
-            rospy.loginfo_throttle(
-                10.0,
-                f"[Raceline Preprocessing] Velocity reductions: {significant_reductions}/{len(v_rl)} points, "
-                f"max reduction={max_reduction:.2f}m/s, "
-                f"violations before={v_violations_before}, after={v_violations_after}")
-
         # Recalculate time array with clamped velocities
         t_rl = np.zeros_like(s_rl)
         if len(s_rl) > 1:
@@ -1101,11 +1088,7 @@ class LocalSamplingPlanner:
             # Check if any trajectories are valid
             if not np.any(valid_array):
                 rospy.logerr(
-                    "[Sampling Core] ⚠️ ALL TRAJECTORIES INVALID! Planning will fail.")
-                rospy.logerr(
-                    f"[Sampling Core] Invalid reasons: {invalid_array_info}")
-                rospy.logerr(
-                    f"[Sampling Core] Total trajectories sampled: {len(valid_array)}")
+                    f"[Sampling Core] ⚠️ ALL {len(valid_array)} TRAJECTORIES INVALID! Planning will fail.")
 
             # for debugging
             V_upper = V_target + 1.0
@@ -1136,6 +1119,7 @@ class LocalSamplingPlanner:
                 valid_array=valid_array, cost_array=cost_array)
 
             if np.sum(valid_array):
+
                 # set index of best trajectory
                 optimal_idx = np.arange(s_array.shape[0])[
                     valid_array][sorted_idx][0]
@@ -1244,15 +1228,31 @@ class LocalSamplingPlanner:
                 # Note: For F1TENTH, we don't need trajectory_N or complex GGGV calculations
                 # The tam_sampling_node.py will convert these trajectories to OTWpntArray directly
 
+            else:
+                # Clear trajectories completely to force fresh planning next cycle
+                # This prevents cascading errors from corrupted trajectory state
+                self.performance_trajectory.clear()
+                self.emergency_trajectory.clear()
+
+                # Also clear any cached state that might prevent future planning
+                # Reset to stillstand to force re-evaluation
+                self.status = self.status_dict["stillstand"]
+
         except Exception as e:
             rospy.logerr("="*80)
-            rospy.logerr("⚠️⚠️⚠️ CRITICAL ERROR in calc_trajectory ⚠️⚠️⚠️")
+            rospy.logerr(
+                "⚠️ ERROR in calc_trajectory - will retry next cycle ⚠️")
             rospy.logerr(f"Exception type: {type(e).__name__}")
             rospy.logerr(f"Exception message: {str(e)}")
             rospy.logerr("Full traceback:")
             rospy.logerr(traceback.format_exc())
             rospy.logerr("="*80)
-            raise  # Re-raise to ensure error is not silently swallowed
+
+            self.performance_trajectory.clear()
+            self.emergency_trajectory.clear()
+
+            # Reset to stillstand to force clean re-evaluation
+            self.status = self.status_dict["stillstand"]
 
         # rospy.loginfo(
         #     f"[Sampling Core]🚗 calc_trajectory: Finished trajectory calculation")

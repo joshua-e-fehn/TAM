@@ -1440,23 +1440,12 @@ class TAMSamplingPlannerNode:
                     performance_traj = result[0]
                     emergency_traj = result[1]
                     trajectory_dict = performance_traj  # Use performance trajectory
-                    # rospy.loginfo(
-                    #     f"{self.log_name} ✓ Unpacked tuple: performance_traj type={type(performance_traj)}, "
-                    #     f"has 's' key: {'s' in performance_traj if isinstance(performance_traj, dict) else 'N/A'}, "
-                    #     f"s length: {len(performance_traj.get('s', [])) if isinstance(performance_traj, dict) else 'N/A'}")
                 else:
                     # Fallback if unexpected format
                     trajectory_dict = result
-                    # rospy.logwarn(
-                    #     f"{self.log_name} ⚠️ Using result directly (not tuple): type={type(result)}")
 
-                # Verify we have a valid trajectory
-                if trajectory_dict and 's' in trajectory_dict and len(trajectory_dict['s']) > 0:
-                    # rospy.loginfo(f"{self.log_name} ✅ VALID TRAJECTORY DETECTED | "
-                    #               f"Points: {len(trajectory_dict['s'])} | "
-                    #               f"s_range: [{trajectory_dict['s'][0]:.2f}, {trajectory_dict['s'][-1]:.2f}] | "
-                    #               f"Emergency: {trajectory_dict.get('emergency', False)} | "
-                    #               f"Cost: {trajectory_dict.get('cost', 0.0):.2f}")
+                # Verify we have a valid trajectory with sufficient points
+                if trajectory_dict and 's' in trajectory_dict and len(trajectory_dict['s']) >= 2:
 
                     # STEP 4: Convert trajectory dict to WpntArray
                     wpnt_array = self.coordinate_transformation.convert_trajectory_to_wpnt_array(
@@ -1464,6 +1453,15 @@ class TAMSamplingPlannerNode:
                         track_handler=self.track_handler,
                         traj_cnt=self.planning_count
                     )
+
+                    # Check if conversion was successful
+                    if wpnt_array is None:
+                        # Publish empty trajectory and continue planning
+                        empty_msg = OTWpntArray()
+                        empty_msg.header.stamp = rospy.Time.now()
+                        empty_msg.header.frame_id = "map"
+                        self.trajectory_pub.publish(empty_msg)
+                        return  # Exit this cycle, will retry in next cycle
 
                     # rospy.loginfo(
                     #     f"{self.log_name} STEP 4 complete: WpntArray has {len(wpnt_array.wpnts)} waypoints")
@@ -1474,6 +1472,15 @@ class TAMSamplingPlannerNode:
                         wpnt_array=wpnt_array,
                         target_spacing=0.1
                     )
+
+                    # Check if interpolation was successful
+                    if wpnt_array is None:
+                        # Publish empty trajectory and continue planning
+                        empty_msg = OTWpntArray()
+                        empty_msg.header.stamp = rospy.Time.now()
+                        empty_msg.header.frame_id = "map"
+                        self.trajectory_pub.publish(empty_msg)
+                        return  # Exit this cycle, will retry in next cycle
 
                     # rospy.loginfo(
                     #     f"{self.log_name} STEP 4.5 complete: Interpolated to {len(wpnt_array.wpnts)} waypoints")
@@ -1525,31 +1532,30 @@ class TAMSamplingPlannerNode:
                     # rospy.loginfo_throttle(
                     #     2, f"{self.log_name} Published trajectory #{self.planning_count}: {status}")
                 else:
-                    rospy.logerr(
-                        f"[Sampling Node] ❌ INVALID TRAJECTORY | "
-                        f"trajectory_dict is None: {trajectory_dict is None} | "
-                        f"Has 's' key: {'s' in trajectory_dict if trajectory_dict else False} | "
-                        f"Length: {len(trajectory_dict.get('s', [])) if trajectory_dict else 0}")
-                    # Publish empty trajectory to signal state machine
+                    # Publish empty trajectory to signal state machine, then continue planning
                     empty_msg = OTWpntArray()
                     empty_msg.header.stamp = rospy.Time.now()
                     empty_msg.header.frame_id = "map"
                     self.trajectory_pub.publish(empty_msg)
+                    # Don't raise exception - just continue to next cycle
 
             else:
-                # rospy.logerr(f"[Sampling Node] ⁉️ PUBLISHING EMPTY TRAJECTORY | "
-                #              f"Reason: TAM planner returned None")
-                # Publish empty trajectory to signal state machine
+                # Publish empty trajectory to signal state machine, then continue planning
                 empty_msg = OTWpntArray()
                 empty_msg.header.stamp = rospy.Time.now()
                 empty_msg.header.frame_id = "map"
                 self.trajectory_pub.publish(empty_msg)
+                # Don't raise exception - just continue to next cycle
 
         except Exception as e:
-            rospy.logerr(
-                f"[Sampling Node] ⚠️⚠️⚠️ TAM planning FAILED with exception: {str(e)} | State machine will use fallback (global waypoints)")
             import traceback
             rospy.logerr_throttle(5.0, traceback.format_exc())
+
+            # Publish empty trajectory to signal state machine, then continue planning
+            empty_msg = OTWpntArray()
+            empty_msg.header.stamp = rospy.Time.now()
+            empty_msg.header.frame_id = "map"
+            self.trajectory_pub.publish(empty_msg)
 
         # Always measure and log planning time
         planning_time = time.time() - planning_start_time

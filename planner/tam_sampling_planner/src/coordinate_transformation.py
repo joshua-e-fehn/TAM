@@ -237,10 +237,15 @@ class CoordinateTransformation:
     def __recalc_ax_profile(self, trajectory_N):
         # recalc ax profile
         trajectory_N["ax"] = np.zeros_like(trajectory_N["v"])
-        trajectory_N["ax"][:-1] = (np.power(trajectory_N["v"][1:], 2) - np.power(trajectory_N["v"][:-1], 2)) / (
-            2 * np.diff(trajectory_N["s_loc"])
-        )
-        trajectory_N["ax"][-1] = trajectory_N["ax"][-2]
+
+        # Safety check: need at least 2 points to calculate acceleration
+        if len(trajectory_N["v"]) > 1:
+            trajectory_N["ax"][:-1] = (np.power(trajectory_N["v"][1:], 2) - np.power(trajectory_N["v"][:-1], 2)) / (
+                2 * np.diff(trajectory_N["s_loc"])
+            )
+            # Safety check: need at least 2 points to copy last value
+            if len(trajectory_N["ax"]) > 1:
+                trajectory_N["ax"][-1] = trajectory_N["ax"][-2]
 
         # set ax to zero when velocity is zero
         trajectory_N["ax"] = np.where(
@@ -340,6 +345,10 @@ class CoordinateTransformation:
 
         # Get trajectory length
         n_points = len(traj["s"])
+
+        # Validate trajectory has sufficient points
+        if n_points < 2:
+            return None
 
         # CRITICAL FIX: Wrap s-coordinates to [0, track_length) for visualization
         # Trajectories may have continuous s > track_length (e.g., [75...85] on 76m track)

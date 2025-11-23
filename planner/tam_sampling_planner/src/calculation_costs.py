@@ -913,7 +913,7 @@ class CalculationCosts():
             V_diff_array_unequal = np.where(
                 V_diff_array_equal >= 0.0, 1.0, self.params.velocity_excess_cost_multiplier) * V_diff_array_equal
             V_diff_array_unsaturated = np.abs(V_diff_array_unequal)
-            
+
             # Safety check: Handle empty array case when no valid trajectories
             if V_diff_array_unsaturated.size > 0:
                 V_diff_max_cur = np.max(V_diff_array_unsaturated)
@@ -1065,86 +1065,89 @@ class CalculationCosts():
         # COLLISION COST
         # ------------------------------------------------------------------------------------------------------------------
 
-        for pred_idx, prediction_id in enumerate(prediction):
-            prediction_cur = prediction[prediction_id]
+        # Only check collisions if there are valid trajectories to check
+        if np.any(valid_array):
+            for pred_idx, prediction_id in enumerate(prediction):
+                prediction_cur = prediction[prediction_id]
 
-            if prediction_cur["valid"]:
-                # Convert global waypoints format to time-series format if needed
-                if "wpnts" in prediction_cur:
-                    pred_data = self._convert_global_waypoints_to_prediction(
-                        prediction_cur)
-                else:
-                    pred_data = prediction_cur
+                if prediction_cur["valid"]:
+                    # Convert global waypoints format to time-series format if needed
+                    if "wpnts" in prediction_cur:
+                        pred_data = self._convert_global_waypoints_to_prediction(
+                            prediction_cur)
+                    else:
+                        pred_data = prediction_cur
 
-                # get time array of equal distance steps
-                t_equal_steps = np.linspace(
-                    0, self.params.collision_check_horizon_s, 51)
-                t_array_equal_steps = np.ones_like(
-                    t_array[valid_array]) * t_equal_steps
+                    # get time array of equal distance steps
+                    t_equal_steps = np.linspace(
+                        0, self.params.collision_check_horizon_s, 51)
+                    t_array_equal_steps = np.ones_like(
+                        t_array[valid_array]) * t_equal_steps
 
-                s_prediction_cur = np.interp(
-                    t_array_equal_steps, pred_data["time_w_offset"], pred_data["s"]
-                )
-                n_prediction_cur = np.interp(
-                    t_array_equal_steps, pred_data["time_w_offset"], pred_data["n"]
-                )
+                    s_prediction_cur = np.interp(
+                        t_array_equal_steps, pred_data["time_w_offset"], pred_data["s"]
+                    )
+                    n_prediction_cur = np.interp(
+                        t_array_equal_steps, pred_data["time_w_offset"], pred_data["n"]
+                    )
 
-                # evaluate candidate trajectories on equal time step array
-                s_traj_check = np.array([np.interp(t_array_equal_steps[i], t_array[valid_array]
-                                        [i], s_array[valid_array][i]) for i in range(len(s_array[valid_array]))])
-                n_traj_check = np.array([np.interp(t_array_equal_steps[i], t_array[valid_array]
-                                        [i], n_array[valid_array][i]) for i in range(len(n_array[valid_array]))])
+                    # evaluate candidate trajectories on equal time step array
+                    s_traj_check = np.array([np.interp(t_array_equal_steps[i], t_array[valid_array]
+                                            [i], s_array[valid_array][i]) for i in range(len(s_array[valid_array]))])
+                    n_traj_check = np.array([np.interp(t_array_equal_steps[i], t_array[valid_array]
+                                            [i], n_array[valid_array][i]) for i in range(len(n_array[valid_array]))])
 
-                # check for collisions
-                s_diff_tmp = np.abs(s_prediction_cur - s_traj_check)
-                n_diff = np.abs(n_prediction_cur - n_traj_check)
+                    # check for collisions
+                    s_diff_tmp = np.abs(s_prediction_cur - s_traj_check)
+                    n_diff = np.abs(n_prediction_cur - n_traj_check)
 
-                # handle start finish line
-                track_length = track_handler.get_track_length()
-                s_diff = np.where(s_diff_tmp < track_length /
-                                  2.0, s_diff_tmp, track_length - s_diff_tmp)
+                    # handle start finish line
+                    track_length = track_handler.get_track_length()
+                    s_diff = np.where(s_diff_tmp < track_length /
+                                      2.0, s_diff_tmp, track_length - s_diff_tmp)
 
-                # handle start-finish line
+                    # handle start-finish line
 
-                # check for collisions in s and n
-                s_collision = s_diff < (
-                    vehicle_params["total_length"] + self.params.safety_distance_vehicles)
-                n_collision = n_diff < (
-                    vehicle_params["total_width"] + self.params.tube_width + self.params.safety_distance_vehicles)
+                    # check for collisions in s and n
+                    s_collision = s_diff < (
+                        vehicle_params["total_length"] + self.params.safety_distance_vehicles)
+                    n_collision = n_diff < (
+                        vehicle_params["total_width"] + self.params.tube_width + self.params.safety_distance_vehicles)
 
-                # get earliest time stamp for a collision for each trajectory
-                collision = (s_collision) & (n_collision)
+                    # get earliest time stamp for a collision for each trajectory
+                    collision = (s_collision) & (n_collision)
 
-                # store where collision occurs
-                collision_mask = np.any(collision, axis=1)
+                    # store where collision occurs
+                    collision_mask = np.any(collision, axis=1)
 
-                # handle empty arrays
-                if collision.size == 0:
-                    collision_cost_array = np.zeros_like(valid_array)
-                else:
-                    # some ugly lines to distinguish between collision in first step and no collision
-                    earliest_idx = np.argmax(collision, axis=1)
-                    earliest_idx = np.where(collision_mask, earliest_idx, -1)
-                    time_to_collision = t_array_equal_steps[0][earliest_idx]
+                    # handle empty arrays
+                    if collision.size == 0:
+                        collision_cost_array = np.zeros_like(valid_array)
+                    else:
+                        # some ugly lines to distinguish between collision in first step and no collision
+                        earliest_idx = np.argmax(collision, axis=1)
+                        earliest_idx = np.where(
+                            collision_mask, earliest_idx, -1)
+                        time_to_collision = t_array_equal_steps[0][earliest_idx]
 
-                    # velocity difference on projected impact
-                    if prediction_cur["prediction_type"] != "static":
-                        vel_prediction_cur = np.interp(
-                            t_array_equal_steps, pred_data["time_w_offset"], pred_data["vel"]
-                        )
-                        delta_vel_on_collision = np.where(earliest_idx == -1, 0.0, np.abs(
-                            vel_prediction_cur[0][earliest_idx] - V_array[valid_array, earliest_idx]))
-                    else:  # handle static predictions
-                        delta_vel_on_collision = np.where(
-                            earliest_idx == -1, 0.0, np.abs(V_array[valid_array, earliest_idx]))
+                        # velocity difference on projected impact
+                        if prediction_cur["prediction_type"] != "static":
+                            vel_prediction_cur = np.interp(
+                                t_array_equal_steps, pred_data["time_w_offset"], pred_data["vel"]
+                            )
+                            delta_vel_on_collision = np.where(earliest_idx == -1, 0.0, np.abs(
+                                vel_prediction_cur[0][earliest_idx] - V_array[valid_array, earliest_idx]))
+                        else:  # handle static predictions
+                            delta_vel_on_collision = np.where(
+                                earliest_idx == -1, 0.0, np.abs(V_array[valid_array, earliest_idx]))
 
-                    # prevent division by zero
-                    time_to_collision = np.maximum(time_to_collision, 0.01)
+                        # prevent division by zero
+                        time_to_collision = np.maximum(time_to_collision, 0.01)
 
-                    collision_cost = delta_vel_on_collision / \
-                        (time_to_collision ** 2)
+                        collision_cost = delta_vel_on_collision / \
+                            (time_to_collision ** 2)
 
-                    collision_cost_array[valid_array] += self.params.collision_cost_weight * collision_cost
+                        collision_cost_array[valid_array] += self.params.collision_cost_weight * collision_cost
 
         # ------------------------------------------------------------------------------------------------------------------
         # PUNISHMENT FOR USING ABSOLUTE SAMPLES

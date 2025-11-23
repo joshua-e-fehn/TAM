@@ -233,14 +233,6 @@ class TrajectoryChecks():
         valid_tmp = np.all(
             np.abs(Omega_z[valid_array]) <= self.params.kappa_thr, axis=1)
 
-        # store trajectories that failed this check (only if not already marked)
-        if self.debugging:
-            combined_mask = valid_array.copy()
-            combined_mask[valid_array] = ~valid_tmp
-            # Only mark trajectories that haven't failed a previous check
-            invalid_array_info[combined_mask & (
-                invalid_array_info == "")] = "curvature"
-
         valid_array[valid_array] = valid_tmp
 
     def __check_vehicle_capabilities(
@@ -386,14 +378,6 @@ class TrajectoryChecks():
                 f"\n💡 These margins are NOT compatible with this raceline/map!")
             rospy.logerr(f"   Adjust parameters in tam_sampling_params.yaml")
             rospy.logerr("="*80 + "\n")
-
-        # store trajectories that failed this check (only if not already marked)
-        if self.debugging:
-            combined_mask = valid_array.copy()
-            combined_mask[valid_array] = ~valid_tmp
-            # Only mark trajectories that haven't failed a previous check
-            invalid_array_info[combined_mask & (
-                invalid_array_info == "")] = "path_collision"
 
         valid_array[valid_array] = valid_tmp
 
@@ -550,28 +534,6 @@ class TrajectoryChecks():
                     axis=1
                 )
 
-                # Handle case where all trajectories fail the check
-                if np.sum(valid_tmp) < 1:
-                    # Find trajectory with minimum maximum violation
-                    max_violations = np.max(
-                        tire_util_array[valid_array], axis=1)
-                    best_idx = np.argmin(max_violations)
-                    valid_tmp[best_idx] = True
-
-                    # rospy.logwarn(
-                    #     f"Trajectory ID {traj_cnt}: All trajectories exceed friction limits. "
-                    #     f"Keeping best with max tire util={max_violations[best_idx]:.3f} "
-                    #     f"(threshold={effective_threshold:.3f}, relaxation={self.params.tire_util_relaxation:.2f})"
-                    # )
-
-                # Store trajectories that failed this check for visualizer (only if not already marked)
-                if self.debugging:
-                    combined_mask = valid_array.copy()
-                    combined_mask[valid_array] = ~valid_tmp
-                    # Only mark trajectories that haven't failed a previous check
-                    invalid_array_info[combined_mask & (
-                        invalid_array_info == "")] = "friction"
-
                 # Update valid array
                 valid_array[valid_array] = valid_tmp
 
@@ -633,8 +595,11 @@ class TrajectoryChecks():
         left_bound = np.array([])
         right_bound = np.array([])
 
-        # checks modify the valid array. The order of the checks can have influence on the calculation time
-        valid_sum = np.sum(valid_array)
+        # Track valid count after each check for failure analysis
+        total_trajectories = s_array.shape[0]
+        valid_after_curvature = total_trajectories
+        valid_after_collision = total_trajectories
+        valid_after_friction = total_trajectories
 
         # Curvature Check
         self.check_curvature(
@@ -642,22 +607,7 @@ class TrajectoryChecks():
             Omega_z=Omega_z_vf_array,
             invalid_array_info=invalid_array_info,
         )
-        valid_sum_tmp = np.sum(valid_array)
-
-        # Vehicle Capability Check (speed and acceleration limits)
-        valid_sum = valid_sum_tmp
-        # valid_speed, valid_ax = self.__check_vehicle_capabilities(
-        #     valid_array=valid_array,
-        #     V_array=V_array,
-        #     ax_array=ax_vf_array,
-        #     ay_array=ay_vf_array,
-        #     invalid_array_info=invalid_array_info,
-        #     traj_cnt=traj_cnt,
-        # )
-        valid_sum_tmp = np.sum(valid_array)
-
-        # Path Collision Check
-        valid_sum = valid_sum_tmp
+        valid_after_curvature = np.sum(valid_array)
 
         left_bound, right_bound = self.__check_path_collision(
             track_handler=track_handler,
@@ -668,12 +618,9 @@ class TrajectoryChecks():
             vehicle_params=vehicle_params,
             invalid_array_info=invalid_array_info,
         )
-        valid_sum_tmp = np.sum(valid_array)
-        valid_sum = valid_sum_tmp
+        valid_after_collision = np.sum(valid_array)
 
         # Friction Check
-        valid_sum = valid_sum_tmp
-        # rospy.logerr(f"\n--- Running Friction Check (SIMPLIFIED) ---")
         ax_tilde, ay_tilde, g_tilde, tire_util_array = self.__check_friction_limits(
             valid_array=valid_array,
             track_handler=track_handler,
@@ -693,91 +640,17 @@ class TrajectoryChecks():
             postprocessed_raceline=postprocessed_raceline,
         )
         valid_sum_tmp = np.sum(valid_array)
-
-        # Summary of trajectory failures when very few or no valid trajectories
-        total_trajectories = s_array.shape[0]
-        num_valid_final = valid_sum_tmp
-        valid_percentage = (
-            num_valid_final / total_trajectories * 100) if total_trajectories > 0 else 0
-
-        # if num_valid_final == 0 or valid_percentage < 5.0:
-        #     rospy.logerr("\n" + "="*80)
-        #     rospy.logerr(
-        #         f"⚠️  TRAJECTORY VALIDATION SUMMARY - Trajectory ID {traj_cnt}")
-        #     rospy.logerr("="*80)
-        #     rospy.logerr(
-        #         f"Final valid trajectories: {num_valid_final}/{total_trajectories} ({valid_percentage:.1f}%)")
-        #     rospy.logerr("\nFailure breakdown:")
-
-        #     # Count failures by type
-        #     failure_counts = {}
-        #     for reason in ["curvature", "vehicle_capability", "path_collision", "friction", ""]:
-        #         count = np.sum(invalid_array_info == reason)
-        #         if count > 0 or reason == "":
-        #             failure_counts[reason] = count
-
-        #     # Curvature check failures
-        #     curvature_failures = failure_counts.get("curvature", 0)
-        #     curvature_pct = (
-        #         curvature_failures / total_trajectories * 100) if total_trajectories > 0 else 0
-        #     rospy.logerr(
-        #         f"  📐 Curvature check:      {curvature_failures:3d}/{total_trajectories} failed ({curvature_pct:5.1f}%)"
-        #     )
-
-        #     # # Vehicle capability check failures
-        #     # capability_failures = failure_counts.get("vehicle_capability", 0)
-        #     # capability_pct = (
-        #     #     capability_failures / total_trajectories * 100) if total_trajectories > 0 else 0
-        #     # rospy.logerr(
-        #     #     f"  🚗 Vehicle capability:   {capability_failures:3d}/{total_trajectories} failed ({capability_pct:5.1f}%)"
-        #     # )
-
-        #     # # Show detailed breakdown of which capability limits were exceeded
-        #     # if capability_failures > 0 and 'valid_speed' in locals():
-        #     #     num_speed_violations = np.sum(~valid_speed)
-        #     #     num_ax_violations = np.sum(~valid_ax)
-
-        #     #     if num_speed_violations > 0:
-        #     #         rospy.logerr(
-        #     #             f"      └─ Speed exceeded:     {num_speed_violations:3d} trajectories "
-        #     #             f"(max={self.params.max_speed:.1f} m/s)"
-        #     #         )
-        #     #     if num_ax_violations > 0:
-        #     #         rospy.logerr(
-        #     #             f"      └─ Longitudinal accel: {num_ax_violations:3d} trajectories "
-        #     #             f"(max={self.params.max_accel:.1f} m/s²)"
-        #     #         )
-        #     #     # Note: Lateral accel not checked here - handled by Pacejka friction check
-
-        #     # Path collision check failures
-        #     collision_failures = failure_counts.get("path_collision", 0)
-        #     collision_pct = (
-        #         collision_failures / total_trajectories * 100) if total_trajectories > 0 else 0
-        #     rospy.logerr(
-        #         f"  🚧 Path collision check: {collision_failures:3d}/{total_trajectories} failed ({collision_pct:5.1f}%)"
-        #     )
-
-        #     # Friction check failures
-        #     friction_failures = failure_counts.get("friction", 0)
-        #     friction_pct = (friction_failures / total_trajectories *
-        #                     100) if total_trajectories > 0 else 0
-        #     rospy.logerr(
-        #         f"  🛞 Friction check:       {friction_failures:3d}/{total_trajectories} failed ({friction_pct:5.1f}%)"
-        #     )
-
-        #     # Unknown/not labeled
-        #     unknown_failures = failure_counts.get("", 0)
-        #     if unknown_failures > 0:
-        #         unknown_pct = (unknown_failures / total_trajectories *
-        #                        100) if total_trajectories > 0 else 0
-        #         rospy.logerr(
-        #             f"  ❓ Other/Unknown:        {unknown_failures:3d}/{total_trajectories} failed ({unknown_pct:5.1f}%) ❓"
-        #         )
-
-        #     rospy.logerr("="*80 + "\n")
+        valid_after_friction = valid_sum_tmp
 
         if not valid_sum_tmp:
-            rospy.logerr(
-                f"[Trajectories Check] ❌ CRITICAL: No valid trajectories after all checks")
+            # Calculate percentage reduction after each check
+            curvature_reduction_pct = ((total_trajectories - valid_after_curvature) /
+                                       total_trajectories * 100) if total_trajectories > 0 else 0
+            collision_reduction_pct = ((valid_after_curvature - valid_after_collision) /
+                                       total_trajectories * 100) if total_trajectories > 0 else 0
+            friction_reduction_pct = ((valid_after_collision - valid_after_friction) /
+                                      total_trajectories * 100) if total_trajectories > 0 else 0
+
+            rospy.logerr(f"[Traj {traj_cnt}] ❌ NO VALID TRAJECTORIES | Total: {total_trajectories} | Curvature: -{curvature_reduction_pct:.1f}% | Collision: -{collision_reduction_pct:.1f}% | Friction: -{friction_reduction_pct:.1f}%")
 
         return valid_array, ax_tilde, ay_tilde, g_tilde, tire_util_array, invalid_array_info, (left_bound, right_bound)
