@@ -769,6 +769,16 @@ class LongitudinalSampling:
         s_dot_end_values = np.concatenate(
             (s_dot_end_values_tmp, [max(V_target, 1.0), s_dot_end_rl]))
 
+        # Clamp end values to vehicle limits with slack (1.5x for velocity)
+        max_velocity_with_slack = self.params.max_velocity * 1.5
+        s_dot_end_values = np.minimum(
+            s_dot_end_values, max_velocity_with_slack)
+        s_dot_end_values = np.maximum(
+            s_dot_end_values, 0.0)  # No negative velocities
+
+        # Remove duplicate end values to keep distinctive values only
+        s_dot_end_values = np.unique(s_dot_end_values)
+
         # assign array sizes depending on number of s_dot end values
         target_shape = (
             s_dot_end_values.shape[0] * n_samples, self.params.num_samples)
@@ -796,6 +806,17 @@ class LongitudinalSampling:
         # Store (index, s_vals, s_dot, s_ddot, t, s_end) tuples
         valid_sample_data = []
         samples_skipped = 0
+
+        # Slack: 1.5x for velocity/accel, 2.0x for decel
+        rejection_stats = {
+            'negative_velocity': 0,
+            'over_max_velocity': 0,
+            'over_max_accel': 0,
+            'over_max_decel': 0
+        }
+        max_velocity_with_slack = self.params.max_velocity * 1.5
+        max_accel_with_slack = self.params.max_acceleration * 1.5
+        max_decel_with_slack = self.params.max_acceleration * 2.0
 
         for i, (s_dot_end) in enumerate(s_dot_end_values):
             s_end_loc = s_loc_vector[-1]
@@ -875,11 +896,41 @@ class LongitudinalSampling:
                 s_dot = s_dot_sample
                 s_ddot = s_pprime_sample
 
-            # Check for negative velocities and skip sample if found
+            #    Check for all vehicle limit violations and skip invalid samples
             min_s_dot = np.min(s_dot)
+            max_s_dot = np.max(s_dot)
+            min_s_ddot = np.min(s_ddot)
+            max_s_ddot = np.max(s_ddot)
+
+            # Check each violation type
+            violation_detected = False
+            violation_reasons = []
+
             if min_s_dot < 0:
-                rospy.logwarn(
-                    f"[SKIP] Sample {i}/{len(s_dot_end_values)}: Negative velocity {min_s_dot:.3f} m/s detected, skipping sample")
+                rejection_stats['negative_velocity'] += 1
+                violation_detected = True
+                violation_reasons.append(
+                    f"negative velocity {min_s_dot:.3f} m/s")
+
+            if max_s_dot > max_velocity_with_slack:
+                rejection_stats['over_max_velocity'] += 1
+                violation_detected = True
+                violation_reasons.append(
+                    f"over max_velocity {max_s_dot:.3f} > {max_velocity_with_slack:.3f} m/s")
+
+            if min_s_ddot < -max_decel_with_slack:
+                rejection_stats['over_max_decel'] += 1
+                violation_detected = True
+                violation_reasons.append(
+                    f"over max_decel {min_s_ddot:.3f} < {-max_decel_with_slack:.3f} m/s²")
+
+            if max_s_ddot > max_accel_with_slack:
+                rejection_stats['over_max_accel'] += 1
+                violation_detected = True
+                violation_reasons.append(
+                    f"over max_accel {max_s_ddot:.3f} > {max_accel_with_slack:.3f} m/s²")
+
+            if violation_detected:
                 samples_skipped += 1
                 continue
 
@@ -953,7 +1004,7 @@ class LongitudinalSampling:
         num_valid_samples = len(valid_sample_data)
         if num_valid_samples == 0:
             rospy.logerr(
-                "[SKIP] All samples were rejected due to negative velocities! Returning empty arrays.")
+                "[calc_samples_s_based] All samples rejected - returning empty arrays")
             return (np.zeros((0, self.params.num_samples)),
                     np.zeros((0, self.params.num_samples)),
                     np.zeros((0, self.params.num_samples)),
@@ -988,46 +1039,24 @@ class LongitudinalSampling:
                 rel_long_sampling_array[j *
                                         n_samples: (j + 1) * n_samples] = False
 
-        # Log sample statistics
-        if samples_skipped > 0:
-            rospy.logwarn(
-                f"[SKIP] Rejected {samples_skipped}/{len(s_dot_end_values)} samples ({100*samples_skipped/len(s_dot_end_values):.1f}%) due to negative velocities. "
-                f"Valid samples: {num_valid_samples}")
-
         # Check final trajectories for boundary violations
+        max_velocity_with_slack_check = self.params.max_velocity * 1.5
+        max_accel_with_slack_check = self.params.max_acceleration * 1.5
+        max_decel_with_slack_check = self.params.max_acceleration * 2.0
+
         all_neg_vel = np.sum(s_dot_array < 0)
-        all_over_max_vel = np.sum(s_dot_array > self.params.max_velocity)
+        all_over_max_vel = np.sum(s_dot_array > max_velocity_with_slack_check)
         all_below_min_accel = np.sum(
-            s_ddot_array < -self.params.max_acceleration)
-        all_over_max_accel = np.sum(
-            s_ddot_array > self.params.max_acceleration)
+            s_ddot_array < -max_decel_with_slack_check)
+        all_over_max_accel = np.sum(s_ddot_array > max_accel_with_slack_check)
 
-        # Only warn if boundaries are exceeded
-        if all_neg_vel > 0 or all_over_max_vel > 0 or all_below_min_accel > 0 or all_over_max_accel > 0:
-            total_traj_points = s_dot_array.size
-            violations = []
-            if all_neg_vel > 0:
-                # DIAGNOSTIC: Provide detailed stats on negative velocities
-                neg_vel_mask = s_dot_array < 0
-                min_neg_vel = np.min(s_dot_array[neg_vel_mask])
-                violations.append(
-                    f"negative velocities: {all_neg_vel} ({100*all_neg_vel/total_traj_points:.2f}%), worst: {min_neg_vel:.3f} m/s")
-                rospy.logerr(
-                    f"[SUMMARY] Total negative velocity violations: {all_neg_vel} points")
-                rospy.logerr(
-                    f"[SUMMARY] Worst negative velocity: {min_neg_vel:.3f} m/s")
-            if all_over_max_vel > 0:
-                violations.append(
-                    f"over max_velocity ({self.params.max_velocity:.1f} m/s): {all_over_max_vel} ({100*all_over_max_vel/total_traj_points:.2f}%)")
-            if all_below_min_accel > 0:
-                violations.append(
-                    f"below -max_accel ({-self.params.max_acceleration:.1f} m/s²): {all_below_min_accel} ({100*all_below_min_accel/total_traj_points:.2f}%)")
-            if all_over_max_accel > 0:
-                violations.append(
-                    f"over max_accel ({self.params.max_acceleration:.1f} m/s²): {all_over_max_accel} ({100*all_over_max_accel/total_traj_points:.2f}%)")
-
-            rospy.logwarn(
-                f"[calc_samples_s_based] Trajectory boundary violations: {', '.join(violations)}")
+        # Only log critical violations (negative velocities should never occur)
+        if all_neg_vel > 0:
+            neg_vel_mask = s_dot_array < 0
+            min_neg_vel = np.min(s_dot_array[neg_vel_mask])
+            rospy.logerr(
+                f"[calc_samples_s_based] CRITICAL: {all_neg_vel} negative velocity points detected, "
+                f"worst: {min_neg_vel:.3f} m/s")
 
         return s_array, s_dot_array, s_ddot_array, s_dot_end_values, s_end_values, rel_long_sampling_array, t_array
 
