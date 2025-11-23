@@ -86,16 +86,16 @@ lateral_jerk_cost_weight_overtaking: 0.0  # Lateral jerk cost during overtaking
 # Safety Parameters
 # ========================================
 # Track boundary safety distances (F1TENTH: reduced for 1/10 scale racing)
-safety_distance_track_left: 0.07   # Safety distance to left track boundary (m) - F1TENTH: 2cm
-safety_distance_track_right: 0.07  # Safety distance to right track boundary (m) - F1TENTH: 2cm
+safety_distance_track_left: 0.12   # Safety distance to left track boundary (m) - F1TENTH: 2cm
+safety_distance_track_right: 0.12  # Safety distance to right track boundary (m) - F1TENTH: 2cm
 
 # Pitlane safety distances (for pit entry/exit scenarios)
 safety_distance_pitlane_left: 0.0  # Safety distance to left pitlane boundary (m)
 safety_distance_pitlane_right: 0.0 # Safety distance to right pitlane boundary (m)
 
 # Soft safety distances (for cost penalties rather than hard constraints)
-soft_safety_distance_left_m: 0.0   # Soft safety distance left (m)
-soft_safety_distance_right_m: 0.0  # Soft safety distance right (m)
+soft_safety_distance_left_m: 0.17   # Soft safety distance left (m)
+soft_safety_distance_right_m: 0.17  # Soft safety distance right (m)
 
 # Obstacle safety margins
 safety_margin_static: 0.2          # Safety margin for static obstacles (m)
@@ -125,7 +125,7 @@ max_lateral_acceleration_g: 1.2           # Maximum lateral acceleration in mult
 kappa_thr: 1.0                     # Maximum allowed curvature (rad/m) - reduced from 1.5 to limit aggressive cornering
 curvature_cost_threshold: 30.0     # Curvature threshold for cost penalty
 tire_util_max_check: 1.1          # Maximum tire utilization check - reduced from 1.1 to stay well within tire limits
-tire_util_relaxation: 1.5          # Friction check relaxation factor (1.0=default, >1.0=relaxed, <1.0=strict)
+tire_util_relaxation: 1.2          # Friction check relaxation factor (1.0=default, >1.0=relaxed, <1.0=strict)
 
 # ========================================
 # Cost Behavior Parameters
@@ -180,7 +180,7 @@ enable_overtaking: true      # Enable overtaking maneuvers
 # ========================================
 from_bag: false              # Whether running from bag file (for testing/replay)
 measure: false               # Enable performance measurement/profiling
-following_distance: 10.0     # Target following distance to vehicle ahead (m)
+following_distance: 5.0     # Target following distance to vehicle ahead (m)
 role: 0                      # Vehicle role: 0=no flag, 1=defender, 2=attacker
 gg_scaling: 1.0              # GG diagram scaling factor for dynamic adjustment
 overtaking_allowed: true     # Whether overtaking maneuvers are permitted

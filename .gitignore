@@ -3,9 +3,10 @@
 bags/
 
 # JSON files for waypoints
-*/maps/*/*.json
+# */maps/*/*.json
 # but not the test ones
 !*/maps/test_map/*.json
+
 
 # vscode
 .vscode/
@@ -47,8 +48,8 @@ f110_utils/nodes/overtaking_sector_tuner/cfg/ot_sectors.yaml
 # scaler yamls
 f110_utils/nodes/sector_tuner/cfg/speed_scaling.yaml
 # no changes to sector yamls
-stack_master/maps/*/ot_sectors.yaml
-stack_master/maps/*/speed_scaling.yaml
+# stack_master/maps/*/ot_sectors.yaml
+# stack_master/maps/*/speed_scaling.yaml
 
 # Bayesian optimization
 stack_master/config/BayesOpt_MAP/

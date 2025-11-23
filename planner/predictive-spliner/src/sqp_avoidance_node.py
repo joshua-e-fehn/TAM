@@ -544,7 +544,7 @@ class SQPAvoidanceNode:
                 {'type': 'eq', 'fun': self.combined_equality_constraints},
                 {'type': 'ineq', 'fun': self.combined_inequality_constraints}
             ],
-            options={'ftol': 1e-1, 'maxiter': 20, 'disp': False},
+            options={'ftol': 1e-1, 'maxiter': 50, 'disp': False},
         )
         return result
 
