@@ -391,7 +391,7 @@ class LongitudinalSampling:
             self.params.s_dot_end_min = yaml_defaults.get(
                 's_dot_end_min', rospy.get_param("discretization/s_dot_end_min", 1.0))
             self.params.relative_s_dot_min_percentage = yaml_defaults.get(
-                'relative_s_dot_min_percentage', rospy.get_param("behavior/relative_s_dot_min_percentage", 0.5))
+                'relative_s_dot_min_percentage', rospy.get_param("behavior/relative_s_dot_min_percentage", 0.7))
             self.params.s_dot_max_positive_delta = yaml_defaults.get(
                 's_dot_max_positive_delta', rospy.get_param("behavior/s_dot_max_positive_delta", 20.0))
             self.params.s_dot_discretization = yaml_defaults.get(
@@ -743,9 +743,19 @@ class LongitudinalSampling:
         if raceline_tendency:
             s_dot_end_max = s_dot_end_rl * self.params.v_sampling_scale
             s_dot_end_min = self.params.relative_s_dot_min_percentage * s_dot_end_max
-            # Dense sampling around raceline
+
+            # Adaptive dense sampling - use percentages relative to raceline velocity
+            dense_deviation_min_percentage = -0.30  # 30% below raceline
+            dense_deviation_max_percentage = +0.10  # 10% above raceline
+
+            dense_deviation_min = dense_deviation_min_percentage * s_dot_end_rl
+            dense_deviation_max = dense_deviation_max_percentage * s_dot_end_rl
+
+            # Dense sampling around raceline (now adaptive)
             s_dot_dense_end_values = np.linspace(
-                self.params.s_dot_dense_min + s_dot_end_rl, self.params.s_dot_dense_max + s_dot_end_rl, self.params.s_dot_dense_samples)
+                dense_deviation_min + s_dot_end_rl,
+                dense_deviation_max + s_dot_end_rl,
+                self.params.s_dot_dense_samples)
             s_dot_coarse_end_values = np.arange(
                 s_dot_end_min, s_dot_end_max, self.params.s_dot_discretization)
             s_dot_end_values_tmp = np.concatenate(
@@ -773,6 +783,20 @@ class LongitudinalSampling:
         # end values of s and s_dot (needed for lateral curves)
         s_end_values = np.zeros_like(s_dot_end_values)
 
+        # Pre-compute minimum raceline velocity for deviation clamping
+        v_rl_min_in_trajectory = None
+        if raceline_tendency:
+            s_dot_rl_eval_preview = interpolate_with_period(
+                s_glob_interval, postprocessed_raceline['s_post'],
+                postprocessed_raceline['s_dot_post'],
+                period=track_handler.get_track_length())
+            v_rl_min_in_trajectory = np.min(s_dot_rl_eval_preview)
+
+        # Track which samples are valid (will skip samples with negative velocities)
+        # Store (index, s_vals, s_dot, s_ddot, t, s_end) tuples
+        valid_sample_data = []
+        samples_skipped = 0
+
         for i, (s_dot_end) in enumerate(s_dot_end_values):
             s_end_loc = s_loc_vector[-1]
 
@@ -798,12 +822,28 @@ class LongitudinalSampling:
                     [0, 1, 2 * s_end_loc, 3 * s_end_loc**2],
                 ]
             )
+
+            # Initialize for diagnostic output
+            delta_v_start = None
+            delta_v_end = None
+
             if raceline_tendency:  # sample curves relative to raceline
+                # Calculate raw deviations
+                delta_v_start_raw = s_dot_start - \
+                    postprocessed_raceline["s_dot_post"][0]
+                delta_v_end_raw = s_dot_end - s_dot_end_rl
+
+                # Clamp deviations to prevent negative velocities (50% safety margin)
+                max_safe_negative_deviation = -0.50 * v_rl_min_in_trajectory
+                delta_v_start = max(delta_v_start_raw,
+                                    max_safe_negative_deviation)
+                delta_v_end = max(delta_v_end_raw, max_safe_negative_deviation)
+
                 b = np.array(
                     [
-                        s_dot_start - postprocessed_raceline["s_dot_post"][0],
+                        delta_v_start,
                         s_pprime_start - s_pprime_start_rl,
-                        s_dot_end - s_dot_end_rl,
+                        delta_v_end,
                         s_pprime_end - s_pprime_end_rl,
                     ]
                 )
@@ -834,6 +874,14 @@ class LongitudinalSampling:
             else:
                 s_dot = s_dot_sample
                 s_ddot = s_pprime_sample
+
+            # Check for negative velocities and skip sample if found
+            min_s_dot = np.min(s_dot)
+            if min_s_dot < 0:
+                rospy.logwarn(
+                    f"[SKIP] Sample {i}/{len(s_dot_end_values)}: Negative velocity {min_s_dot:.3f} m/s detected, skipping sample")
+                samples_skipped += 1
+                continue
 
             # consider track length
             s_vals = s_loc_vector + s_start
@@ -890,27 +938,61 @@ class LongitudinalSampling:
             t = self.calc_time_vector(
                 track_handler, s_vals, np.zeros_like(s_vals), s_dot, raceline_tendency)
 
-            # add postprocessed values
-            s_array[i * n_samples: (i + 1) * n_samples,
-                    :] = np.tile(s_vals, (n_samples, 1))
-            s_dot_array[i * n_samples: (i + 1) * n_samples,
-                        :] = np.tile(s_dot, (n_samples, 1))
-            s_ddot_array[i * n_samples: (i + 1) * n_samples,
-                         :] = np.tile(s_ddot, (n_samples, 1))
+            # Store valid sample data
+            valid_sample_data.append({
+                'index': i,
+                's_vals': s_vals,
+                's_dot': s_dot,
+                's_ddot': s_ddot,
+                't': t,
+                's_end': s_vals[-1],
+                'raceline_tendency': raceline_tendency
+            })
 
-            # store type of sample
-            if raceline_tendency:  # DEBUG -- since raceline_tendency is a single bool this doesnt need to happen in the for llop, can be set at a single position
-                rel_long_sampling_array[i *
-                                        n_samples: (i + 1) * n_samples] = True
+        # Build output arrays only from valid samples
+        num_valid_samples = len(valid_sample_data)
+        if num_valid_samples == 0:
+            rospy.logerr(
+                "[SKIP] All samples were rejected due to negative velocities! Returning empty arrays.")
+            return (np.zeros((0, self.params.num_samples)),
+                    np.zeros((0, self.params.num_samples)),
+                    np.zeros((0, self.params.num_samples)),
+                    np.array([]), np.array([]), np.array([]),
+                    np.zeros((0, self.params.num_samples)))
+
+        # Resize arrays to actual valid sample count
+        valid_shape = (num_valid_samples * n_samples, self.params.num_samples)
+        s_array = np.zeros(valid_shape)
+        s_dot_array = np.zeros(valid_shape)
+        s_ddot_array = np.zeros(valid_shape)
+        rel_long_sampling_array = np.zeros(valid_shape[0])
+        t_array = np.zeros(valid_shape)
+        s_end_values = np.zeros(num_valid_samples)
+
+        # Fill arrays with valid samples
+        for j, sample_data in enumerate(valid_sample_data):
+            s_array[j * n_samples: (j + 1) * n_samples,
+                    :] = np.tile(sample_data['s_vals'], (n_samples, 1))
+            s_dot_array[j * n_samples: (j + 1) * n_samples,
+                        :] = np.tile(sample_data['s_dot'], (n_samples, 1))
+            s_ddot_array[j * n_samples: (j + 1) * n_samples,
+                         :] = np.tile(sample_data['s_ddot'], (n_samples, 1))
+            t_array[j * n_samples: (j + 1) * n_samples,
+                    :] = np.tile(sample_data['t'], (n_samples, 1))
+            s_end_values[j] = sample_data['s_end']
+
+            if sample_data['raceline_tendency']:
+                rel_long_sampling_array[j *
+                                        n_samples: (j + 1) * n_samples] = True
             else:
-                rel_long_sampling_array[i *
-                                        n_samples: (i + 1) * n_samples] = False
+                rel_long_sampling_array[j *
+                                        n_samples: (j + 1) * n_samples] = False
 
-            t_array[i * n_samples: (i + 1) * n_samples,
-                    :] = np.tile(t, (n_samples, 1))
-
-            # save last values
-            s_end_values[i] = s_vals[-1]
+        # Log sample statistics
+        if samples_skipped > 0:
+            rospy.logwarn(
+                f"[SKIP] Rejected {samples_skipped}/{len(s_dot_end_values)} samples ({100*samples_skipped/len(s_dot_end_values):.1f}%) due to negative velocities. "
+                f"Valid samples: {num_valid_samples}")
 
         # Check final trajectories for boundary violations
         all_neg_vel = np.sum(s_dot_array < 0)
@@ -925,8 +1007,15 @@ class LongitudinalSampling:
             total_traj_points = s_dot_array.size
             violations = []
             if all_neg_vel > 0:
+                # DIAGNOSTIC: Provide detailed stats on negative velocities
+                neg_vel_mask = s_dot_array < 0
+                min_neg_vel = np.min(s_dot_array[neg_vel_mask])
                 violations.append(
-                    f"negative velocities: {all_neg_vel} ({100*all_neg_vel/total_traj_points:.2f}%)")
+                    f"negative velocities: {all_neg_vel} ({100*all_neg_vel/total_traj_points:.2f}%), worst: {min_neg_vel:.3f} m/s")
+                rospy.logerr(
+                    f"[SUMMARY] Total negative velocity violations: {all_neg_vel} points")
+                rospy.logerr(
+                    f"[SUMMARY] Worst negative velocity: {min_neg_vel:.3f} m/s")
             if all_over_max_vel > 0:
                 violations.append(
                     f"over max_velocity ({self.params.max_velocity:.1f} m/s): {all_over_max_vel} ({100*all_over_max_vel/total_traj_points:.2f}%)")
