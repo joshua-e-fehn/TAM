@@ -1112,11 +1112,8 @@ class LongitudinalSampling:
 
         # get fastest accelerating profile
         ##############################################################################################################
-        # print('v_target: ', V_target)
-        # print('s_dot_start: ', s_dot_start)
-        if s_dot_start < V_target:  # or True
+        if s_dot_start < V_target:
             for j in range(self.params.samples_forward_backward, self.params.samples_forward_backward*2):
-                # for j in range(1):
                 t_cumulative = 0.0
                 s_dot_current = max(s_dot_start, self.params.s_dot_end_min)
 
@@ -1130,9 +1127,24 @@ class LongitudinalSampling:
                     s_vec_local[i] = s_arr_ref[i]
                     s_dot_vec_local[i] = s_dot_current
                     t_vec_local[i] = t_cumulative
-                    s_step = s_arr_ref[1+i] - s_arr_ref[i]
-                    if s_step > 0.5 * track_handler.get_track_length():
-                        s_step = - s_step + track_handler.get_track_length()
+
+                    # Calculate s_step with proper wraparound handling
+                    # Use modulo arithmetic to always get positive forward distance
+                    track_length = track_handler.get_track_length()
+                    s_step = (s_arr_ref[1+i] - s_arr_ref[i]) % track_length
+
+                    # Handle the case where modulo gives us nearly track_length (backward wrap)
+                    # We want the shorter distance, so if > half track, it's actually backward
+                    if s_step > 0.5 * track_length:
+                        s_step = s_step - track_length
+                        if not wraparound_detected:
+                            wraparound_detected = True
+                            wraparound_step = i
+
+                    # Safety check: s_step should always be positive and non-zero
+                    if s_step <= 1e-6:
+                        # Use minimum step size based on typical raceline resolution
+                        s_step = 0.1
 
                     # F1TENTH: Use Pacejka tire model for acceleration limits
                     _, ax_avail_max_tilde = self.__calc_ax_avail_tire_limits(
@@ -1162,18 +1174,19 @@ class LongitudinalSampling:
                         # (s_dot_next - s_dot_current) / (t_cumulative-t_vec_forward[i])
                         s_ddot_vec_local[i] = ax_avail_scaled
 
+                    # Time increment calculation
                     if np.abs(s_ddot_vec_local[i]) > 1e-5:
                         t_cumulative += (s_dot_next -
                                          s_dot_current) / s_ddot_vec_local[i]
                     else:
-                        t_cumulative += (s_step) / s_dot_current
+                        if s_dot_current > 1e-6:
+                            t_cumulative += s_step / s_dot_current
 
                     s_dot_current = s_dot_next
 
-                    # Distance-based cutoff (instead of time-based) for ACCELERATION profiles
+                    # Distance-based cutoff for acceleration profiles
                     # Calculate total distance traveled with wraparound handling
                     s_distance = s_vec_local[i] - s_vec_local[0]
-                    # Handle wraparound: if distance is negative, we wrapped around
                     if s_distance < 0:
                         s_distance += track_handler.get_track_length()
 
@@ -1186,10 +1199,11 @@ class LongitudinalSampling:
 
                 rel_long_sampling_array[j *
                                         n_samples:  (j+1) * n_samples] = False
-                # print(t_array[j,:])
+
                 trim_mask = np.zeros_like(s_vec_local, dtype=bool)
                 trim_mask[:(i+1)] = create_trim_mask(s_vec_local[:(i+1)],
                                                      self.params.num_samples)
+
                 s_array[j*n_samples:  (j+1) * n_samples,
                         :] = np.tile(s_vec_local[trim_mask], (n_samples, 1))
                 s_dot_array[j*n_samples:  (j+1) * n_samples, :] = np.tile(
@@ -1199,14 +1213,6 @@ class LongitudinalSampling:
                 t_array[j*n_samples:  (j+1) * n_samples,
                         :] = np.tile(t_vec_local[trim_mask], (n_samples, 1))
 
-                # if np.any(np.diff(s_array[j*n_samples,:]) <= 0):
-                #     print("Acceleration profile (s) not monotonically increasing")
-                #     print(s_array[j*n_samples,:])
-
-                # if np.any(np.diff(t_array[j*n_samples,:]) <= 0):
-                #     print("Acceleration profile (time) not monotonically increasing")
-                #     print(t_array[j*n_samples,:])
-
         ##############################################################################################################
 
         # get fastest decelerating profile
@@ -1214,7 +1220,6 @@ class LongitudinalSampling:
         if True:
             for j in range(self.params.samples_forward_backward):
                 t_cumulative = 0.0
-                # s_dot_current =max(s_dot_start, self.params.s_dot_end_min)
                 s_dot_current = s_dot_start
 
                 s_vec_local = np.zeros_like(s_arr_temp)
@@ -1226,9 +1231,24 @@ class LongitudinalSampling:
                     s_vec_local[i] = s_arr_ref[i]
                     s_dot_vec_local[i] = s_dot_current
                     t_vec_local[i] = t_cumulative
-                    s_step = s_arr_ref[1+i] - s_arr_ref[i]
-                    if s_step > 0.5 * track_handler.get_track_length():
-                        s_step = - s_step + track_handler.get_track_length()
+
+                    # Calculate s_step with proper wraparound handling
+                    # Use modulo arithmetic to always get positive forward distance
+                    track_length = track_handler.get_track_length()
+                    s_step = (s_arr_ref[1+i] - s_arr_ref[i]) % track_length
+
+                    # Handle the case where modulo gives us nearly track_length (backward wrap)
+                    # We want the shorter distance, so if > half track, it's actually backward
+                    if s_step > 0.5 * track_length:
+                        s_step = s_step - track_length
+                        if not wraparound_detected:
+                            wraparound_detected = True
+                            wraparound_step = i
+
+                    # Safety check: s_step should always be positive and non-zero
+                    if s_step <= 1e-6:
+                        # Use minimum step size based on typical raceline resolution
+                        s_step = 0.1
 
                     # F1TENTH: Use Pacejka tire model for deceleration limits
                     ax_avail_min_tilde, _ = self.__calc_ax_avail_tire_limits(
@@ -1254,18 +1274,19 @@ class LongitudinalSampling:
                         # (s_dot_next - s_dot_current) / (t_cumulative-t_vec_forward[i])
                         s_ddot_vec_local[i] = ax_avail_scaled
 
+                    # Time increment calculation
                     if np.abs(s_ddot_vec_local[i]) > 1e-5:
                         t_cumulative += (s_dot_next -
                                          s_dot_current) / s_ddot_vec_local[i]
                     else:
-                        t_cumulative += (s_step) / s_dot_current
+                        if s_dot_current > 1e-6:
+                            t_cumulative += s_step / s_dot_current
 
                     s_dot_current = s_dot_next
 
-                    # Distance-based cutoff (instead of time-based) for DECELERATION profiles
+                    # Distance-based cutoff for deceleration profiles
                     # Calculate total distance traveled with wraparound handling
                     s_distance = s_vec_local[i] - s_vec_local[0]
-                    # Handle wraparound: if distance is negative, we wrapped around
                     if s_distance < 0:
                         s_distance += track_handler.get_track_length()
 
@@ -1291,14 +1312,6 @@ class LongitudinalSampling:
                     s_ddot_vec_local[trim_mask], (n_samples, 1))
                 t_array[j*n_samples:  (j+1) * n_samples,
                         :] = np.tile(t_vec_local[trim_mask], (n_samples, 1))
-
-                # if np.any(np.diff(s_array[j*n_samples,:]) <= 0):
-                #     print("Deceleration profile (s) not monotonically increasing")
-                #     print(s_array[j*n_samples,:])
-
-                # if np.any(np.diff(t_array[j*n_samples,:]) <= 0):
-                #     print("Deceleration profile (time) not monotonically increasing")
-                #     print(t_array[j*n_samples,:])
 
         ##############################################################################################################
         s_dot_end_values = s_dot_array[0::n_samples, -1]
