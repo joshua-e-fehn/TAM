@@ -191,7 +191,84 @@ class LocalSamplingPlanner:
                 else:
                     t_rl[i] = t_rl[i-1] + ds / 1e-6
 
-        # Calculate longitudinal acceleration from velocity gradient
+        # =======================================================================================
+        # VEHICLE LIMITS PREPROCESSING
+        # Apply vehicle performance limits to raceline with safety margins (slack)
+        # =======================================================================================
+
+        # Get vehicle limits with slack factors
+        # Slack allows slight violations to avoid being overly conservative
+        max_velocity_limit = self.max_speed * 1.2        # 20% slack above max speed
+        # 20% slack above max acceleration
+        max_accel_limit = self.max_accel * 1.2
+        # 50% slack for deceleration (braking is easier)
+        max_decel_limit = self.max_accel * 1.5
+
+        # Count violations before preprocessing
+        v_violations_before = np.sum(v_rl > self.max_speed)
+
+        # Step 1: Clamp velocities to absolute maximum
+        v_rl_original = v_rl.copy()
+        v_rl = np.minimum(v_rl, max_velocity_limit)
+
+        # Step 2: Forward pass - limit acceleration capability
+        # Ensure each point is reachable from previous point given acceleration limit
+        for i in range(1, len(v_rl)):
+            ds = s_rl[i] - s_rl[i-1]
+            if ds < -track_length / 2:  # Handle wraparound
+                ds += track_length
+
+            # Maximum velocity reachable from previous point: v² = v₀² + 2a·Δs
+            v_max_from_accel = np.sqrt(
+                v_rl[i-1]**2 + 2.0 * max_accel_limit * ds)
+            v_rl[i] = min(v_rl[i], v_max_from_accel)
+
+        # Step 3: Backward pass - limit deceleration capability
+        # Ensure we can decelerate from each point to the next
+        for i in range(len(v_rl) - 2, -1, -1):
+            ds = s_rl[i+1] - s_rl[i]
+            if ds < -track_length / 2:  # Handle wraparound
+                ds += track_length
+
+            # Maximum velocity from which we can decelerate to next point: v₀² = v² - 2a·Δs
+            v_max_from_decel = np.sqrt(
+                v_rl[i+1]**2 + 2.0 * max_decel_limit * ds)
+            v_rl[i] = min(v_rl[i], v_max_from_decel)
+
+        # Log preprocessing statistics
+        v_violations_after = np.sum(v_rl > self.max_speed)
+        v_reduction = v_rl_original - v_rl
+        # Reduced by more than 0.5 m/s
+        significant_reductions = np.sum(v_reduction > 0.5)
+        max_reduction = np.max(v_reduction)
+
+        if significant_reductions > 0:
+            rospy.loginfo_throttle(
+                10.0,
+                f"[Raceline Preprocessing] Applied vehicle limits: "
+                f"max_speed={self.max_speed:.1f}m/s (slack={max_velocity_limit:.1f}m/s), "
+                f"max_accel={self.max_accel:.1f}m/s² (slack={max_accel_limit:.1f}m/s²), "
+                f"max_decel={self.max_accel:.1f}m/s² (slack={max_decel_limit:.1f}m/s²)")
+            rospy.loginfo_throttle(
+                10.0,
+                f"[Raceline Preprocessing] Velocity reductions: {significant_reductions}/{len(v_rl)} points, "
+                f"max reduction={max_reduction:.2f}m/s, "
+                f"violations before={v_violations_before}, after={v_violations_after}")
+
+        # Recalculate time array with clamped velocities
+        t_rl = np.zeros_like(s_rl)
+        if len(s_rl) > 1:
+            for i in range(1, len(s_rl)):
+                ds = s_rl[i] - s_rl[i-1]
+                if ds < -track_length / 2:  # Handle wraparound
+                    ds += track_length
+                v_avg = 0.5 * (v_rl[i-1] + v_rl[i])
+                if v_avg > 1e-6:
+                    t_rl[i] = t_rl[i-1] + ds / v_avg
+                else:
+                    t_rl[i] = t_rl[i-1] + ds / 1e-6
+
+        # Calculate longitudinal acceleration from clamped velocity gradient
         # s_ddot = dv/dt = d(s_dot)/dt, approximate using finite differences
         s_ddot_rl = np.zeros_like(v_rl)
         if len(t_rl) > 1:
@@ -208,7 +285,10 @@ class LocalSamplingPlanner:
             s_ddot_rl[-1] = s_ddot_interior[-1] if len(
                 s_ddot_interior) > 0 else 0.0
 
-        # Return processed segment
+        # Clamp accelerations to limits (with slack)
+        s_ddot_rl = np.clip(s_ddot_rl, -max_decel_limit, max_accel_limit)
+
+        # Return processed segment with vehicle limits enforced
         return {
             's_post': s_rl,
             'x_post': x_rl,
@@ -674,6 +754,14 @@ class LocalSamplingPlanner:
             self.V_thr_stillstand = yaml_defaults.get(
                 'V_thr_stillstand', rospy.get_param('V_thr_stillstand', 2.0))
             rospy.set_param('V_thr_stillstand', self.V_thr_stillstand)
+
+            # Vehicle limits for raceline preprocessing
+            self.max_speed = yaml_defaults.get(
+                'max_speed', rospy.get_param('max_speed', 10.0))
+            rospy.set_param('max_speed', self.max_speed)
+            self.max_accel = yaml_defaults.get(
+                'max_accel', rospy.get_param('max_accel', 3.0))
+            rospy.set_param('max_accel', self.max_accel)
             self.perception_offset_threshold = yaml_defaults.get(
                 'perception_offset_threshold', rospy.get_param('perception_offset_threshold', 2.0))
             rospy.set_param('perception_offset_threshold',
@@ -789,6 +877,13 @@ class LocalSamplingPlanner:
                 's_dot_min', self.s_dot_min)
             self.V_thr_stillstand = rospy.get_param(
                 'V_thr_stillstand', self.V_thr_stillstand)
+
+            # Vehicle limits for raceline preprocessing
+            self.max_speed = rospy.get_param(
+                'max_speed', self.max_speed)
+            self.max_accel = rospy.get_param(
+                'max_accel', self.max_accel)
+
             self.perception_offset_threshold = rospy.get_param(
                 'perception_offset_threshold', self.perception_offset_threshold)
             self.relative_long_sampling_threshold = rospy.get_param(
