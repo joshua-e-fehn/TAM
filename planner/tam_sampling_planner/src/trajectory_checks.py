@@ -128,8 +128,15 @@ class TrajectoryChecks():
                 f"TrajectoryChecks: Could not load YAML defaults: {e}")
             return {}
 
-    def declare_and_update_parameters(self):
-        """Load parameters from ROS parameter server with YAML defaults."""
+    def declare_and_update_parameters(self, skip_update=False):
+        """Load parameters from ROS parameter server with YAML defaults.
+
+        Args:
+            skip_update: If True, skip parameter updates (performance optimization during race)
+        """
+        if skip_update:
+            return
+
         if not self.initialized_params:
             yaml_defaults = self._load_yaml_defaults()
 
@@ -314,30 +321,36 @@ class TrajectoryChecks():
         safety_distance_left = self.params.safety_distance_track_left
         safety_distance_right = self.params.safety_distance_track_right
 
-        # Left boundary: positive value, reduce by margins to get usable left limit
-        left_bound = (
-            interpolate_with_period(
-                s_array[valid_array],
-                track_handler.s_coord(),
-                track_handler.trackwidth_left(),
-                track_handler.get_track_length(),
-            )
-            - vehicle_params["total_width"] / 2.0
-            - (safety_distance_left + self.params.tube_width)
+        # OPTIMIZATION: Pre-compute constant offsets (avoid redundant calculations)
+        half_vehicle_width = vehicle_params["total_width"] / 2.0
+        left_margin = half_vehicle_width + safety_distance_left + self.params.tube_width
+        right_margin = half_vehicle_width + safety_distance_right + self.params.tube_width
+
+        # OPTIMIZATION: Interpolate for ALL valid trajectories at once (fully vectorized)
+        # This is much faster than per-trajectory interpolation
+        s_valid = s_array[valid_array]
+
+        # Single interpolation call for all s-values (vectorized)
+        track_s = track_handler.s_coord()
+        track_length = track_handler.get_track_length()
+
+        left_track_width = interpolate_with_period(
+            s_valid,
+            track_s,
+            track_handler.trackwidth_left(),
+            track_length,
         )
 
-        # Right boundary: trackwidth_right() returns POSITIVE width (distance from centerline)
-        # We need NEGATIVE boundary (right side of track), so negate and ADD margins inward
-        right_bound = (
-            -interpolate_with_period(
-                s_array[valid_array],
-                track_handler.s_coord(),
-                track_handler.trackwidth_right(),
-                track_handler.get_track_length(),
-            )
-            + vehicle_params["total_width"] / 2.0
-            + (safety_distance_right + self.params.tube_width)
+        right_track_width = interpolate_with_period(
+            s_valid,
+            track_s,
+            track_handler.trackwidth_right(),
+            track_length,
         )
+
+        # Apply margins to get usable boundaries
+        left_bound = left_track_width - left_margin
+        right_bound = -right_track_width + right_margin
 
         valid_tmp = np.all((n_array[valid_array] < left_bound) & (
             n_array[valid_array] > right_bound), axis=1)
@@ -472,7 +485,7 @@ class TrajectoryChecks():
         ay_tilde[valid_array] = ay_array[valid_array]
         g_tilde[valid_array] = 9.81  # Standard gravity
 
-        # Pacejka-based friction limit checking
+        # Pacejka-based friction limit checking (VECTORIZED for speed)
         if self.use_tire_model and self.tire_model is not None:
             try:
                 # Calculate static normal loads (no pitch dynamics for F1TENTH)
@@ -484,58 +497,58 @@ class TrajectoryChecks():
                 # Get friction circle exponent
                 n = self.tire_model.combined_slip_exponent
 
-                # Process each valid trajectory
+                # VECTORIZED APPROACH: Process all valid trajectories at once
                 valid_indices = np.where(valid_array)[0]
-                for traj_idx in valid_indices:
-                    # Process all points in this trajectory
-                    for point_idx in range(s_array.shape[1]):
-                        s = s_array[traj_idx, point_idx]
-                        V = V_array[traj_idx, point_idx]
-                        ax_actual = ax_tilde[traj_idx, point_idx]
-                        ay_actual = ay_tilde[traj_idx, point_idx]
 
-                        # Get track curvature at this point
-                        try:
-                            kappa = track_handler.omega_z(s)
-                        except:
-                            # Fallback if omega_z fails
-                            kappa = 0.0
+                if len(valid_indices) > 0:
+                    # Extract all valid trajectory data (shape: n_valid_trajs x n_points)
+                    ax_valid = ax_tilde[valid_array]
+                    ay_valid = ay_tilde[valid_array]
 
-                        # Use actual lateral acceleration from trajectory for combined slip calculation
-                        # This accounts for the friction circle: lateral acc reduces available longitudinal acc
-                        ay_for_limits = np.abs(ay_actual)
+                    # Use absolute lateral acceleration for combined slip
+                    ay_for_limits = np.abs(ay_valid)
 
-                        # Get available forces from Pacejka model considering combined slip
-                        Fx_available, Fy_max = self.tire_model.calc_combined_limits(
-                            Fz_front_static, Fz_rear_static, ay_for_limits
-                        )
+                    # Get available forces from Pacejka model (vectorized across all points)
+                    # Flatten to 1D, process, then reshape back
+                    ay_flat = ay_for_limits.flatten()
+                    Fz_front_flat = np.full_like(ay_flat, Fz_front_static)
+                    Fz_rear_flat = np.full_like(ay_flat, Fz_rear_static)
 
-                        # Convert forces to accelerations
-                        ax_max = Fx_available / self.tire_model.mass
-                        ay_max = Fy_max / self.tire_model.mass
+                    # Call tire model once for all points (much faster than loop)
+                    Fx_available_flat, Fy_max_flat = self.tire_model.calc_combined_limits(
+                        Fz_front_flat, Fz_rear_flat, ay_flat
+                    )
 
-                        # Avoid division by zero (minimum 0.1 m/s² limits)
-                        ax_max = max(ax_max, 0.1)
-                        ay_max = max(ay_max, 0.1)
+                    # Reshape back to trajectory shape
+                    original_shape = ay_valid.shape
+                    Fx_available = Fx_available_flat.reshape(original_shape)
+                    Fy_max = Fy_max_flat.reshape(original_shape)
 
-                        # Calculate tire utilization using friction circle model
-                        # Formula: (|ax|/ax_max)^n + (|ay|/ay_max)^n
-                        # Note: ax_max already accounts for lateral usage via calc_combined_limits
-                        tire_util = (np.abs(ax_actual) / ax_max)**n + \
-                            (np.abs(ay_actual) / ay_max)**n
-                        tire_util_array[traj_idx, point_idx] = tire_util
+                    # Convert forces to accelerations (vectorized)
+                    ax_max = Fx_available / self.tire_model.mass
+                    ay_max = Fy_max / self.tire_model.mass
 
-                # Check which trajectories are valid (all points must be within limit)
-                # Apply relaxation factor: >1.0 relaxes (allows higher tire util), <1.0 makes stricter
-                effective_threshold = self.params.tire_util_max_check * \
-                    self.params.tire_util_relaxation
-                valid_tmp = np.all(
-                    tire_util_array[valid_array] <= effective_threshold,
-                    axis=1
-                )
+                    # Avoid division by zero (vectorized)
+                    ax_max = np.maximum(ax_max, 0.1)
+                    ay_max = np.maximum(ay_max, 0.1)
 
-                # Update valid array
-                valid_array[valid_array] = valid_tmp
+                    # Calculate tire utilization using friction circle model (vectorized)
+                    # Formula: (|ax|/ax_max)^n + (|ay|/ay_max)^n
+                    tire_util_valid = (np.abs(ax_valid) / ax_max)**n + \
+                        (np.abs(ay_valid) / ay_max)**n
+
+                    # Store back into full array
+                    tire_util_array[valid_array] = tire_util_valid
+
+                    # Check which trajectories are valid (all points must be within limit)
+                    # Apply relaxation factor: >1.0 relaxes, <1.0 makes stricter
+                    effective_threshold = self.params.tire_util_max_check * \
+                        self.params.tire_util_relaxation
+                    valid_tmp = np.all(tire_util_valid <=
+                                       effective_threshold, axis=1)
+
+                    # Update valid array
+                    valid_array[valid_array] = valid_tmp
 
             except Exception as e:
                 rospy.logwarn_throttle(
@@ -579,7 +592,9 @@ class TrajectoryChecks():
                                     postprocessed_raceline: dict,
                                     ):
 
-        self.declare_and_update_parameters()
+        # Pass skip_update flag if available from parent
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
 
         # initially all valid
         valid_array = np.ones(s_array.shape[0], dtype=bool)
@@ -609,6 +624,7 @@ class TrajectoryChecks():
         )
         valid_after_curvature = np.sum(valid_array)
 
+        # Path Collision Check
         left_bound, right_bound = self.__check_path_collision(
             track_handler=track_handler,
             valid_array=valid_array,

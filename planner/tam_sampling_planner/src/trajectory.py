@@ -65,8 +65,12 @@ class Trajectory():
                 f"Trajectory: Could not load YAML defaults: {e}")
             return {}
 
-    def declare_and_update_parameters(self):
+    def declare_and_update_parameters(self, skip_update=False):
         """Load parameters from ROS parameter server with YAML defaults as fallback."""
+        # Check if parameter updates should be skipped (e.g., during race)
+        if skip_update:
+            return
+
         if not self.initialized_params:
             yaml_defaults = self._load_yaml_defaults()
 
@@ -456,7 +460,8 @@ class Trajectory():
         Braking limits are calculated using Pacejka tire model or simplified physics fallback.
         """
 
-        self.declare_and_update_parameters()
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
 
         # Safety check: ensure performance trajectory is valid
         if not performance_trajectory or len(performance_trajectory.get("V", [])) < 2:
@@ -590,7 +595,8 @@ class Trajectory():
         track_handler: Track,
     ):
         # Reload parameters in case they've been updated
-        self.declare_and_update_parameters()
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
 
         # Calculate current trajectory length in s-coordinates
         current_s_length = trajectory["s_loc"][-1] - trajectory["s_loc"][0]

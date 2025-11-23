@@ -97,6 +97,8 @@ class TAMSamplingPlannerNode:
 
         # State machine state tracking
         self.state_machine_state = "GB_TRACK"  # Default to racing mode
+        # Track if race has started (optimization: skip param updates during race)
+        self.race_started = False
 
         # Predictive Sampler Mode: Conditional planning (only plan when needed, like SQP)
         # When ot_planner == "predictive_sampler", TAM only plans when obstacles nearby + in OT sector
@@ -198,8 +200,7 @@ class TAMSamplingPlannerNode:
 
         # Performance monitoring
         self.last_planning_time = 0.0
-        # 5 Hz to match actual planning computation time (was 20 Hz)
-        self.planning_rate = rospy.Rate(0.5)
+        self.planning_rate = rospy.Rate(15)
         self.planning_count = 0
 
         # Planning cycle protection
@@ -279,6 +280,10 @@ class TAMSamplingPlannerNode:
 
     def declare_and_update_parameters(self):
         """Update parameters from ROS parameter server with YAML defaults as fallback"""
+        # Performance optimization: Skip parameter updates after race has started
+        if self.race_started:
+            return
+
         if not self.initialized_params:
             yaml_defaults = self._load_yaml_defaults()
 
@@ -631,7 +636,15 @@ class TAMSamplingPlannerNode:
 
     def state_machine_callback(self, msg: String):
         """Callback for state machine state - used to coordinate race start"""
+        prev_state = self.state_machine_state
         self.state_machine_state = msg.data
+
+        # Detect race start transition (READY -> any other state)
+        if prev_state == "READY" and msg.data != "READY" and not self.race_started:
+            self.race_started = True
+            rospy.loginfo(
+                f"{self.log_name} 🏁 Race started! Disabling parameter updates for performance.")
+
         # Log state transitions for debugging
         # rospy.loginfo_throttle(
         #     2.0, f"{self.log_name} State machine state: {self.state_machine_state}")
@@ -1352,6 +1365,11 @@ class TAMSamplingPlannerNode:
     def _execute_planning_cycle(self):
         """Internal method that does the actual planning work"""
 
+        # Propagate race_started flag to child modules for parameter update optimization
+        self.tam_planner._skip_param_updates = self.race_started
+        if hasattr(self.tam_planner, 'trajectory_checks'):
+            self.tam_planner.trajectory_checks._skip_param_updates = self.race_started
+
         self.declare_and_update_parameters()
 
         planning_start_time = time.time()
@@ -1374,11 +1392,13 @@ class TAMSamplingPlannerNode:
         # Run F1Tenth TAM sampling planner
         try:
             # STEP 1: Map state and parameters to TAM format
+            t1 = time.time()
             state_estimate = self.map_current_state_to_state_estimate()
             raceline = self.get_raceline_from_global_waypoints()
             planning_requests = self.create_planning_requests()
+            t2 = time.time()
 
-            # STEP 2: Plan trajectory using TAM xjectory()
+            # STEP 2: Plan trajectory using TAM calc_trajectory()
             # NOTE: calc_trajectory returns TUPLE of (perf_traj, emerg_traj, s_start, n_start, V_target)
             result = self.tam_planner.calc_trajectory(
                 state_estimate=state_estimate,
@@ -1386,55 +1406,44 @@ class TAMSamplingPlannerNode:
                 prediction=prediction_dict,
                 planning_requests=planning_requests
             )
+            t3 = time.time()
 
-            # STEP 2.5: Publish ALL sampled trajectories for visualization (before filtering)
-            # Access the stored raw arrays from the planner
-            if (hasattr(self.tam_planner, 'last_s_array') and
-                self.tam_planner.last_s_array is not None and
-                hasattr(self.tam_planner, 'last_n_array') and
-                self.tam_planner.last_n_array is not None and
-                hasattr(self.tam_planner, 'last_valid_array') and
-                    self.tam_planner.last_valid_array is not None):
+            # # STEP 2.5: Publish ALL sampled trajectories for visualization (before filtering)
+            # # Access the stored raw arrays from the planner
+            # if (hasattr(self.tam_planner, 'last_s_array') and
+            #     self.tam_planner.last_s_array is not None and
+            #     hasattr(self.tam_planner, 'last_n_array') and
+            #     self.tam_planner.last_n_array is not None and
+            #     hasattr(self.tam_planner, 'last_valid_array') and
+            #         self.tam_planner.last_valid_array is not None):
 
-                try:
-                    # Debug: Log array shapes before creating markers
-                    # rospy.loginfo_throttle(2,
-                    #                        f"{self.log_name} Creating all-samples markers: s_array.shape={self.tam_planner.last_s_array.shape}, n_array.shape={self.tam_planner.last_n_array.shape}")
+            #     try:
+            #         all_samples_markers = self.create_all_samples_markers(
+            #             self.tam_planner.last_s_array,
+            #             self.tam_planner.last_n_array,
+            #             self.tam_planner.last_valid_array,
+            #             self.track_handler
+            #         )
 
-                    all_samples_markers = self.create_all_samples_markers(
-                        self.tam_planner.last_s_array,
-                        self.tam_planner.last_n_array,
-                        self.tam_planner.last_valid_array,
-                        self.track_handler
-                    )
+            #         self.all_samples_pub.publish(all_samples_markers)
 
-                    # Debug: Log marker count before publishing
-                    # rospy.loginfo_throttle(2,
-                    #                        f"{self.log_name} Created {len(all_samples_markers.markers)} markers, publishing now...")
+            #         # Log info about sampled trajectories
+            #         num_total = self.tam_planner.last_s_array.shape[0]
+            #         num_valid = np.sum(
+            #             self.tam_planner.last_valid_array) if self.tam_planner.last_valid_array is not None else 0
 
-                    self.all_samples_pub.publish(all_samples_markers)
-
-                    # Log info about sampled trajectories
-                    num_total = self.tam_planner.last_s_array.shape[0]
-                    num_valid = np.sum(
-                        self.tam_planner.last_valid_array) if self.tam_planner.last_valid_array is not None else 0
-                    # rospy.loginfo_throttle(5,
-                    #                        f"{self.log_name} Published {len(all_samples_markers.markers)} trajectory markers ({num_total} total, {num_valid} valid)")
-
-                except Exception as viz_e:
-                    rospy.logerr_throttle(
-                        2, f"{self.log_name} All-samples visualization error: {viz_e}")
-                    import traceback
-                    rospy.logerr_throttle(2, traceback.format_exc())
-            else:
-                rospy.logwarn_throttle(
-                    5, f"{self.log_name} Cannot publish all_samples: last_s_array={self.tam_planner.last_s_array is not None if hasattr(self.tam_planner, 'last_s_array') else 'N/A'}, last_n_array={self.tam_planner.last_n_array is not None if hasattr(self.tam_planner, 'last_n_array') else 'N/A'}")
+            #     except Exception as viz_e:
+            #         rospy.logerr_throttle(
+            #             2, f"{self.log_name} All-samples visualization error: {viz_e}")
+            #         import traceback
+            #         rospy.logerr_throttle(2, traceback.format_exc())
+            # else:
+            #     rospy.logwarn_throttle(
+            #         5, f"{self.log_name} Cannot publish all_samples: last_s_array={self.tam_planner.last_s_array is not None if hasattr(self.tam_planner, 'last_s_array') else 'N/A'}, last_n_array={self.tam_planner.last_n_array is not None if hasattr(self.tam_planner, 'last_n_array') else 'N/A'}")
 
             # STEP 3: Unpack return values (handle tuple return)
+            t3_unpack_start = time.time()
             if result is not None:
-                # rospy.loginfo(f"{self.log_name} 📊 TAM PLANNER RETURNED RESULT | Type: {type(result)} | "
-                #               f"Is tuple: {isinstance(result, tuple)} | Length: {len(result) if isinstance(result, tuple) else 'N/A'}")
-
                 # calc_trajectory returns tuple: (perf_traj, emerg_traj, s_start, n_start, V_target)
                 if isinstance(result, tuple) and len(result) >= 2:
                     performance_traj = result[0]
@@ -1446,6 +1455,7 @@ class TAMSamplingPlannerNode:
 
                 # Verify we have a valid trajectory with sufficient points
                 if trajectory_dict and 's' in trajectory_dict and len(trajectory_dict['s']) >= 2:
+                    t3_unpack = time.time()
 
                     # STEP 4: Convert trajectory dict to WpntArray
                     wpnt_array = self.coordinate_transformation.convert_trajectory_to_wpnt_array(
@@ -1453,6 +1463,7 @@ class TAMSamplingPlannerNode:
                         track_handler=self.track_handler,
                         traj_cnt=self.planning_count
                     )
+                    t4_convert = time.time()
 
                     # Check if conversion was successful
                     if wpnt_array is None:
@@ -1463,15 +1474,13 @@ class TAMSamplingPlannerNode:
                         self.trajectory_pub.publish(empty_msg)
                         return  # Exit this cycle, will retry in next cycle
 
-                    # rospy.loginfo(
-                    #     f"{self.log_name} STEP 4 complete: WpntArray has {len(wpnt_array.wpnts)} waypoints")
-
                     # STEP 4.5: Interpolate to dense controller spacing (0.1m)
                     # This follows the predictive spliner's proven approach
                     wpnt_array = self.interpolate_trajectory_to_controller_spacing(
                         wpnt_array=wpnt_array,
                         target_spacing=0.1
                     )
+                    t4_interpolate = time.time()
 
                     # Check if interpolation was successful
                     if wpnt_array is None:
@@ -1482,17 +1491,12 @@ class TAMSamplingPlannerNode:
                         self.trajectory_pub.publish(empty_msg)
                         return  # Exit this cycle, will retry in next cycle
 
-                    # rospy.loginfo(
-                    #     f"{self.log_name} STEP 4.5 complete: Interpolated to {len(wpnt_array.wpnts)} waypoints")
-
                     # STEP 5: Wrap in OTWpntArray for state machine compatibility
                     ot_msg = OTWpntArray()
                     ot_msg.wpnts = wpnt_array.wpnts  # Extract list of Wpnt objects
                     ot_msg.header.stamp = rospy.Time.now()
                     ot_msg.header.frame_id = "map"
-
-                    # rospy.loginfo(
-                    #     f"{self.log_name} STEP 5 complete: OTWpntArray has {len(ot_msg.wpnts)} waypoints, about to publish...")
+                    t5_wrap = time.time()
 
                     # DEBUG: Log first waypoint position vs current position
                     if len(ot_msg.wpnts) > 0:
@@ -1500,37 +1504,44 @@ class TAMSamplingPlannerNode:
                         dx = first_wpnt.x_m - self.current_state['x']
                         dy = first_wpnt.y_m - self.current_state['y']
                         dist = np.sqrt(dx**2 + dy**2)
-                        # rospy.logerr(f"{self.log_name} Trajectory start: x={first_wpnt.x_m:.2f}, y={first_wpnt.y_m:.2f}, "
-                        #              f"s={first_wpnt.s_m:.2f}, n={first_wpnt.d_m:.3f}, v={first_wpnt.vx_mps:.2f} | "
-                        #              f"Current: x={self.current_state['x']:.2f}, y={self.current_state['y']:.2f}, "
-                        #              f"s={self.current_state['s']:.2f}, n={self.current_state['n']:.3f} | "
-                        #              f"Distance: {dist:.3f}m")
 
                     # STEP 6: Publish trajectory
                     self.trajectory_pub.publish(ot_msg)
-                    # rospy.loginfo(f"{self.log_name} 📤 STEP 6 complete: PUBLISHED VALID TRAJECTORY | "
-                    #               f"Waypoints: {len(ot_msg.wpnts)} | "
-                    #               f"Interpolated spacing: ~0.1m | "
-                    #               f"Reason: Successful planning cycle")
+                    t6_publish = time.time()
 
                     # STEP 7: Publish visualization markers
-                    try:
-                        markers_msg = self.create_f1tenth_visualization_markers(
-                            trajectory_dict, wpnt_array)
-                        self.markers_pub.publish(markers_msg)
-                    except Exception as viz_e:
-                        rospy.logdebug(
-                            f"{self.log_name} Visualization error: {viz_e}")
+                    # try:
+                    #     markers_msg = self.create_f1tenth_visualization_markers(
+                    #         trajectory_dict, wpnt_array)
+                    #     self.markers_pub.publish(markers_msg)
+                    # except Exception as viz_e:
+                    #     rospy.logdebug(
+                    #         f"{self.log_name} Visualization error: {viz_e}")
+                    t7_visualize = time.time()
 
                     self.planning_count += 1
+
+                    # === TIMING: Log detailed postprocessing breakdown ===
+                    t4 = time.time()
+                    rospy.loginfo(
+                        f"{self.log_name} _execute_planning_cycle timing breakdown:\n"
+                        f"  State mapping:      {(t2-t1)*1000:.1f}ms\n"
+                        f"  calc_trajectory:    {(t3-t2)*1000:.1f}ms\n"
+                        f"  Visualize all samples: {(t3_unpack_start - t3)*1000:.1f}ms\n"
+                        f"  Postprocessing breakdown:\n"
+                        f"    Unpack result:    {(t3_unpack-t3_unpack_start)*1000:.1f}ms\n"
+                        f"    Convert WpntArr:  {(t4_convert-t3_unpack)*1000:.1f}ms\n"
+                        f"    Interpolate:      {(t4_interpolate-t4_convert)*1000:.1f}ms\n"
+                        f"    Wrap OTWpntArr:   {(t5_wrap-t4_interpolate)*1000:.1f}ms\n"
+                        f"    Publish traj:     {(t6_publish-t5_wrap)*1000:.1f}ms\n"
+                        f"    Visualize:        {(t7_visualize-t6_publish)*1000:.1f}ms\n"
+                        f"  Total postproc:     {(t4-t3)*1000:.1f}ms\n"
+                        f"  CYCLE TOTAL:        {(t4-t1)*1000:.1f}ms"
+                    )
 
                     # Log planning stats
                     is_emergency = trajectory_dict.get('emergency', False)
                     cost = trajectory_dict.get('cost', 0.0)
-                    status = "EMERGENCY" if is_emergency else f"cost={cost:.2f}"
-
-                    # rospy.loginfo_throttle(
-                    #     2, f"{self.log_name} Published trajectory #{self.planning_count}: {status}")
                 else:
                     # Publish empty trajectory to signal state machine, then continue planning
                     empty_msg = OTWpntArray()
@@ -1572,34 +1583,16 @@ class TAMSamplingPlannerNode:
     def loop(self):
         """Main planning loop with proper error handling"""
 
-        # Wait for critical messages
-        # rospy.loginfo(f"{self.log_name} Waiting for required messages...")
-        # rospy.loginfo(f"{self.log_name} Listening on topics:")
-        # rospy.loginfo(f"{self.log_name}   - global_waypoints")
-        # rospy.loginfo(f"{self.log_name}   - global_waypoints_scaled")
-        # rospy.loginfo(f"{self.log_name}   - car_state/odom_frenet")
-
         # Wait for messages with longer timeout and better feedback
         timeout_duration = 60.0  # Extended to 60 seconds for simulator startup
 
         try:
-            # rospy.loginfo(f"{self.log_name} Waiting for global_waypoints...")
             rospy.wait_for_message(
                 "global_waypoints", WpntArray, timeout=timeout_duration)
-            # rospy.loginfo(f"{self.log_name} ✓ Received global_waypoints")
-
-            # rospy.loginfo(
-            #     f"{self.log_name} Waiting for global_waypoints_scaled...")
             rospy.wait_for_message(
                 "global_waypoints_scaled", WpntArray, timeout=timeout_duration)
-            # rospy.loginfo(
-            #     f"{self.log_name} ✓ Received global_waypoints_scaled")
-
-            # rospy.loginfo(
-            #     f"{self.log_name} Waiting for car_state/odom_frenet...")
             rospy.wait_for_message(
                 "car_state/odom_frenet", Odometry, timeout=timeout_duration)
-            # rospy.loginfo(f"{self.log_name} ✓ Received car_state/odom_frenet")
 
         except rospy.ROSException as e:
             rospy.logerr(
@@ -1611,9 +1604,6 @@ class TAMSamplingPlannerNode:
             rospy.logerr(
                 f"{self.log_name}   3. Frenet conversion node is active")
             return
-
-        # rospy.loginfo(
-        #     f"{self.log_name} ✓✓✓ All required messages received. Starting TAM planning loop.")
 
         # Main planning loop
         while not rospy.is_shutdown():

@@ -125,23 +125,33 @@ class LocalSamplingPlanner:
             rospy.logwarn("Empty raceline in postprocess_raceline")
             return self._empty_raceline_dict()
 
-        # Extract arrays from waypoints (handle both ROS messages and dicts)
-        def get_attr(wp, attr, default=0.0):
-            if hasattr(wp, attr):
-                return getattr(wp, attr)
-            elif isinstance(wp, dict):
-                return wp.get(attr, default)
-            else:
-                return default
+        # OPTIMIZATION: Detect message type once, then extract all arrays without repeated checks
+        if len(waypoints) == 0:
+            rospy.logwarn("Empty waypoints list in postprocess_raceline")
+            return self._empty_raceline_dict()
 
-        s_rl = np.array([get_attr(wp, 's_m') for wp in waypoints])
-        x_rl = np.array([get_attr(wp, 'x_m') for wp in waypoints])
-        y_rl = np.array([get_attr(wp, 'y_m') for wp in waypoints])
-        v_rl = np.array([get_attr(wp, 'vx_mps') for wp in waypoints])
-        kappa_rl = np.array([get_attr(wp, 'kappa_radpm') for wp in waypoints])
-        # Handle track wraparound - create extended segment
-        n_rl = np.array([get_attr(wp, 'd_m', 0.0) for wp in waypoints])
+        first_wp = waypoints[0]
+        is_ros_msg = hasattr(first_wp, 's_m')
+
+        if is_ros_msg:
+            # ROS message format - direct attribute access (fastest)
+            s_rl = np.array([wp.s_m for wp in waypoints])
+            x_rl = np.array([wp.x_m for wp in waypoints])
+            y_rl = np.array([wp.y_m for wp in waypoints])
+            v_rl = np.array([wp.vx_mps for wp in waypoints])
+            kappa_rl = np.array([wp.kappa_radpm for wp in waypoints])
+            n_rl = np.array([getattr(wp, 'd_m', 0.0) for wp in waypoints])
+        else:
+            # Dictionary format
+            s_rl = np.array([wp['s_m'] for wp in waypoints])
+            x_rl = np.array([wp['x_m'] for wp in waypoints])
+            y_rl = np.array([wp['y_m'] for wp in waypoints])
+            v_rl = np.array([wp['vx_mps'] for wp in waypoints])
+            kappa_rl = np.array([wp['kappa_radpm'] for wp in waypoints])
+            n_rl = np.array([wp.get('d_m', 0.0) for wp in waypoints])
+
         track_length = track_handler.get_track_length()
+        half_track = track_length / 2.0  # Pre-compute for reuse
         s_start_norm = s_start % track_length
         idx_start = np.searchsorted(s_rl, s_start_norm, side='left')
         if idx_start >= len(s_rl):
@@ -157,13 +167,12 @@ class LocalSamplingPlanner:
         n_rl = np.concatenate([n_rl[idx_start:], n_rl])
 
         # Trim to distance limit (2×trajectory_length from current position)
+        # OPTIMIZATION: Vectorized cumulative distance calculation
         s_limit = 2.0 * self.trajectory_length
-        s_distances = np.zeros(len(s_rl))
-        for i in range(1, len(s_rl)):
-            ds = s_rl[i] - s_rl[i-1]
-            if ds < -track_length / 2:  # Handle wraparound
-                ds += track_length
-            s_distances[i] = s_distances[i-1] + ds
+        ds_all = np.diff(s_rl)
+        # Vectorized wraparound correction
+        ds_all = np.where(ds_all < -half_track, ds_all + track_length, ds_all)
+        s_distances = np.concatenate(([0.0], np.cumsum(ds_all)))
 
         # Find index where distance exceeds limit
         idx_limit = np.searchsorted(s_distances, s_limit, side='right')
@@ -178,18 +187,14 @@ class LocalSamplingPlanner:
         # Calculate derived quantities
         chi_rl = np.arctan2(np.gradient(y_rl), np.gradient(x_rl))
 
-        # Calculate time stamps by integrating t = ∫(ds/v)
+        # OPTIMIZATION: Vectorized time integration t = ∫(ds/v)
         t_rl = np.zeros_like(s_rl)
         if len(s_rl) > 1:
-            for i in range(1, len(s_rl)):
-                ds = s_rl[i] - s_rl[i-1]
-                if ds < -track_length / 2:  # Handle wraparound
-                    ds += track_length
-                v_avg = 0.5 * (v_rl[i-1] + v_rl[i])
-                if v_avg > 1e-6:
-                    t_rl[i] = t_rl[i-1] + ds / v_avg
-                else:
-                    t_rl[i] = t_rl[i-1] + ds / 1e-6
+            ds = np.diff(s_rl)
+            ds = np.where(ds < -half_track, ds + track_length, ds)
+            v_avg = 0.5 * (v_rl[:-1] + v_rl[1:])
+            v_avg_safe = np.where(v_avg > 1e-6, v_avg, 1e-6)
+            t_rl[1:] = np.cumsum(ds / v_avg_safe)
 
         # =======================================================================================
         # VEHICLE LIMITS PREPROCESSING
@@ -204,56 +209,36 @@ class LocalSamplingPlanner:
         # 50% slack for deceleration (braking is easier)
         max_decel_limit = self.max_accel * 1.5
 
-        # Count violations before preprocessing
-        v_violations_before = np.sum(v_rl > self.max_speed)
-
         # Step 1: Clamp velocities to absolute maximum
-        v_rl_original = v_rl.copy()
         v_rl = np.minimum(v_rl, max_velocity_limit)
+
+        # OPTIMIZATION: Pre-compute ds array for both passes
+        ds = np.diff(s_rl)
+        ds = np.where(ds < -half_track, ds + track_length, ds)
 
         # Step 2: Forward pass - limit acceleration capability
         # Ensure each point is reachable from previous point given acceleration limit
         for i in range(1, len(v_rl)):
-            ds = s_rl[i] - s_rl[i-1]
-            if ds < -track_length / 2:  # Handle wraparound
-                ds += track_length
-
             # Maximum velocity reachable from previous point: v² = v₀² + 2a·Δs
             v_max_from_accel = np.sqrt(
-                v_rl[i-1]**2 + 2.0 * max_accel_limit * ds)
+                v_rl[i-1]**2 + 2.0 * max_accel_limit * ds[i-1])
             v_rl[i] = min(v_rl[i], v_max_from_accel)
 
         # Step 3: Backward pass - limit deceleration capability
         # Ensure we can decelerate from each point to the next
         for i in range(len(v_rl) - 2, -1, -1):
-            ds = s_rl[i+1] - s_rl[i]
-            if ds < -track_length / 2:  # Handle wraparound
-                ds += track_length
-
             # Maximum velocity from which we can decelerate to next point: v₀² = v² - 2a·Δs
             v_max_from_decel = np.sqrt(
-                v_rl[i+1]**2 + 2.0 * max_decel_limit * ds)
+                v_rl[i+1]**2 + 2.0 * max_decel_limit * ds[i])
             v_rl[i] = min(v_rl[i], v_max_from_decel)
 
-        # Log preprocessing statistics
-        v_violations_after = np.sum(v_rl > self.max_speed)
-        v_reduction = v_rl_original - v_rl
-        # Reduced by more than 0.5 m/s
-        significant_reductions = np.sum(v_reduction > 0.5)
-        max_reduction = np.max(v_reduction)
-
         # Recalculate time array with clamped velocities
+        # OPTIMIZATION: Reuse ds array from above, vectorized calculation
         t_rl = np.zeros_like(s_rl)
         if len(s_rl) > 1:
-            for i in range(1, len(s_rl)):
-                ds = s_rl[i] - s_rl[i-1]
-                if ds < -track_length / 2:  # Handle wraparound
-                    ds += track_length
-                v_avg = 0.5 * (v_rl[i-1] + v_rl[i])
-                if v_avg > 1e-6:
-                    t_rl[i] = t_rl[i-1] + ds / v_avg
-                else:
-                    t_rl[i] = t_rl[i-1] + ds / 1e-6
+            v_avg = 0.5 * (v_rl[:-1] + v_rl[1:])
+            v_avg_safe = np.where(v_avg > 1e-6, v_avg, 1e-6)
+            t_rl[1:] = np.cumsum(ds / v_avg_safe)
 
         # Calculate longitudinal acceleration from clamped velocity gradient
         # s_ddot = dv/dt = d(s_dot)/dt, approximate using finite differences
@@ -350,9 +335,10 @@ class LocalSamplingPlanner:
         if not raw_prediction or len(raw_prediction) == 0:
             return postprocessed_prediction, new_following_vel, new_vehicle_ahead
 
-        # Get track length for wraparound calculations
+        # OPTIMIZATION: Cache track length to avoid repeated method calls
         track_length = track_handler.s_coord(
         )[-1] if hasattr(track_handler, 's_coord') else 100.0
+        half_track = track_length * 0.5
 
         # Check if this is tam_prediction_node format (has 'oppwpnts')
         if 'oppwpnts' in raw_prediction:
@@ -365,26 +351,32 @@ class LocalSamplingPlanner:
             # Extract ego position for segment extraction
             ego_s = state_estimate.get('s', 0.0)
 
-            # Extract all waypoint data (already in Frenet coordinates)
-            s_all = np.array([wp.s_m if hasattr(wp, 's_m')
-                             else wp['s_m'] for wp in oppwpnts])
-            n_all = np.array([wp.d_m if hasattr(wp, 'd_m')
-                             else wp['d_m'] for wp in oppwpnts])
-            x_all = np.array([wp.x_m if hasattr(wp, 'x_m')
-                             else wp['x_m'] for wp in oppwpnts])
-            y_all = np.array([wp.y_m if hasattr(wp, 'y_m')
-                             else wp['y_m'] for wp in oppwpnts])
-            vel_s_all = np.array([wp.proj_vs_mps if hasattr(
-                wp, 'proj_vs_mps') else wp['proj_vs_mps'] for wp in oppwpnts])
-            vel_n_all = np.array([wp.vd_mps if hasattr(
-                wp, 'vd_mps') else wp.get('vd_mps', 0.0) for wp in oppwpnts])
+            # OPTIMIZATION: Determine message format once (ROS message vs dict)
+            first_wp = oppwpnts[0]
+            is_ros_msg = hasattr(first_wp, 's_m')
 
-            # Find first waypoint ahead of ego position (not just closest)
+            # OPTIMIZATION: Vectorized extraction without repeated hasattr checks
+            if is_ros_msg:
+                s_all = np.array([wp.s_m for wp in oppwpnts])
+                n_all = np.array([wp.d_m for wp in oppwpnts])
+                x_all = np.array([wp.x_m for wp in oppwpnts])
+                y_all = np.array([wp.y_m for wp in oppwpnts])
+                vel_s_all = np.array([wp.proj_vs_mps for wp in oppwpnts])
+                vel_n_all = np.array([wp.vd_mps for wp in oppwpnts])
+            else:
+                s_all = np.array([wp['s_m'] for wp in oppwpnts])
+                n_all = np.array([wp['d_m'] for wp in oppwpnts])
+                x_all = np.array([wp['x_m'] for wp in oppwpnts])
+                y_all = np.array([wp['y_m'] for wp in oppwpnts])
+                vel_s_all = np.array([wp['proj_vs_mps'] for wp in oppwpnts])
+                vel_n_all = np.array([wp.get('vd_mps', 0.0)
+                                     for wp in oppwpnts])
+
+            # OPTIMIZATION: Vectorized wraparound calculation
             s_diff = s_all - ego_s
-            # Adjust for wraparound
-            s_diff = np.where(s_diff > track_length / 2.0,
+            s_diff = np.where(s_diff > half_track,
                               s_diff - track_length, s_diff)
-            s_diff = np.where(s_diff < -track_length / 2.0,
+            s_diff = np.where(s_diff < -half_track,
                               s_diff + track_length, s_diff)
 
             # Find first waypoint ahead (s_diff >= 0) or closest if all behind
@@ -403,32 +395,26 @@ class LocalSamplingPlanner:
             time_horizon = 2.0 * self.horizon  # 2x planning horizon for safety margin
             distance_horizon = 2.0 * self.trajectory_length
 
-            # Find end index based on time/distance (whichever comes first)
-            # Calculate accumulated time and distance from start
-            t_accumulated = 0.0
-            d_accumulated = 0.0
-            end_idx = start_idx
+            # OPTIMIZATION: Vectorized distance/time accumulation with early exit
+            ds_all = np.diff(s_all[start_idx:])
+            ds_all = np.where(ds_all < 0, ds_all + track_length, ds_all)
+            d_cumulative = np.concatenate(([0.0], np.cumsum(np.abs(ds_all))))
 
-            for i in range(start_idx + 1, len(s_all)):
-                # Calculate distance increment
-                ds = s_all[i] - s_all[i-1]
-                if ds < 0:  # Handle wraparound
-                    ds += track_length
-                d_accumulated += abs(ds)
+            # Vectorized time calculation
+            v_avg = 0.5 * (vel_s_all[start_idx:-1] + vel_s_all[start_idx+1:])
+            v_avg_safe = np.where(v_avg > 0.1, v_avg, 1e-6)
+            dt_all = ds_all / v_avg_safe
+            t_cumulative = np.concatenate(([0.0], np.cumsum(dt_all)))
 
-                # Calculate time increment
-                v_avg = 0.5 * (vel_s_all[i-1] + vel_s_all[i])
-                if v_avg > 0.1:
-                    dt = ds / v_avg
-                else:
-                    dt = 0.0
-                t_accumulated += dt
+            # Find end index where limits are exceeded
+            exceed_dist = d_cumulative > distance_horizon
+            exceed_time = t_cumulative > time_horizon
+            exceed_mask = exceed_dist | exceed_time
 
-                # Stop if we exceed either limit
-                if t_accumulated > time_horizon or d_accumulated > distance_horizon:
-                    end_idx = i + 1
-                    break
-                end_idx = i
+            if np.any(exceed_mask):
+                end_idx = start_idx + np.argmax(exceed_mask)
+            else:
+                end_idx = len(s_all)
 
             # Ensure we have at least some points
             if end_idx <= start_idx:
@@ -447,49 +433,53 @@ class LocalSamplingPlanner:
             if N == 0:
                 return postprocessed_prediction, new_following_vel, new_vehicle_ahead
 
-            # Calculate time array from distance and velocity
-            t_segment = np.zeros(N)
-            if N > 1:
-                for i in range(1, N):
-                    ds = s_segment[i] - s_segment[i-1]
-                    if ds < 0:  # Handle wraparound
-                        ds += track_length
-                    v_avg = 0.5 * (vel_s_segment[i-1] + vel_s_segment[i])
-                    if v_avg > 1e-6:
-                        t_segment[i] = t_segment[i-1] + ds / v_avg
-                    else:
-                        t_segment[i] = t_segment[i-1] + ds / 1e-6
+            # OPTIMIZATION: Vectorized time calculation (already computed above)
+            # Extract time segment corresponding to the extracted waypoint segment
+            segment_length = N
+            if segment_length <= len(t_cumulative):
+                t_segment = t_cumulative[:segment_length]
+            else:
+                # Fallback for edge cases
+                t_segment = np.zeros(N)
+                if N > 1:
+                    ds_segment = np.diff(s_segment)
+                    ds_segment = np.where(
+                        ds_segment < 0, ds_segment + track_length, ds_segment)
+                    v_avg_seg = 0.5 * (vel_s_segment[:-1] + vel_s_segment[1:])
+                    v_avg_seg = np.where(v_avg_seg > 1e-6, v_avg_seg, 1e-6)
+                    t_segment[1:] = np.cumsum(ds_segment / v_avg_seg)
 
-            # Calculate global longitudinal distance with wraparound
+            # OPTIMIZATION: Simplified wraparound calculation
             dist_at_t0 = s_segment[0] - ego_s
             abs_dist = abs(dist_at_t0)
-
-            if abs_dist > track_length * 0.5:
-                # Adjust for wraparound
+            if abs_dist > half_track:
                 sign_val = -1.0 if dist_at_t0 > 0.0 else 1.0
                 s_glob_dist = (track_length - abs_dist) * sign_val
             else:
                 s_glob_dist = dist_at_t0
 
-            # Calculate total velocity magnitude
+            # OPTIMIZATION: Vectorized velocity calculation
             vel_total = np.sqrt(vel_s_segment**2 + vel_n_segment**2)
 
-            # Determine following behavior - check if opponent is ahead and slower
+            # OPTIMIZATION: Vectorized following distance check
             if s_glob_dist > 0:  # Opponent ahead
-                # Check multiple points in trajectory for closest approach within following distance
-                for i in range(N):
-                    # Calculate distance at this point (with wraparound)
-                    s_dist_i = s_segment[i] - ego_s
-                    if abs(s_dist_i) > track_length * 0.5:
-                        sign_i = -1.0 if s_dist_i > 0.0 else 1.0
-                        s_dist_i = (track_length - abs(s_dist_i)) * sign_i
+                # Calculate all distances at once with wraparound
+                s_dist_all = s_segment - ego_s
+                abs_dist_all = np.abs(s_dist_all)
+                wrap_mask = abs_dist_all > half_track
+                s_dist_all = np.where(wrap_mask,
+                                      np.sign(-s_dist_all) *
+                                      (track_length - abs_dist_all),
+                                      s_dist_all)
 
-                    # If within following distance and ahead
-                    if 0 < s_dist_i < following_distance_target:
-                        opponent_vel = vel_total[i]
-                        if opponent_vel < new_following_vel:
-                            new_following_vel = opponent_vel
-                            new_vehicle_ahead = True
+                # Find points within following distance and ahead
+                within_range = (s_dist_all > 0) & (
+                    s_dist_all < following_distance_target)
+                if np.any(within_range):
+                    min_vel_in_range = np.min(vel_total[within_range])
+                    if min_vel_in_range < new_following_vel:
+                        new_following_vel = min_vel_in_range
+                        new_vehicle_ahead = True
 
             # Structure output in expected format
             postprocessed_prediction['opponent_0'] = {
@@ -591,74 +581,67 @@ class LocalSamplingPlanner:
                     {}, default_state['t_start'], default_state['s_loc_start'])
 
         # Case 2: Previous trajectory exists - perform matching and splitting
-        aligned_traj = copy.deepcopy(performance_trajectory)
-        N = len(aligned_traj['s'])
+        # OPTIMIZATION: Work directly with original arrays instead of deep copy
+        s_orig = performance_trajectory['s']
+        N = len(s_orig)
 
-        # Step 1: Unwrap s-coordinates to handle track wraparound
-        s_unwrapped = unwrap_periodic_coordinates(
-            aligned_traj['s'], track_length)
+        # Step 1: Fast unwrap s-coordinates using cumulative differences (optimized for monotonic data)
+        s_unwrapped = s_orig.copy()
+        half_length = track_length / 2.0
+        for i in range(1, N):
+            diff = s_orig[i] - s_orig[i-1]
+            if diff > half_length:
+                s_unwrapped[i:] -= track_length
+            elif diff < -half_length:
+                s_unwrapped[i:] += track_length
 
         # Align unwrapped coordinates to current vehicle position
-        if state_estimate.get('s', 0.0) < s_unwrapped[0]:
+        ego_s = state_estimate.get('s', 0.0)
+        if ego_s < s_unwrapped[0]:
             s_unwrapped = s_unwrapped - track_length
 
         # Step 2: Find match point (where vehicle currently is on previous trajectory)
-        match_idx = np.searchsorted(
-            s_unwrapped, state_estimate.get('s', 0.0), side='right') - 1
+        match_idx = np.searchsorted(s_unwrapped, ego_s, side='right') - 1
         match_idx = max(match_idx, 0)  # Clamp to valid range
 
-        # Step 3: Trim trajectory - remove everything before match point
-        if match_idx > 0:
-            t_match = aligned_traj.get('t', np.zeros(N))[match_idx]
-            s_loc_match = aligned_traj.get('s_loc', np.zeros(N))[match_idx]
+        # OPTIMIZATION: Pre-compute indices for all slicing operations
+        new_N = N - match_idx
 
-            # Slice all trajectory arrays
-            aligned_traj = slice_trajectory_dict(
-                aligned_traj, start_idx=match_idx)
-
-            # Re-zero time and s_local (match point becomes t=0)
-            if 't' in aligned_traj and len(aligned_traj['t']) > 0:
-                aligned_traj['t'] = aligned_traj['t'] - t_match
-            if 's_loc' in aligned_traj and len(aligned_traj['s_loc']) > 0:
-                aligned_traj['s_loc'] = np.mod(
-                    aligned_traj['s_loc'] - s_loc_match, track_length)
-
-        # Step 4: Split into constant segment (held) and live segment (for replanning)
-        new_N = len(aligned_traj.get('s', []))
+        # Step 3: Find constant segment end index
         const_end_idx = 0
+        if new_N > 0 and 't' in performance_trajectory:
+            t_orig = performance_trajectory['t']
+            t_match = t_orig[match_idx] if match_idx > 0 else 0.0
+            t_shifted = t_orig[match_idx:] - t_match
 
-        if new_N > 0 and 't' in aligned_traj:
-            # Find where constant segment ends
             const_end_idx = np.searchsorted(
-                aligned_traj['t'], const_trajectory_time, side='right')
+                t_shifted, const_trajectory_time, side='right')
             const_end_idx = min(max(const_end_idx - 1, 0), new_N - 1)
 
-        # Step 5: Extract constant part (this will be executed by controller)
-        const_part_traj = {}
-        if const_end_idx > 0:
-            const_part_traj = slice_trajectory_dict(
-                aligned_traj, end_idx=const_end_idx)
+        # Step 4: Extract initial conditions directly (avoid intermediate slicing)
+        extract_idx = match_idx + max(const_end_idx, 0)
 
-        # Step 6: Extract initial conditions from trajectory
         if new_N > 0:
-            # When const_trajectory_time == 0, const_end_idx is 0, so extract from first point
-            # When const_trajectory_time > 0, extract from end of constant segment
-            extract_idx = max(const_end_idx, 0)
+            # Direct array access - much faster than get() with defaults
+            s_start = s_orig[extract_idx]
+            s_dot_start = max(
+                s_dot_min, performance_trajectory['s_dot'][extract_idx] if 's_dot' in performance_trajectory else s_dot_min)
+            s_ddot_start = performance_trajectory['s_ddot'][extract_idx] if 's_ddot' in performance_trajectory else 0.0
+            n_start = performance_trajectory['n'][extract_idx] if 'n' in performance_trajectory else 0.0
+            n_dot_start = performance_trajectory['n_dot'][extract_idx] if 'n_dot' in performance_trajectory else 0.0
+            n_ddot_start = performance_trajectory['n_ddot'][extract_idx] if 'n_ddot' in performance_trajectory else 0.0
 
-            # Extract state from trajectory
-            s_start = aligned_traj['s'][extract_idx]
-            s_dot_start = max(s_dot_min, aligned_traj.get(
-                's_dot', [s_dot_min] * new_N)[extract_idx])
-            s_ddot_start = aligned_traj.get(
-                's_ddot', [0.0] * new_N)[extract_idx]
-            n_start = aligned_traj.get('n', [0.0] * new_N)[extract_idx]
-            n_dot_start = aligned_traj.get(
-                'n_dot', [0.0] * new_N)[extract_idx]
-            n_ddot_start = aligned_traj.get(
-                'n_ddot', [0.0] * new_N)[extract_idx]
-            t_start = aligned_traj.get('t', [0.0] * new_N)[extract_idx]
-            s_loc_start = aligned_traj.get(
-                's_loc', [0.0] * new_N)[extract_idx]
+            if 't' in performance_trajectory:
+                t_start = performance_trajectory['t'][extract_idx] - (
+                    performance_trajectory['t'][match_idx] if match_idx > 0 else 0.0)
+            else:
+                t_start = 0.0
+
+            if 's_loc' in performance_trajectory:
+                s_loc_start = performance_trajectory['s_loc'][extract_idx] - (
+                    performance_trajectory['s_loc'][match_idx] if match_idx > 0 else 0.0)
+            else:
+                s_loc_start = 0.0
         else:
             # No warm-starting: Use current state estimate
             s_start = default_state['s_start']
@@ -670,18 +653,43 @@ class LocalSamplingPlanner:
             t_start = default_state['t_start']
             s_loc_start = default_state['s_loc_start']
 
-        # Step 7: Remove constant part from aligned trajectory (keep only "live" part for replanning)
-        if const_end_idx > 0 and const_end_idx < new_N:
-            aligned_traj = slice_trajectory_dict(
-                aligned_traj, start_idx=const_end_idx)
+        # Step 5: Create constant part trajectory (shallow copy with slicing)
+        const_part_traj = {}
+        if const_end_idx > 0:
+            for key, value in performance_trajectory.items():
+                if isinstance(value, np.ndarray) or isinstance(value, list):
+                    const_part_traj[key] = value[match_idx:match_idx + const_end_idx]
+                else:
+                    const_part_traj[key] = value
 
-            # Re-zero time and s_local so live part starts at 0
-            if len(aligned_traj.get('t', [])) > 0:
-                aligned_traj['t'] = aligned_traj['t'] - aligned_traj['t'][0]
-            if len(aligned_traj.get('s_loc', [])) > 0:
-                s0 = aligned_traj['s_loc'][0]
+            # Re-zero time and s_local in constant part
+            if 't' in const_part_traj and len(const_part_traj['t']) > 0:
+                t_offset = const_part_traj['t'][0]
+                const_part_traj['t'] = const_part_traj['t'] - t_offset
+            if 's_loc' in const_part_traj and len(const_part_traj['s_loc']) > 0:
+                s_loc_offset = const_part_traj['s_loc'][0]
+                const_part_traj['s_loc'] = np.mod(
+                    const_part_traj['s_loc'] - s_loc_offset, track_length)
+
+        # Step 6: Create aligned trajectory (live part for replanning)
+        aligned_traj = {}
+        live_start_idx = match_idx + const_end_idx
+
+        if live_start_idx < N:
+            for key, value in performance_trajectory.items():
+                if isinstance(value, np.ndarray) or isinstance(value, list):
+                    aligned_traj[key] = value[live_start_idx:]
+                else:
+                    aligned_traj[key] = value
+
+            # Re-zero time and s_local in live part
+            if 't' in aligned_traj and len(aligned_traj['t']) > 0:
+                t_offset = aligned_traj['t'][0]
+                aligned_traj['t'] = aligned_traj['t'] - t_offset
+            if 's_loc' in aligned_traj and len(aligned_traj['s_loc']) > 0:
+                s_loc_offset = aligned_traj['s_loc'][0]
                 aligned_traj['s_loc'] = np.mod(
-                    aligned_traj['s_loc'] - s0, track_length)
+                    aligned_traj['s_loc'] - s_loc_offset, track_length)
 
         return aligned_traj, s_start, s_dot_start, s_ddot_start, n_start, n_dot_start, n_ddot_start, const_part_traj, t_start, s_loc_start
 
@@ -707,8 +715,12 @@ class LocalSamplingPlanner:
                 f"Could not load YAML defaults: {e}. Using hardcoded defaults.")
             return {}
 
-    def declare_and_update_parameters(self):
+    def declare_and_update_parameters(self, skip_update=False):
         """Load required parameters from ROS parameter server with defaults from YAML"""
+
+        # Check if parameter updates should be skipped (e.g., during race)
+        if skip_update:
+            return
 
         if not self.initialized_params:
             # Load default values from YAML configuration file
@@ -933,7 +945,19 @@ class LocalSamplingPlanner:
             prediction: dict,
             planning_requests: dict,
     ):
-        self.declare_and_update_parameters()
+        import time as time_module  # Import to avoid conflicts with other 'time' usage
+
+        # Pass skip_update flag if available from parent node
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
+
+        # Propagate skip flag to child modules
+        if skip_update:
+            self.longitudinal_sampling._skip_param_updates = True
+            self.lateral_sampling._skip_param_updates = True
+            self.trajectory_checks._skip_param_updates = True
+            self.calculation_costs._skip_param_updates = True
+            self.trajectory._skip_param_updates = True
 
         following_distance_target = planning_requests["following_distance"]
 
@@ -945,6 +969,9 @@ class LocalSamplingPlanner:
         s_loc_start = 0.0
 
         try:
+            # === TIMING: Preprocessing ===
+            t_calc_start = time_module.time()
+
             state_estimate_sn = self.track_handler.project_2d_point_on_track_global(
                 state_estimate["x_current"], state_estimate["y_current"], state_estimate["z_current"], 6.0)
             state_estimate['s'] = state_estimate_sn[0]
@@ -1024,6 +1051,9 @@ class LocalSamplingPlanner:
                 self.status != self.status_dict['stopping']
             )
 
+            t_preprocess = time_module.time()
+
+            # === TIMING: Trajectory Sampling ===
             # generate frenet curves
             s_array, s_dot_array, s_ddot_array, n_array, n_dot_array, n_ddot_array, rel_long_sampling_array, t_array = self.perform_trajectory_sampling(
                 track_handler=self.track_handler,
@@ -1040,6 +1070,9 @@ class LocalSamplingPlanner:
                 hybrid_long_sampling=self.hybrid_long_sampling,
             )
 
+            t_sampling = time_module.time()
+
+            # === TIMING: Coordinate Transformation ===
             # transform frenet curves to velocity frame
             V_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array, kappa_vf_array = self.coordinate_transformation.transform_to_velocity_frame(
                 track_handler=self.track_handler,
@@ -1056,6 +1089,9 @@ class LocalSamplingPlanner:
                 V_array[:] = 0.0001
                 ax_vf_array[:] = 0.0
 
+            t_transform = time_module.time()
+
+            # === TIMING: Trajectory Validation ===
             # perform all trajectory checks
             # Note: kappa_vf_array contains path curvature (rad/m), not yaw rate
             valid_array, ax_tilde, ay_tilde, g_tilde, tire_util_array, invalid_array_info, track_bound = self.trajectory_checks.mandatory_checks_trajectory(
@@ -1090,6 +1126,9 @@ class LocalSamplingPlanner:
                 rospy.logerr(
                     f"[Sampling Core] ⚠️ ALL {len(valid_array)} TRAJECTORIES INVALID! Planning will fail.")
 
+            t_checks = time_module.time()
+
+            # === TIMING: Cost Calculation ===
             # for debugging
             V_upper = V_target + 1.0
 
@@ -1117,6 +1156,8 @@ class LocalSamplingPlanner:
 
             sorted_idx = self.calculation_costs.sort_trajectories_by_cost(
                 valid_array=valid_array, cost_array=cost_array)
+
+            t_costs = time_module.time()
 
             if np.sum(valid_array):
 
@@ -1227,6 +1268,19 @@ class LocalSamplingPlanner:
 
                 # Note: For F1TENTH, we don't need trajectory_N or complex GGGV calculations
                 # The tam_sampling_node.py will convert these trajectories to OTWpntArray directly
+
+                # === TIMING: Log breakdown ===
+                t_selection = time_module.time()
+                rospy.loginfo(
+                    f"[Sampling Core] calc_trajectory timing breakdown:\n"
+                    f"  Preprocess:  {(t_preprocess-t_calc_start)*1000:.1f}ms\n"
+                    f"  Sampling:    {(t_sampling-t_preprocess)*1000:.1f}ms\n"
+                    f"  Transform:   {(t_transform-t_sampling)*1000:.1f}ms\n"
+                    f"  Checks:      {(t_checks-t_transform)*1000:.1f}ms\n"
+                    f"  Costs:       {(t_costs-t_checks)*1000:.1f}ms\n"
+                    f"  Selection:   {(t_selection-t_costs)*1000:.1f}ms\n"
+                    f"  TOTAL:       {(t_selection-t_calc_start)*1000:.1f}ms"
+                )
 
             else:
                 # Clear trajectories completely to force fresh planning next cycle
@@ -1434,11 +1488,7 @@ class LocalSamplingPlanner:
                     (rel_long_sampling_array, rel_long_sampling_part), axis=0)
                 t_array = np.concatenate((t_array, t_array_part), axis=0)
 
-        # Forward backward integrated velocity profiles
         if self.add_forward_backward_samples:
-            # rospy.logerr(f"\n--- Forward-Backward Sampling ---")
-            # rospy.logerr(
-            #     f"  add_forward_backward_samples=True, starting forward-backward integration")
             s_part, s_dot_part, s_ddot_part, s_dot_end_part, s_end_part, rel_long_sampling_part, t_array_part = self.longitudinal_sampling.calc_samples_s_based_forward_backward(
                 s_start=s_start,
                 s_dot_start=s_dot_start,

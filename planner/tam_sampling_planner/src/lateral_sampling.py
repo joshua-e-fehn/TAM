@@ -44,7 +44,8 @@ class LateralSampling:
         """
         self.params = LatSamplingParams()
         self.initialized_params = False
-        self.declare_and_update_parameters()
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
 
     def _load_yaml_defaults(self):
         """Load default parameters from tam_sampling_params.yaml"""
@@ -65,13 +66,19 @@ class LateralSampling:
                 f"LateralSampling: Could not load YAML defaults: {e}")
             return {}
 
-    def declare_and_update_parameters(self):
+    def declare_and_update_parameters(self, skip_update=False):
         """
         Update parameters from ROS parameter server with YAML defaults.
+
+        Args:
+            skip_update: If True, skip parameter updates (performance optimization during race)
 
         No input parameters - reads from ROS parameter server using rospy.get_param().
         Updates self.params with latest parameter values.
         """
+        if skip_update:
+            return
+
         if not self.initialized_params:
             yaml_defaults = self._load_yaml_defaults()
 
@@ -243,7 +250,8 @@ class LateralSampling:
             vehicle_params: dict,
     ):
 
-        self.declare_and_update_parameters()
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
 
         n_array = np.zeros_like(s_array)
         n_dot_array = np.zeros_like(s_array)
@@ -298,44 +306,35 @@ class LateralSampling:
             # calculate the inverse of a for solving the linear equation system in for loop just with a matrix multiplication
             a_inverse = np.linalg.inv(a)
 
-            # evaluate raceline at specific s points
-            s_dot_rl = interpolate_with_period(
-                s_array[i],
-                postprocessed_raceline["s_post"],
-                postprocessed_raceline["s_dot_post"],
-                period=track_handler.get_track_length(),
-            )
-            s_ddot_rl = interpolate_with_period(
-                s_array[i],
-                postprocessed_raceline["s_post"],
-                postprocessed_raceline["s_ddot_post"],
-                period=track_handler.get_track_length(),
-            )
-            n_rl = interpolate_with_period(
-                s_array[i],
-                postprocessed_raceline["s_post"],
-                postprocessed_raceline["n_post"],
-                period=track_handler.get_track_length(),
-            )
-            n_dot_rl = interpolate_with_period(
-                s_array[i],
-                postprocessed_raceline["s_post"],
-                postprocessed_raceline["n_dot_post"],
-                period=track_handler.get_track_length(),
-            )
-            n_ddot_rl = interpolate_with_period(
-                s_array[i],
-                postprocessed_raceline["s_post"],
-                postprocessed_raceline["n_ddot_post"],
-                period=track_handler.get_track_length(),
-            )
+            # Batch interpolate all raceline data at once using extended arrays for efficiency
+            # This replaces 6 individual interpolate_with_period calls
+            track_length = track_handler.get_track_length()
 
-            chi_rl = interpolate_with_period(
-                s_array[i],
-                postprocessed_raceline["s_post"],
-                postprocessed_raceline["chi_post"],
-                period=track_handler.get_track_length(),
-            )
+            # Extend raceline data once for all interpolations (avoids repeated extension overhead)
+            s_coords = postprocessed_raceline["s_post"]
+            s_before = s_coords - track_length
+            s_after = s_coords + track_length
+            s_extended = np.concatenate([s_before, s_coords, s_after])
+
+            # Pre-extend all data arrays that will be interpolated
+            def extend_data(key):
+                data = postprocessed_raceline[key]
+                return np.concatenate([data, data, data])
+
+            s_dot_extended = extend_data("s_dot_post")
+            s_ddot_extended = extend_data("s_ddot_post")
+            n_extended = extend_data("n_post")
+            n_dot_extended = extend_data("n_dot_post")
+            n_ddot_extended = extend_data("n_ddot_post")
+            chi_extended = extend_data("chi_post")
+
+            # Now perform all 6 interpolations efficiently
+            s_dot_rl = np.interp(s_array[i], s_extended, s_dot_extended)
+            s_ddot_rl = np.interp(s_array[i], s_extended, s_ddot_extended)
+            n_rl = np.interp(s_array[i], s_extended, n_extended)
+            n_dot_rl = np.interp(s_array[i], s_extended, n_dot_extended)
+            n_ddot_rl = np.interp(s_array[i], s_extended, n_ddot_extended)
+            chi_rl = np.interp(s_array[i], s_extended, chi_extended)
 
             # Clamp velocities to prevent division by zero/near-zero
             # This prevents numerical instabilities when raceline velocity is very small
@@ -355,18 +354,19 @@ class LateralSampling:
             n_dense_end_values = np.linspace(
                 n_rl_eval[-1] + self.params.n_dense_min, n_rl_eval[-1] + self.params.n_dense_max, self.params.n_dense_samples)
 
+            # Cache track handler calculations (constant for this outer iteration)
             # sampled n end conditions(relative to raceline)
             # In Frenet coordinates: positive n = left, negative n = right
             # Right boundary (negative n): -trackwidth_right + margins
             trackwidth_right_raw = track_handler.trackwidth_right(s_end)
             trackwidth_left_raw = track_handler.trackwidth_left(s_end)
+            vehicle_half_width = vehicle_params['total_width'] / 2.0
 
-            n_min_track = -(trackwidth_right_raw - vehicle_params['total_width'] /
-                            2.0 - self.params.tube_width - self.params.safety_distance_track_right)
+            n_min_track = -(trackwidth_right_raw - vehicle_half_width -
+                            self.params.tube_width - self.params.safety_distance_track_right)
             # Left boundary (positive n): +trackwidth_left - margins
-            n_max_track = trackwidth_left_raw - \
-                vehicle_params['total_width'] / 2.0 - self.params.tube_width - \
-                self.params.safety_distance_track_left
+            n_max_track = trackwidth_left_raw - vehicle_half_width - \
+                self.params.tube_width - self.params.safety_distance_track_left
 
             n_end_min = n_min_track
             n_end_max = n_max_track
@@ -404,70 +404,76 @@ class LateralSampling:
                 n_dot_end_left = V_end_left * np.sin(chi_left)
                 n_dot_end_right = V_end_right * np.sin(chi_right)
 
-            # n_prime_end = n_dot_end / s_dot_end
-            for n_end in n_end_values:
-                # Calculate lateral end velocity based on mode
-                if self.params.use_geometric_lateral_end_velocity:
-                    # Position-dependent: interpolate between boundary velocities
-                    # Note: In Frenet coordinates, negative n = right, positive n = left
-                    n_dot_end = np.interp(n_end, [n_min_track, 0.0, n_max_track],
-                                          [n_dot_end_right, 0.0, n_dot_end_left])
-                else:
-                    # Simple: zero lateral velocity (perpendicular arrival to centerline)
-                    n_dot_end = 0.0
+            # Vectorized computation: process all n_end values at once
+            # Calculate lateral end velocities for all n_end values
+            if self.params.use_geometric_lateral_end_velocity:
+                # Position-dependent: interpolate between boundary velocities for all n_end at once
+                n_dot_end_values = np.interp(n_end_values, [n_min_track, 0.0, n_max_track],
+                                             [n_dot_end_right, 0.0, n_dot_end_left])
+            else:
+                # Simple: zero lateral velocity for all
+                n_dot_end_values = np.zeros_like(n_end_values)
 
-                if raceline_tendency:  # sample curves relative to raceline
-                    b = np.array(
-                        [
-                            n_start - n_rl_eval[0],
-                            n_dot_start - n_dot_rl_eval[0],
-                            n_ddot_start - n_ddot_rl_eval[0],
-                            n_end - n_rl_eval[-1],
-                            n_dot_end - n_dot_rl_eval[-1],
-                            0.0,
-                        ]
-                    )
-                else:  # sample curves absolute
-                    b = np.array(
-                        [n_start, n_dot_start, n_ddot_start, n_end, n_dot_end, 0.0])
+            # Build b vectors for all n_end values at once (shape: [num_n_end, 6])
+            num_n_end = len(n_end_values)
+            if raceline_tendency:
+                # Vectorized b matrix construction
+                b_matrix = np.zeros((num_n_end, 6))
+                b_matrix[:, 0] = n_start - n_rl_eval[0]
+                b_matrix[:, 1] = n_dot_start - n_dot_rl_eval[0]
+                b_matrix[:, 2] = n_ddot_start - n_ddot_rl_eval[0]
+                b_matrix[:, 3] = n_end_values - n_rl_eval[-1]
+                b_matrix[:, 4] = n_dot_end_values - n_dot_rl_eval[-1]
+                b_matrix[:, 5] = 0.0
+            else:
+                # Absolute sampling
+                b_matrix = np.zeros((num_n_end, 6))
+                b_matrix[:, 0] = n_start
+                b_matrix[:, 1] = n_dot_start
+                b_matrix[:, 2] = n_ddot_start
+                b_matrix[:, 3] = n_end_values
+                b_matrix[:, 4] = n_dot_end_values
+                b_matrix[:, 5] = 0.0
 
-                # calculate coefficients of quintic polynomial(now as matrix multiplication)
-                c = a_inverse @ b
+            # Vectorized polynomial coefficient calculation: c_matrix shape [num_n_end, 6]
+            c_matrix = b_matrix @ a_inverse.T  # Using transpose for efficient broadcasting
 
-                # calculate sampled n curve (now as matrix multiplication)
-                n_sample = t_mat @ c
-                n_dot_sample = t_mat_dot @ c[1:]
-                n_ddot_sample = t_mat_ddot @ c[2:]
+            # Vectorized polynomial evaluation for all trajectories at once
+            # n_samples shape: [num_n_end, num_time_points]
+            n_samples = c_matrix @ t_mat.T
+            n_dot_samples = c_matrix[:, 1:] @ t_mat_dot.T
+            n_ddot_samples = c_matrix[:, 2:] @ t_mat_ddot.T
 
-                if raceline_tendency:
-                    # add raceline n data to sampled relative n curve
-                    n = n_sample + n_rl_eval
-                    n_dot = n_dot_sample + n_dot_rl_eval
-                    n_ddot = n_ddot_sample + n_ddot_rl_eval
-                else:
-                    n = n_sample
-                    n_dot = n_dot_sample
-                    n_ddot = n_ddot_sample
+            # Add raceline data if needed (vectorized)
+            if raceline_tendency:
+                n_all = n_samples + n_rl_eval[np.newaxis, :]
+                n_dot_all = n_dot_samples + n_dot_rl_eval[np.newaxis, :]
+                n_ddot_all = n_ddot_samples + n_ddot_rl_eval[np.newaxis, :]
+            else:
+                n_all = n_samples
+                n_dot_all = n_dot_samples
+                n_ddot_all = n_ddot_samples
 
-                # Sanity check: detect and reject extreme outlier trajectories
-                # Check for unreasonable lateral offsets (>100m suggests numerical instability)
-                max_n_abs = np.max(np.abs(n))
-                if max_n_abs > 100.0:
-                    rospy.logwarn_throttle(
-                        5.0,
-                        f"LateralSampling: Extreme lateral trajectory detected (max |n|={max_n_abs:.1f}m). "
-                        f"n_start={n_start:.2f}, n_end={n_end:.2f}, t_end={t_end:.3f}s. "
-                        "Clamping to track bounds."
-                    )
-                    # Clamp to reasonable bounds (±50m should cover any realistic track)
-                    n = np.clip(n, -50.0, 50.0)
-                    n_dot = np.clip(n_dot, -50.0, 50.0)
-                    n_ddot = np.clip(n_ddot, -100.0, 100.0)
+            # Vectorized sanity check and clipping
+            max_n_abs_all = np.max(np.abs(n_all), axis=1)
+            extreme_mask = max_n_abs_all > 100.0
+            if np.any(extreme_mask):
+                num_extreme = np.sum(extreme_mask)
+                rospy.logwarn_throttle(
+                    5.0,
+                    f"LateralSampling: {num_extreme} extreme lateral trajectories detected (max |n|>100m). "
+                    f"n_start={n_start:.2f}, t_end={t_end:.3f}s. Clamping to track bounds."
+                )
+                # Vectorized clipping
+                n_all = np.clip(n_all, -50.0, 50.0)
+                n_dot_all = np.clip(n_dot_all, -50.0, 50.0)
+                n_ddot_all = np.clip(n_ddot_all, -100.0, 100.0)
 
-                n_array[i, :] = n
-                n_dot_array[i, :] = n_dot
-                n_ddot_array[i, :] = n_ddot
-                i += 1
+            # Store all computed trajectories at once
+            n_array[i:i+num_n_end, :] = n_all
+            n_dot_array[i:i+num_n_end, :] = n_dot_all
+            n_ddot_array[i:i+num_n_end, :] = n_ddot_all
+            i += num_n_end
 
         return n_array, n_dot_array, n_ddot_array
 

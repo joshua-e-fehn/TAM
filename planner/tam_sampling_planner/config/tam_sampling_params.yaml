@@ -5,9 +5,9 @@
 # Core Sampling Parameters
 # ========================================
 trajectory_length: 16.0
-lateral_samples: 20             # Number of lateral trajectory samples (was 5, reduced for performance)
-longitudinal_samples: 10          # Number of longitudinal velocity profiles (was 5, reduced for performance)
-n_dense_samples: 15               # Dense samples around raceline (was 5, reduced for performance)
+lateral_samples: 9             # Number of lateral trajectory samples (was 5, reduced for performance)
+longitudinal_samples: 5          # Number of longitudinal velocity profiles (was 5, reduced for performance)
+n_dense_samples: 3               # Dense samples around raceline (was 5, reduced for performance)
 n_dense_min: -0.5               # Minimum lateral offset for dense sampling (m)
 n_dense_max: 0.5                # Maximum lateral offset for dense sampling (m)
 planning_horizon: 4.0           # Planning time horizon (seconds)
@@ -86,8 +86,8 @@ lateral_jerk_cost_weight_overtaking: 0.0  # Lateral jerk cost during overtaking
 # Safety Parameters
 # ========================================
 # Track boundary safety distances (F1TENTH: reduced for 1/10 scale racing)
-safety_distance_track_left: 0.12   # Safety distance to left track boundary (m) - F1TENTH: 2cm
-safety_distance_track_right: 0.12  # Safety distance to right track boundary (m) - F1TENTH: 2cm
+safety_distance_track_left: 0.08   # Safety distance to left track boundary (m) - F1TENTH: 2cm
+safety_distance_track_right: 0.08  # Safety distance to right track boundary (m) - F1TENTH: 2cm
 
 # Pitlane safety distances (for pit entry/exit scenarios)
 safety_distance_pitlane_left: 0.0  # Safety distance to left pitlane boundary (m)

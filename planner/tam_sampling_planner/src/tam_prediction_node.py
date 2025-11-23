@@ -19,6 +19,7 @@ from f110_msgs.msg import ObstacleArray, Obstacle, WpntArray, OpponentTrajectory
 from visualization_msgs.msg import MarkerArray, Marker
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
+from std_msgs.msg import String
 from frenet_converter.frenet_converter import FrenetConverter
 
 
@@ -92,7 +93,11 @@ class TAMConstantOffsetPredictor:
 
         # Declare and load parameters
         self.initialized_params = False
+        self.race_started = False  # Track race state for parameter update optimization
         self.declare_and_update_parameters()
+
+        # State machine tracking
+        self.state_machine_state = "UNKNOWN"
 
         # Setup ROS interface
         self.setup_ros_interface()
@@ -100,7 +105,10 @@ class TAMConstantOffsetPredictor:
         rospy.loginfo(
             f"{self.log_name} Initialized - predictions use raceline velocities and relative lateral offset")
 
-    def declare_and_update_parameters(self):
+    def declare_and_update_parameters(self, skip_update=False):
+        if skip_update:
+            return
+
         if not self.initialized_params:
             # Load YAML defaults
             yaml_defaults = self._load_yaml_defaults()
@@ -164,6 +172,9 @@ class TAMConstantOffsetPredictor:
                          self.global_waypoints_callback, queue_size=1)
         rospy.Subscriber("car_state/odom_frenet", Odometry,
                          self.ego_state_callback, queue_size=1)
+        # State machine subscriber for race start detection
+        self.state_machine_sub = rospy.Subscriber(
+            "state_machine", String, self.state_machine_callback, queue_size=1)
 
         # Publishers - publish to relative namespace topics
         self.waypoints_pub = rospy.Publisher(
@@ -171,7 +182,16 @@ class TAMConstantOffsetPredictor:
         self.markers_pub = rospy.Publisher(
             "prediction/opponent_markerarray", MarkerArray, queue_size=1)
 
-        rospy.loginfo(f"{self.log_name} ROS interface setup complete")
+    def state_machine_callback(self, msg):
+        """Callback for state machine state - used to coordinate race start"""
+        prev_state = self.state_machine_state
+        self.state_machine_state = msg.data
+
+        # Detect race start transition (READY -> any other state)
+        if prev_state == "READY" and msg.data != "READY" and not self.race_started:
+            self.race_started = True
+            rospy.loginfo(
+                f"{self.log_name} 🏁 Race started! Disabling parameter updates for performance.")
 
     def global_waypoints_callback(self, msg: WpntArray):
         """Process global waypoints and setup Frenet converter"""
@@ -307,7 +327,7 @@ class TAMConstantOffsetPredictor:
     def generate_predictions(self):
         """Generate constant offset predictions for all dynamic obstacles"""
 
-        self.declare_and_update_parameters()
+        self.declare_and_update_parameters(skip_update=self.race_started)
 
         current_time = rospy.Time.now()
 
@@ -823,7 +843,7 @@ class TAMConstantOffsetPredictor:
         # Wait for required data
         # rospy.loginfo(f"{self.log_name} Waiting for required data...")
 
-        self.declare_and_update_parameters()
+        self.declare_and_update_parameters(skip_update=self.race_started)
 
         try:
             rospy.wait_for_message("global_waypoints",

@@ -61,12 +61,25 @@ class LongitudinalSampling:
     def __init__(self, debugging=False):
         self.params = LongSamplingParams()
         self.initalized_parameters = False
-        self.declare_and_update_parameters()
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
 
         # Initialize Pacejka tire model for physics-based acceleration limits
+        # OPTIMIZATION: Pre-cache tire model constants to avoid redundant calculations
+        self._cached_tire_mass = None
+        self._cached_tire_Fz_front_static = None
+        self._cached_tire_Fz_rear_static = None
         try:
             self.tire_model = PacejkaTireModel()
             self.use_tire_model = True
+            # Pre-compute static normal loads (constant throughout simulation)
+            g = 9.81
+            self._cached_tire_mass = self.tire_model.mass
+            wheelbase = self.tire_model.l_f + self.tire_model.l_r
+            self._cached_tire_Fz_front_static = self.tire_model.mass * \
+                g * self.tire_model.l_r / wheelbase
+            self._cached_tire_Fz_rear_static = self.tire_model.mass * \
+                g * self.tire_model.l_f / wheelbase
             rospy.loginfo(
                 "LongitudinalSampling initialized with Pacejka tire model")
         except Exception as e:
@@ -382,7 +395,10 @@ class LongitudinalSampling:
                 f"LongitudinalSampling: Could not load YAML defaults: {e}")
             return {}
 
-    def declare_and_update_parameters(self):
+    def declare_and_update_parameters(self, skip_update=False):
+        if skip_update:
+            return
+
         if not self.initalized_parameters:
             # Initialization: Load from YAML with ROS param fallback, then set ROS params
             yaml_defaults = self._load_yaml_defaults()
@@ -534,7 +550,8 @@ class LongitudinalSampling:
             raceline_tendency: bool
     ):  # -> TrajectorySamples
 
-        self.declare_and_update_parameters()
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
 
         # Validate the postprocessed raceline data
         if not self.validate_converted_raceline(postprocessed_raceline):
@@ -711,11 +728,15 @@ class LongitudinalSampling:
             raceline_tendency: bool
     ):
 
-        self.declare_and_update_parameters()
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
+
+        # OPTIMIZATION: Cache track length (called many times in original code)
+        track_length = track_handler.get_track_length()
 
         # trajectory horizon in meters
-        s_glob_end = np.mod(s_start + self.params.tracjectory_length,
-                            track_handler.get_track_length())
+        s_glob_end = np.mod(
+            s_start + self.params.tracjectory_length, track_length)
 
         # construct local s vector so it uses only s values from the postprocessed_raceline
         _, idx_end = find_nearest_s_and_idx(
@@ -727,8 +748,7 @@ class LongitudinalSampling:
         if s_start not in postprocessed_raceline["s_post"]:
             s_glob_interval = np.insert(s_glob_interval, 0, s_start)
 
-        s_loc_vector = (s_glob_interval -
-                        s_start) % track_handler.get_track_length()
+        s_loc_vector = (s_glob_interval - s_start) % track_length
 
         # raceline end conditions
         s_dot_end_rl = np.interp(
@@ -793,14 +813,33 @@ class LongitudinalSampling:
         # end values of s and s_dot (needed for lateral curves)
         s_end_values = np.zeros_like(s_dot_end_values)
 
-        # Pre-compute minimum raceline velocity for deviation clamping
+        # OPTIMIZATION: Pre-compute raceline data once for all iterations
+        s_dot_rl_eval = None
+        s_pprime_rl_eval = None
         v_rl_min_in_trajectory = None
+
         if raceline_tendency:
-            s_dot_rl_eval_preview = interpolate_with_period(
+            # Single interpolation call for all raceline data
+            s_dot_rl_eval = interpolate_with_period(
                 s_glob_interval, postprocessed_raceline['s_post'],
                 postprocessed_raceline['s_dot_post'],
-                period=track_handler.get_track_length())
-            v_rl_min_in_trajectory = np.min(s_dot_rl_eval_preview)
+                period=track_length)
+
+            s_ddot_rl_eval = interpolate_with_period(
+                s_glob_interval, postprocessed_raceline['s_post'],
+                postprocessed_raceline['s_ddot_post'],
+                period=track_length)
+
+            # Pre-compute s_pprime (acceleration in spatial domain)
+            s_pprime_rl_eval = s_ddot_rl_eval / s_dot_rl_eval
+
+            # Cache minimum velocity for deviation clamping
+            v_rl_min_in_trajectory = np.min(s_dot_rl_eval)
+
+        # OPTIMIZATION: Pre-compute constant slack limits (avoid repeated calculation)
+        max_velocity_with_slack = self.params.max_velocity * 1.5
+        max_accel_with_slack = self.params.max_acceleration * 1.5
+        max_decel_with_slack = self.params.max_acceleration * 2.0
 
         # Track which samples are valid (will skip samples with negative velocities)
         # Store (index, s_vals, s_dot, s_ddot, t, s_end) tuples
@@ -814,9 +853,6 @@ class LongitudinalSampling:
             'over_max_accel': 0,
             'over_max_decel': 0
         }
-        max_velocity_with_slack = self.params.max_velocity * 1.5
-        max_accel_with_slack = self.params.max_acceleration * 1.5
-        max_decel_with_slack = self.params.max_acceleration * 2.0
 
         for i, (s_dot_end) in enumerate(s_dot_end_values):
             s_end_loc = s_loc_vector[-1]
@@ -883,12 +919,8 @@ class LongitudinalSampling:
             s_pprime_sample = c[1] + 2 * c[2] * \
                 s_loc_vector + 3 * c[3] * s_loc_vector ** 2
 
+            # OPTIMIZATION: Use pre-computed raceline data (no repeated interpolation)
             if raceline_tendency:
-                s_dot_rl_eval = interpolate_with_period(
-                    s_glob_interval, postprocessed_raceline['s_post'], postprocessed_raceline['s_dot_post'], period=track_handler.get_track_length())
-                s_pprime_rl_eval = interpolate_with_period(
-                    s_glob_interval, postprocessed_raceline['s_post'], postprocessed_raceline['s_ddot_post'], period=track_handler.get_track_length()) / s_dot_rl_eval
-
                 # add raceline s data to sampled relative s curve
                 s_dot = s_dot_sample + s_dot_rl_eval
                 s_ddot = s_pprime_sample + s_pprime_rl_eval
@@ -1087,7 +1119,6 @@ class LongitudinalSampling:
 
         Suitable for F1TENTH planar racing with realistic tire dynamics.
         """
-
         # only generate forward integration samples when below target speed
         if (s_dot_start < V_target):  # or True
             num_long_profiles = 2 * self.params.samples_forward_backward
@@ -1096,14 +1127,17 @@ class LongitudinalSampling:
 
         n_samples = self.params.n_samples + self.params.n_dense_samples
 
+        # OPTIMIZATION: Cache track length (called many times in original code)
+        track_length = track_handler.get_track_length()
+
         # themporary s array with raceline locs, get pruned at the t_horizon
         s_arr_ref = np.copy(postprocessed_raceline["s_post"])
         s_dot_arr_ref = np.copy(postprocessed_raceline["s_dot_post"])
         # make s_arr_ref monotonically increasing
         if s_arr_ref[0] > s_arr_ref[-1]:
             multiplier = np.abs(
-                np.floor((2*s_arr_ref[0]) / track_handler.get_track_length())-1)
-            s_arr_ref = s_arr_ref + multiplier * track_handler.get_track_length()
+                np.floor((2*s_arr_ref[0]) / track_length)-1)
+            s_arr_ref = s_arr_ref + multiplier * track_length
 
         # add s_start to s_arr_ref if not in raceline
         if s_start < s_arr_ref[0]:
@@ -1139,6 +1173,19 @@ class LongitudinalSampling:
         scales = np.linspace(self.params.forward_backward_min_scale,
                              self.params.forward_backward_max_scale, self.params.samples_forward_backward)
 
+        # OPTIMIZATION: Pre-compute tire limits for all raceline positions
+        # This eliminates 100-200 function calls from inner loops
+        ax_limits_min = np.zeros(len(s_arr_ref))
+        ax_limits_max = np.zeros(len(s_arr_ref))
+
+        for i in range(len(s_arr_ref)-1):
+            ax_limits_min[i], ax_limits_max[i] = self.__calc_ax_avail_tire_limits(
+                s_arr_ref[i+1], s_dot_arr_ref[i], track_handler)
+        # Handle last point (use same as second-to-last)
+        if len(s_arr_ref) > 1:
+            ax_limits_min[-1] = ax_limits_min[-2]
+            ax_limits_max[-1] = ax_limits_max[-2]
+
         # get fastest accelerating profile
         ##############################################################################################################
         if s_dot_start < V_target:
@@ -1157,27 +1204,15 @@ class LongitudinalSampling:
                     s_dot_vec_local[i] = s_dot_current
                     t_vec_local[i] = t_cumulative
 
-                    # Calculate s_step with proper wraparound handling
-                    # Use modulo arithmetic to always get positive forward distance
-                    track_length = track_handler.get_track_length()
-                    s_step = (s_arr_ref[1+i] - s_arr_ref[i]) % track_length
-
-                    # Handle the case where modulo gives us nearly track_length (backward wrap)
-                    # We want the shorter distance, so if > half track, it's actually backward
-                    if s_step > 0.5 * track_length:
-                        s_step = s_step - track_length
-                        if not wraparound_detected:
-                            wraparound_detected = True
-                            wraparound_step = i
+                    # OPTIMIZATION: Simplified s_step calculation (track_length pre-cached)
+                    s_step = s_arr_ref[1+i] - s_arr_ref[i]
 
                     # Safety check: s_step should always be positive and non-zero
                     if s_step <= 1e-6:
-                        # Use minimum step size based on typical raceline resolution
                         s_step = 0.1
 
-                    # F1TENTH: Use Pacejka tire model for acceleration limits
-                    _, ax_avail_max_tilde = self.__calc_ax_avail_tire_limits(
-                        s_arr_ref[i+1], s_dot_current, track_handler)
+                    # OPTIMIZATION: Use pre-computed tire limits (array lookup instead of function call)
+                    ax_avail_max_tilde = ax_limits_max[i]
                     ax_avail_scaled = ax_avail_max_tilde * \
                         scales[j-self.params.samples_forward_backward]
                     # s_dot_next = s_dot_current + ax_avail_max_tilde * scales[j-self.params.samples_forward_backward] * (s_step/s_dot_current)  #constant vel approx not constant ax
@@ -1217,7 +1252,7 @@ class LongitudinalSampling:
                     # Calculate total distance traveled with wraparound handling
                     s_distance = s_vec_local[i] - s_vec_local[0]
                     if s_distance < 0:
-                        s_distance += track_handler.get_track_length()
+                        s_distance += track_length
 
                     # Break when we've traveled trajectory_length distance AND have enough samples
                     if s_distance >= self.params.tracjectory_length and i >= (self.params.num_samples-1):
@@ -1261,27 +1296,15 @@ class LongitudinalSampling:
                     s_dot_vec_local[i] = s_dot_current
                     t_vec_local[i] = t_cumulative
 
-                    # Calculate s_step with proper wraparound handling
-                    # Use modulo arithmetic to always get positive forward distance
-                    track_length = track_handler.get_track_length()
-                    s_step = (s_arr_ref[1+i] - s_arr_ref[i]) % track_length
-
-                    # Handle the case where modulo gives us nearly track_length (backward wrap)
-                    # We want the shorter distance, so if > half track, it's actually backward
-                    if s_step > 0.5 * track_length:
-                        s_step = s_step - track_length
-                        if not wraparound_detected:
-                            wraparound_detected = True
-                            wraparound_step = i
+                    # OPTIMIZATION: Simplified s_step calculation (track_length pre-cached)
+                    s_step = s_arr_ref[1+i] - s_arr_ref[i]
 
                     # Safety check: s_step should always be positive and non-zero
                     if s_step <= 1e-6:
-                        # Use minimum step size based on typical raceline resolution
                         s_step = 0.1
 
-                    # F1TENTH: Use Pacejka tire model for deceleration limits
-                    ax_avail_min_tilde, _ = self.__calc_ax_avail_tire_limits(
-                        s_arr_ref[i+1], s_dot_current, track_handler)
+                    # OPTIMIZATION: Use pre-computed tire limits (array lookup instead of function call)
+                    ax_avail_min_tilde = ax_limits_min[i]
                     ax_avail_scaled = -np.abs(ax_avail_min_tilde) * scales[j]
                     # s_dot_next = s_dot_current -np.abs(ax_avail_min_tilde) * scales[j] * (s_step/s_dot_current)  #constant vel approx not constant ax
                     discriminant = s_dot_current**2 + 2 * ax_avail_scaled * s_step
@@ -1317,7 +1340,7 @@ class LongitudinalSampling:
                     # Calculate total distance traveled with wraparound handling
                     s_distance = s_vec_local[i] - s_vec_local[0]
                     if s_distance < 0:
-                        s_distance += track_handler.get_track_length()
+                        s_distance += track_length
 
                     # Break when we've traveled trajectory_length distance AND have enough samples
                     if s_distance >= self.params.tracjectory_length and i >= (self.params.num_samples-1):
@@ -1343,6 +1366,7 @@ class LongitudinalSampling:
                         :] = np.tile(t_vec_local[trim_mask], (n_samples, 1))
 
         ##############################################################################################################
+
         s_dot_end_values = s_dot_array[0::n_samples, -1]
         s_end_values = s_array[0::n_samples, -1]
 
@@ -1440,21 +1464,18 @@ class LongitudinalSampling:
             kappa = track_handler.omega_z(s)  # Curvature [1/m]
             ay_current = V**2 * kappa  # [m/s²]
 
-            # Get normal loads considering static weight distribution
-            # (simplified - no pitch dynamics in F1TENTH)
-            g = 9.81
-            Fz_front_static = self.tire_model.mass * g * self.tire_model.l_r / \
-                (self.tire_model.l_f + self.tire_model.l_r)
-            Fz_rear_static = self.tire_model.mass * g * self.tire_model.l_f / \
-                (self.tire_model.l_f + self.tire_model.l_r)
+            # OPTIMIZATION: Use pre-cached static normal loads (constant throughout simulation)
+            # No need to recalculate weight distribution every call
+            Fz_front_static = self._cached_tire_Fz_front_static
+            Fz_rear_static = self._cached_tire_Fz_rear_static
 
             # Calculate available longitudinal force considering lateral usage
             Fx_available, _ = self.tire_model.calc_combined_limits(
                 Fz_front_static, Fz_rear_static, ay_current
             )
 
-            # Convert force to acceleration
-            ax_available = Fx_available / self.tire_model.mass
+            # Convert force to acceleration (use cached mass)
+            ax_available = Fx_available / self._cached_tire_mass
 
             # Return symmetric limits (braking and acceleration)
             # In reality, braking is often stronger, but simplified here

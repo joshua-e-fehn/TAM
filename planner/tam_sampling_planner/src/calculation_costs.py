@@ -90,7 +90,8 @@ class CalculationCosts():
         self.params = CalculationCostsParams()
         self.debugging = debugging
         self.initialized_params = False
-        self.declare_and_update_parameters()
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
 
     def _convert_global_waypoints_to_prediction(self, prediction_waypoints, time_horizon=None, dt=0.1):
         """
@@ -481,7 +482,10 @@ class CalculationCosts():
                 f"CalculationCosts: Could not load YAML defaults: {e}")
             return {}
 
-    def declare_and_update_parameters(self):
+    def declare_and_update_parameters(self, skip_update=False):
+        if skip_update:
+            return
+        
         if not self.initialized_params:
             yaml_defaults = self._load_yaml_defaults()
 
@@ -791,7 +795,8 @@ class CalculationCosts():
             vehicle_params: dict,
     ) -> int:
 
-        self.declare_and_update_parameters()
+        skip_update = getattr(self, '_skip_param_updates', False)
+        self.declare_and_update_parameters(skip_update=skip_update)
 
         curvature_cost_array = np.zeros_like(valid_array, dtype=float)
         lat_jerk_cost_array = np.zeros_like(valid_array, dtype=float)
