@@ -44,7 +44,7 @@ class MultiCarObstaclePublisher:
         self.car_model = rospy.get_param('~car_model', 'NUC2')
 
         # Try to get dimensions from car model, fallback to launch file params, then defaults
-        self.car_length = self.get_car_dimension('car_length', 0.58)  # meters
+        self.car_length = self.get_car_dimension('car_length', 0.48)  # meters
         self.car_width = self.get_car_dimension('car_width', 0.31)    # meters
         self.safety_margin = rospy.get_param('~safety_margin', 0.2)   # meters
 
@@ -117,8 +117,8 @@ class MultiCarObstaclePublisher:
                 wheelbase = rospy.get_param(
                     '/car_model_params/wheelbase', None)
                 if wheelbase is not None:
-                    # Based on F1TENTH proportions (0.307 -> 0.58)
-                    calculated_length = wheelbase * 1.89
+                    # Based on F1TENTH proportions (0.307 -> 0.48)
+                    calculated_length = wheelbase * 1.56
                     rospy.loginfo(
                         f"[Multi-Car Publisher] Calculated car_length={calculated_length:.3f} from wheelbase={wheelbase} ({self.car_model})")
                     return calculated_length

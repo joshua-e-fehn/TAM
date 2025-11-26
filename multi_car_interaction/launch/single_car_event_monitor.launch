@@ -24,7 +24,7 @@
     
     <!-- Car model and dimensions -->
     <arg name="car_model" default="NUC2"/>
-    <arg name="car_length" default="0.58"/>
+    <arg name="car_length" default="0.48"/>
     <arg name="car_width" default="0.31"/>
     
     <!-- Track boundary parameters -->

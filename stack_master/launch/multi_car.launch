@@ -90,23 +90,27 @@
   
   <!-- Performance scaling parameters per car -->
   <arg name="speed_multiplier_car1" default="1.0"/>
-  <arg name="speed_multiplier_car2" default="0.8"/>
+  <arg name="speed_multiplier_car2" default="1.0"/>
   <arg name="speed_multiplier_car3" default="1.0"/>
   <arg name="speed_multiplier_car4" default="1.0"/>
   
   <arg name="accel_multiplier_car1" default="1.0"/>
-  <arg name="accel_multiplier_car2" default="0.8"/>
+  <arg name="accel_multiplier_car2" default="1.0"/>
   <arg name="accel_multiplier_car3" default="1.0"/>
   <arg name="accel_multiplier_car4" default="1.0"/>
 
   <!-- Initial position parameters per car (centralized configuration) -->
-  <arg name="car1_init_x" default="-2.0"/>
-  <arg name="car1_init_y" default="0.0"/>
-  <arg name="car1_init_theta" default="0.0"/>
+  <!-- Map-specific initial positions (s=0 for car1, s=3 for car2) -->
+  <!-- f map: car1 at s=0 (x=-4.882, y=-21.717, theta=3.081), car2 at s=3 (x=-6.405, y=-20.527, theta=1.536) -->
+  <!-- my_map_20%s_100%w_NUC2_mintime: car1 at s=0 (x=-0.026, y=0.218, theta=0.116), car2 at s=3 (x=2.971, y=0.419, theta=0.140) -->
+  <!-- f_100%s_100%w_NUC2_mintime: car1 at s=0 (x=-2.234, y=8.612, theta=1.643), car2 at s=3 (x=-2.478, y=11.604, theta=1.648) - rotated -->
+  <arg name="car1_init_x" default="$(eval '-2.2335654745865883' if arg('global_map') == 'f_100%s_100%w_NUC2_mintime' else ('-0.026211955996061177' if arg('global_map') == 'my_map_20%s_100%w_NUC2_mintime' else '-4.882160008533675'))"/>
+  <arg name="car1_init_y" default="$(eval '8.611759259205732' if arg('global_map') == 'f_100%s_100%w_NUC2_mintime' else ('0.21828542156677372' if arg('global_map') == 'my_map_20%s_100%w_NUC2_mintime' else '-21.71655958369345'))"/>
+  <arg name="car1_init_theta" default="$(eval '1.6434005878649065' if arg('global_map') == 'f_100%s_100%w_NUC2_mintime' else ('0.11582879839820794' if arg('global_map') == 'my_map_20%s_100%w_NUC2_mintime' else '3.081070705812035'))"/>
   
-  <arg name="car2_init_x" default="2.0"/>
-  <arg name="car2_init_y" default="0.0"/>
-  <arg name="car2_init_theta" default="0.0"/>
+  <arg name="car2_init_x" default="$(eval '-2.477914551029701' if arg('global_map') == 'f_100%s_100%w_NUC2_mintime' else ('2.9706469870864733' if arg('global_map') == 'my_map_20%s_100%w_NUC2_mintime' else '-6.405436785890795'))"/>
+  <arg name="car2_init_y" default="$(eval '11.604378590684064' if arg('global_map') == 'f_100%s_100%w_NUC2_mintime' else ('0.419185558158611' if arg('global_map') == 'my_map_20%s_100%w_NUC2_mintime' else '-20.527380849024997'))"/>
+  <arg name="car2_init_theta" default="$(eval '1.6476228771665602' if arg('global_map') == 'f_100%s_100%w_NUC2_mintime' else ('0.14018464730591193' if arg('global_map') == 'my_map_20%s_100%w_NUC2_mintime' else '1.5363350687333144'))"/>
   
   <arg name="car3_init_x" default="-1.0"/>
   <arg name="car3_init_y" default="-1.5"/>
@@ -223,10 +227,6 @@
     <node pkg="rostopic" type="rostopic" name="auto_enable_nav_mux"
           args="pub -r 10 behavior_controller/mux std_msgs/Int32MultiArray 'data: [0, 1, 0, 0, 0]'" />
           
-    <!-- Set initial pose for car1 in its own namespace -->
-    <node pkg="rostopic" type="rostopic" name="car1_initial_pose"
-          args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car1_map}, pose: {pose: {position: {x: $(arg car1_init_x), y: $(arg car1_init_y), z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
-          
     <!-- TF Frame Configuration -->
         <!-- TF Frame Configuration -->
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">
@@ -331,10 +331,6 @@
     <!-- Auto-enable navigation mux for reliable autonomous operation -->
     <node pkg="rostopic" type="rostopic" name="auto_enable_nav_mux_car2"
           args="pub -r 10 behavior_controller/mux std_msgs/Int32MultiArray 'data: [0, 1, 0, 0, 0]'" />
-          
-    <!-- Set initial pose for car2 in its own namespace -->
-    <node pkg="rostopic" type="rostopic" name="car2_initial_pose"
-          args="pub -1 f1tenth_simulator/initialpose geometry_msgs/PoseWithCovarianceStamped &quot;{header: {frame_id: car2_map}, pose: {pose: {position: {x: $(arg car2_init_x), y: $(arg car2_init_y), z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}}&quot;" />
           
     <!-- TF Frame Configuration -->
     <include file="$(find stack_master)/launch/namespaced_static_transforms.launch">

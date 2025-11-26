@@ -543,6 +543,131 @@ class StateMachine:
     def _check_close_to_raceline(self) -> bool:
         return np.abs(self.cur_d) < self.gb_ego_width_m  # [m]
 
+    def _check_close_to_raceline_tight(self) -> bool:
+        """Tighter raceline proximity check for predictive sampler.
+
+        Checks both lateral offset AND heading alignment to ensure smooth 
+        transition from OVERTAKE to GB_TRACK. This prevents transitioning
+        when the car is pointed away from the raceline direction.
+
+        Returns:
+            True if car is close to raceline (<0.2m) AND heading is aligned (<15deg)
+        """
+        # Lateral offset threshold
+        lateral_threshold = 0.2  # [m]
+
+        # Heading alignment threshold (in radians) - ~10 degrees
+        heading_threshold = 0.175  # [rad] ~ 10 degrees
+
+        # Check lateral offset
+        lateral_ok = np.abs(self.cur_d) < lateral_threshold
+
+        if not lateral_ok:
+            return False
+
+        # Check heading alignment with raceline
+        # Get current car heading
+        if self.current_position is None:
+            # No position data yet, be conservative
+            return False
+
+        car_heading = self.current_position[2]  # theta from pose callback
+
+        # Get raceline heading at current s-position
+        if self.glb_wpnts is None or len(self.glb_wpnts) == 0:
+            # No waypoint data, be conservative
+            return False
+
+        # Find nearest global waypoint by s-coordinate
+        idx = int(self.cur_s / self.waypoints_dist + 0.5) % self.num_glb_wpnts
+        raceline_heading = self.glb_wpnts[idx].psi_rad
+
+        # Calculate heading difference (handle wraparound at ±π)
+        heading_diff = car_heading - raceline_heading
+        # Normalize to [-π, π]
+        heading_diff = np.arctan2(np.sin(heading_diff), np.cos(heading_diff))
+
+        heading_ok = np.abs(heading_diff) < heading_threshold
+
+        if not heading_ok:
+            rospy.loginfo_throttle(2.0,
+                                   f"[{self.name}] _check_close_to_raceline_tight: lateral OK ({self.cur_d:.3f}m) but heading misaligned "
+                                   f"(car={np.degrees(car_heading):.1f}°, raceline={np.degrees(raceline_heading):.1f}°, diff={np.degrees(heading_diff):.1f}°)")
+
+        return lateral_ok and heading_ok
+
+    def _check_opponent_behind(self) -> bool:
+        """Check if all opponents/obstacles are behind the ego car.
+
+        Used for predictive sampler to detect when overtake is complete.
+        Returns True if no obstacles are ahead within the check horizon.
+        Handles track wraparound correctly.
+        """
+        # If in time trials mode, no opponents to check
+        if self.timetrials_only:
+            return True
+
+        # If no obstacles, nothing is ahead
+        if len(self.obstacles) == 0:
+            return True
+
+        # Check horizon - how far ahead to look for obstacles
+        # Use a shorter horizon than gb_horizon_m since we're checking "behind"
+        check_horizon = 15.0  # meters - if nothing within 15m ahead, consider opponent behind
+
+        for obs in self.obstacles:
+            # Calculate distance to obstacle with wraparound handling
+            # Positive distance means obstacle is ahead
+            obs_s = obs.s_center
+            dist_ahead = (obs_s - self.cur_s) % self.track_length
+
+            # If dist_ahead is close to track_length, obstacle is actually just behind us
+            # Consider "ahead" only if within first half of track (not wrapped around behind)
+            if dist_ahead < check_horizon:
+                # Obstacle is ahead within check horizon
+                rospy.loginfo_throttle(2.0,
+                                       f"[{self.name}] _check_opponent_behind: obstacle at s={obs_s:.2f}, ego_s={self.cur_s:.2f}, dist_ahead={dist_ahead:.2f}m -> NOT behind")
+                return False
+
+        # All obstacles are behind (or far ahead, which means we've passed them)
+        rospy.loginfo_throttle(2.0,
+                               f"[{self.name}] _check_opponent_behind: all {len(self.obstacles)} obstacles are behind ego")
+        return True
+
+    def _check_opponent_within_distance(self, max_distance: float) -> bool:
+        """Check if any opponent is within the specified distance ahead.
+
+        Used for predictive sampler to control overtake entry/exit based on
+        distance to opponent. Handles track wraparound correctly.
+
+        Args:
+            max_distance: Maximum distance in meters to consider opponent "close"
+
+        Returns:
+            True if any obstacle is ahead within max_distance, False otherwise
+        """
+        # If in time trials mode, no opponents
+        if self.timetrials_only:
+            return False
+
+        # If no obstacles, nothing is close
+        if len(self.obstacles) == 0:
+            return False
+
+        for obs in self.obstacles:
+            # Calculate distance to obstacle with wraparound handling
+            obs_s = obs.s_center
+            dist_ahead = (obs_s - self.cur_s) % self.track_length
+
+            # Only consider obstacles truly ahead (not wrapped around behind)
+            # A gap close to track_length means obstacle is actually behind
+            if dist_ahead < max_distance and dist_ahead < self.track_length / 2:
+                rospy.loginfo_throttle(2.0,
+                                       f"[{self.name}] _check_opponent_within_distance({max_distance}m): obstacle at dist={dist_ahead:.2f}m -> WITHIN RANGE")
+                return True
+
+        return False
+
     def _check_ot_sector(self) -> bool:
         for sector in self.overtake_zones:
             if sector[0] <= self.cur_s / self.waypoints_dist <= sector[1]:
@@ -663,14 +788,30 @@ class StateMachine:
             return True
 
     def _check_enemy_in_front(self) -> bool:
-        # If we are in time trial only mode -> return free overtake i.e. GB_FREE True
-        if not self.timetrials_only:
-            horizon = self.gb_horizon_m  # Horizon in front of cur_s [m]
-            for obs in self.obstacles:
-                gap = (obs.s_start - self.cur_s) % self.track_length
-                if gap < horizon:
-                    return True
+        """Check if there's an enemy/obstacle ahead of the car within the horizon.
+
+        Properly handles track wraparound by ensuring the obstacle is actually
+        ahead (not behind wrapping around through the finish line).
+        """
+        # If we are in time trial only mode -> return no enemy
+        if self.timetrials_only:
             return False
+
+        horizon = self.gb_horizon_m  # Horizon in front of cur_s [m]
+
+        for obs in self.obstacles:
+            # Calculate distance to obstacle with wraparound
+            gap = (obs.s_start - self.cur_s) % self.track_length
+
+            # CRITICAL: A gap close to track_length means obstacle is actually behind us
+            # Only consider obstacle "in front" if gap is small (less than half track length)
+            # AND within our lookahead horizon
+            if gap < horizon and gap < self.track_length / 2:
+                rospy.loginfo_throttle(2.0,
+                                       f"[{self.name}] _check_enemy_in_front: obstacle at s={obs.s_start:.2f}, ego_s={self.cur_s:.2f}, gap={gap:.2f}m -> IN FRONT")
+                return True
+
+        return False
 
     def _check_availability_splini_wpts(self) -> bool:
 

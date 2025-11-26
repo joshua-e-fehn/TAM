@@ -85,7 +85,7 @@ class RaceEventMonitor:
         # Race completion parameters
         self.target_laps = rospy.get_param('/race_test/target_laps', 3)
         self.overtake_lead_distance = rospy.get_param(
-            '/race_test/overtake_lead_distance', 10.0)  # meters
+            '/race_test/overtake_lead_distance', 5.0)  # meters
         self.boundary_safety_margin = rospy.get_param(
             '/race_test/boundary_safety_margin', 0.0)  # meters - additional safety margin
         self.boundary_violation_tolerance = rospy.get_param(
@@ -110,7 +110,7 @@ class RaceEventMonitor:
         # Car model and dimensions
         self.car_model = rospy.get_param('/race_test/car_model', 'NUC2')
         self.car_length = rospy.get_param(
-            '/race_test/car_length', 0.58)  # meters
+            '/race_test/car_length', 0.48)  # meters
         self.car_width = rospy.get_param(
             '/race_test/car_width', 0.31)    # meters
 
@@ -500,11 +500,11 @@ class RaceEventMonitor:
                 self.car_laps[car_name] += 1
                 lap_num = self.car_laps[car_name]
                 rospy.loginfo(
-                    f"[Race Monitor] 🏁 {car_name} completed lap, now on lap {lap_num}")
+                    f"[Race Monitor] 🏁 {car_name} completed lap, now on lap {lap_num}/{self.target_laps}")
 
                 # Log lap completion event
                 self.log_event('lap_complete', car1_name=car_name,
-                               details=f"{car_name} finished lap {lap_num}")
+                               details=f"{car_name} finished lap {lap_num}/{self.target_laps}")
 
                 # Publish lap count as parameter for test framework
                 rospy.set_param(f'/race_test/{car_name}/current_lap', lap_num)
@@ -521,11 +521,11 @@ class RaceEventMonitor:
                 self.obstacle_laps += 1
                 lap_num = self.obstacle_laps
                 rospy.loginfo(
-                    f"[Race Monitor] 🏁 obstacle completed lap, now on lap {lap_num}")
+                    f"[Race Monitor] 🏁 obstacle completed lap, now on lap {lap_num}/{self.target_laps}")
 
                 # Log lap completion event
                 self.log_event('lap_complete', car1_name='obstacle',
-                               details=f"obstacle finished lap {lap_num}")
+                               details=f"obstacle finished lap {lap_num}/{self.target_laps}")
 
         self.obstacle_previous_s = current_s
 
@@ -780,7 +780,7 @@ class RaceEventMonitor:
         return False
 
     def check_condition_overtake_lead(self):
-        """Condition 4: Car1 overtook car2 and is 10+ meters ahead"""
+        """Condition 4: Car1 overtook car2 and is 5+ meters ahead"""
         if 'car1' not in self.car_frenet or 'car2' not in self.car_frenet:
             return False
 

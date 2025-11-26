@@ -417,6 +417,9 @@
             <remap from="perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap collision prediction obstacles (from Predictive Spliner nodes) -->
             <remap from="collision_prediction/obstacles" to="collision_prediction/obstacles"/>
+            <!-- CRITICAL: Remap opponent prediction topic to use Predictive Spliner's GP trajectory output -->
+            <!-- Single-car mode (car_name=""): /opponent_trajectory, Multi-car mode: /car1/opponent_trajectory etc. -->
+            <remap from="prediction/opponent_waypoints" to="opponent_trajectory"/>
             <!-- Remap to use car-specific topics (relative paths - already in car namespace) -->
             <remap from="car_state/odom_frenet" to="car_state/odom_frenet"/>
             <remap from="car_state/odom" to="car_state/odom"/>

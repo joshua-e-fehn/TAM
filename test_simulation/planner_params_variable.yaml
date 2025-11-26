@@ -9,7 +9,7 @@ spliner:
   "post_apex_dist1", #5.0 - 12
   "post_apex_dist2", #5.5 - 12
 
-  "spline_bound_mindist", #0.15
+  "spline_bound_mindist", #0.3
   ]
 
 

@@ -1271,16 +1271,16 @@ class LocalSamplingPlanner:
 
                 # === TIMING: Log breakdown ===
                 t_selection = time_module.time()
-                rospy.loginfo(
-                    f"[Sampling Core] calc_trajectory timing breakdown:\n"
-                    f"  Preprocess:  {(t_preprocess-t_calc_start)*1000:.1f}ms\n"
-                    f"  Sampling:    {(t_sampling-t_preprocess)*1000:.1f}ms\n"
-                    f"  Transform:   {(t_transform-t_sampling)*1000:.1f}ms\n"
-                    f"  Checks:      {(t_checks-t_transform)*1000:.1f}ms\n"
-                    f"  Costs:       {(t_costs-t_checks)*1000:.1f}ms\n"
-                    f"  Selection:   {(t_selection-t_costs)*1000:.1f}ms\n"
-                    f"  TOTAL:       {(t_selection-t_calc_start)*1000:.1f}ms"
-                )
+                # rospy.loginfo(
+                #     f"[Sampling Core] calc_trajectory timing breakdown:\n"
+                #     f"  Preprocess:  {(t_preprocess-t_calc_start)*1000:.1f}ms\n"
+                #     f"  Sampling:    {(t_sampling-t_preprocess)*1000:.1f}ms\n"
+                #     f"  Transform:   {(t_transform-t_sampling)*1000:.1f}ms\n"
+                #     f"  Checks:      {(t_checks-t_transform)*1000:.1f}ms\n"
+                #     f"  Costs:       {(t_costs-t_checks)*1000:.1f}ms\n"
+                #     f"  Selection:   {(t_selection-t_costs)*1000:.1f}ms\n"
+                #     f"  TOTAL:       {(t_selection-t_calc_start)*1000:.1f}ms"
+                # )
 
             else:
                 # Clear trajectories completely to force fresh planning next cycle

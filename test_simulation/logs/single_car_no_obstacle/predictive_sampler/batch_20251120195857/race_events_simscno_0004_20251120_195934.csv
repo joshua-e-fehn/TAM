@@ -1,6 +1,0 @@
-timestamp,event_type,car1_name,car2_name,distance,car1_s,car2_s,car1_d,car2_d,car1_lap,car2_lap,details
-146.388,lap_complete,car,,,0.05,0.00,-0.02,0.00,1,0,car finished lap 1
-279.754,lap_complete,car,,,0.19,0.00,0.02,0.00,2,0,car finished lap 2
-413.132,lap_complete,car,,,0.03,0.00,-0.01,0.00,3,0,car finished lap 3
-546.498,lap_complete,car,,,0.04,0.00,0.00,0.00,4,0,car finished lap 4
-546.509,race_complete,car,,,0.04,0.00,0.00,0.00,4,0,single_car_lap_completion (car completed 4 laps)

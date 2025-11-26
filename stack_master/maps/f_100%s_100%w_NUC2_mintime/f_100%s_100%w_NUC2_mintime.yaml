@@ -1,0 +1,9 @@
+free_thresh: 0.196
+image: f_100%s_100%w_NUC2_mintime.png
+negate: 0
+occupied_thresh: 0.65
+origin:
+- -4.381577515459931
+- -2.592188651708547
+- 0
+resolution: 0.05

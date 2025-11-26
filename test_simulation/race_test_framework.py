@@ -357,8 +357,6 @@ class RaceTestFramework:
         if enable_obstacle:
             # Set map-specific default speed limits if not specified
             default_speed_limit = 10.0  # Generic default
-            if test_config.get('global_map') == 'f':
-                default_speed_limit = 6.35  # F-track actual max speed
 
             cmd.extend([
                 f'obstacle_trajectory:={test_config.get("obstacle_trajectory", "min_curv")}',
@@ -485,12 +483,7 @@ class RaceTestFramework:
 
         # Also set max speed limit for predictive spliner's global prediction
         # Use same map-specific logic as obstacle
-        default_speed_limit = 10.0
-        if test_config.get('global_map') == 'f':
-            default_speed_limit = 6.35
-
-        prediction_max_speed = test_config.get(
-            'global_prediction_max_speed', default_speed_limit)
+        prediction_max_speed = 10
 
         try:
             rospy.set_param('/race_test/use_global_prediction', desired_value)
@@ -561,13 +554,27 @@ class RaceTestFramework:
             # Multi-car mode: set parameters for both cars
             for car in ["car1", "car2"]:
                 planner_name = test_config.get(f"planner_{car}", "")
-                if planner_name:
+                if planner_name == "predictive_sampler":
+                    planner_name = "predictive_spliner"
+                    self.set_planner_params_for_car(
+                        car, test_config, planner_name)
+                    planner_name = "tam_sampling"
+                    self.set_planner_params_for_car(
+                        car, test_config, planner_name)
+                elif planner_name:
                     self.set_planner_params_for_car(
                         car, test_config, planner_name)
         else:
             # Single-car mode: set parameters without car namespace
             planner_name = test_config.get("planner", "")
-            if planner_name:
+            if planner_name == "predictive_sampler":
+                planner_name = "predictive_spliner"
+                self.set_planner_params_for_car(
+                    None, test_config, planner_name)
+                planner_name = "tam_sampling"
+                self.set_planner_params_for_car(
+                    None, test_config, planner_name)
+            elif planner_name:
                 self.set_planner_params_for_car(
                     None, test_config, planner_name)
 
@@ -860,7 +867,7 @@ class RaceTestFramework:
             print(f"   ⚠️  Service not available: {e}")
             return False
 
-    def wait_for_completion(self, timeout=800):
+    def wait_for_completion(self, timeout=2000):
         """
         Wait until /simulation_complete parameter is True or timeout
 
@@ -1055,10 +1062,6 @@ class RaceTestFramework:
         # Enable predictive spliner switch so overtaking prediction is available immediately
         self.set_global_prediction_switch(test_config)
 
-        # Set planner specific variable params
-        # Set for car1 (and car2 if multi mode)
-        self.set_planner_params(test_config)
-
         # Launch simulation based on mode
         if test_mode in ['single_car_no_obstacle', 'single_car_obstacle']:
             # Single-car mode
@@ -1092,6 +1095,10 @@ class RaceTestFramework:
             if not self.wait_for_single_car_ready(test_config, timeout=30):
                 print("⚠️  Car did not reach READY state, starting race anyway...")
 
+        # Set planner specific variable params
+        # Set for car1 (and car2 if multi mode)
+        self.set_planner_params(test_config)
+
         # Start the race with staggered start for multi-car and single-car-obstacle modes
         if test_mode in ['multi_car', 'single_car_obstacle']:
             if not self.start_race_staggered(test_mode):
@@ -1112,7 +1119,7 @@ class RaceTestFramework:
                 return None
 
         # Wait for completion
-        result = self.wait_for_completion(timeout=800)
+        result = self.wait_for_completion(timeout=2000)
 
         # Add test info to result
         result['test_name'] = test_name

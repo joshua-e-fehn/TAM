@@ -221,7 +221,7 @@ htop  # Check CPU usage - should be minimal overhead
 ### **🎛️ Parameter Tuning**
 ```yaml
 # multi_car_params.yaml
-car_length: 0.58          # F1TENTH car length
+car_length: 0.48          # F1TENTH car length
 car_width: 0.31           # F1TENTH car width  
 safety_margin: 0.2        # Additional safety buffer
 publish_rate: 50.0        # Obstacle update frequency

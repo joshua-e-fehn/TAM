@@ -96,7 +96,7 @@ class ObstaclePublisher:
 
         # Physical limits for realistic speed scaling (match ego car constraints)
         self.max_speed_limit = rospy.get_param(
-            '~max_speed_limit', rospy.get_param('obstacle_publisher/max_speed_limit', 6.3))
+            '~max_speed_limit', rospy.get_param('obstacle_publisher/max_speed_limit', 10.0))
         self.max_accel_limit = rospy.get_param(
             '~max_accel_limit', rospy.get_param('obstacle_publisher/max_accel_limit', 3.0))
 

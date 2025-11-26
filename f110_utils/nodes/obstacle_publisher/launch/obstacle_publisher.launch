@@ -7,7 +7,7 @@
        <arg name="path_amplitude" default="0.1"/>
        <arg name="path_frequency" default="0.15"/>
        <arg name="path_phase" default="0.0"/>
-       <arg name="max_speed_limit" default="6.35"/>
+       <arg name="max_speed_limit" default="10.0"/>
        <arg name="max_accel" default="3.0"/>
 
        <!-- Launch Collision detector as well -->

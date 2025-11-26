@@ -200,7 +200,7 @@ class TAMSamplingPlannerNode:
 
         # Performance monitoring
         self.last_planning_time = 0.0
-        self.planning_rate = rospy.Rate(15)
+        self.planning_rate = rospy.Rate(10)
         self.planning_count = 0
 
         # Planning cycle protection
@@ -667,40 +667,11 @@ class TAMSamplingPlannerNode:
         if not self.conditional_planning_mode:
             return True
 
-        # In predictive_sampler mode: Check conditions (same as SQP)
-        # 1. Must be in overtaking sector
-        if not self.ot_section_check:
-            return False
+        should_plan = self.state_machine_state in [
+            "OVERTAKE", "TRAILING", "TAM_PLANNING"]
 
-        # 2. Must have obstacles within range
-        if len(self.obs.obstacles) == 0:
-            return False
-
-        # 3. Filter obstacles by distance and trajectory proximity (same as SQP logic)
-        cur_s = self.current_state['s']
-        considered_obs = []
-
-        for obs in self.obs.obstacles:
-            # Calculate distance to obstacle (handling wraparound)
-            dist_to_obs = (obs.s_start - cur_s) % self.track_length
-
-            # Check if obstacle is within lookahead distance
-            within_lookahead = dist_to_obs < self.lookahead
-
-            # Check if obstacle is close to trajectory (lateral distance)
-            traj_dist = abs(obs.d_center)
-            within_traj_thresh = traj_dist < self.obs_traj_thresh
-
-            if within_lookahead and within_traj_thresh:
-                considered_obs.append(obs)
-
-        # Only plan if we have obstacles that meet the criteria
-        should_plan = len(considered_obs) > 0
-
-        if not should_plan:
-            rospy.loginfo_throttle(
-                2.0, f"{self.log_name} Skipping planning: ot_sector={self.ot_section_check}, "
-                f"obstacles_total={len(self.obs.obstacles)}, obstacles_considered={len(considered_obs)}")
+        if abs(self.current_state['n']) > 0.2:
+            should_plan = True
 
         return should_plan
 
@@ -1523,21 +1494,21 @@ class TAMSamplingPlannerNode:
 
                     # === TIMING: Log detailed postprocessing breakdown ===
                     t4 = time.time()
-                    rospy.loginfo(
-                        f"{self.log_name} _execute_planning_cycle timing breakdown:\n"
-                        f"  State mapping:      {(t2-t1)*1000:.1f}ms\n"
-                        f"  calc_trajectory:    {(t3-t2)*1000:.1f}ms\n"
-                        f"  Visualize all samples: {(t3_unpack_start - t3)*1000:.1f}ms\n"
-                        f"  Postprocessing breakdown:\n"
-                        f"    Unpack result:    {(t3_unpack-t3_unpack_start)*1000:.1f}ms\n"
-                        f"    Convert WpntArr:  {(t4_convert-t3_unpack)*1000:.1f}ms\n"
-                        f"    Interpolate:      {(t4_interpolate-t4_convert)*1000:.1f}ms\n"
-                        f"    Wrap OTWpntArr:   {(t5_wrap-t4_interpolate)*1000:.1f}ms\n"
-                        f"    Publish traj:     {(t6_publish-t5_wrap)*1000:.1f}ms\n"
-                        f"    Visualize:        {(t7_visualize-t6_publish)*1000:.1f}ms\n"
-                        f"  Total postproc:     {(t4-t3)*1000:.1f}ms\n"
-                        f"  CYCLE TOTAL:        {(t4-t1)*1000:.1f}ms"
-                    )
+                    # rospy.loginfo(
+                    #     f"{self.log_name} _execute_planning_cycle timing breakdown:\n"
+                    #     f"  State mapping:      {(t2-t1)*1000:.1f}ms\n"
+                    #     f"  calc_trajectory:    {(t3-t2)*1000:.1f}ms\n"
+                    #     f"  Visualize all samples: {(t3_unpack_start - t3)*1000:.1f}ms\n"
+                    #     f"  Postprocessing breakdown:\n"
+                    #     f"    Unpack result:    {(t3_unpack-t3_unpack_start)*1000:.1f}ms\n"
+                    #     f"    Convert WpntArr:  {(t4_convert-t3_unpack)*1000:.1f}ms\n"
+                    #     f"    Interpolate:      {(t4_interpolate-t4_convert)*1000:.1f}ms\n"
+                    #     f"    Wrap OTWpntArr:   {(t5_wrap-t4_interpolate)*1000:.1f}ms\n"
+                    #     f"    Publish traj:     {(t6_publish-t5_wrap)*1000:.1f}ms\n"
+                    #     f"    Visualize:        {(t7_visualize-t6_publish)*1000:.1f}ms\n"
+                    #     f"  Total postproc:     {(t4-t3)*1000:.1f}ms\n"
+                    #     f"  CYCLE TOTAL:        {(t4-t1)*1000:.1f}ms"
+                    # )
 
                     # Log planning stats
                     is_emergency = trajectory_dict.get('emergency', False)

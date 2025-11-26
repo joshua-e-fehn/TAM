@@ -6,8 +6,8 @@
 # ========================================
 trajectory_length: 16.0
 lateral_samples: 9             # Number of lateral trajectory samples (was 5, reduced for performance)
-longitudinal_samples: 5          # Number of longitudinal velocity profiles (was 5, reduced for performance)
-n_dense_samples: 3               # Dense samples around raceline (was 5, reduced for performance)
+longitudinal_samples: 7          # Number of longitudinal velocity profiles (was 5, reduced for performance)
+n_dense_samples: 5               # Dense samples around raceline (was 5, reduced for performance)
 n_dense_min: -0.5               # Minimum lateral offset for dense sampling (m)
 n_dense_max: 0.5                # Maximum lateral offset for dense sampling (m)
 planning_horizon: 4.0           # Planning time horizon (seconds)
@@ -78,8 +78,8 @@ collision_cost_weight: 100000000.0   # Collision avoidance cost weight
 additional_absolute_sample_cost: 50.0  # Additional absolute sample cost
 
 # Overtaking behavior weights (for multi-car scenarios)
-raceline_cost_weight_overtaking: 2.0      # Raceline cost during overtaking
-velocity_cost_weight_overtaking: 8.0      # Velocity cost during overtaking
+raceline_cost_weight_overtaking: 3.0      # Raceline cost during overtaking
+velocity_cost_weight_overtaking: 6.0      # Velocity cost during overtaking
 lateral_jerk_cost_weight_overtaking: 0.0  # Lateral jerk cost during overtaking
 
 # ========================================
@@ -146,17 +146,17 @@ prediction_buffer_age: 1.0         # Keep predictions for this duration (seconds
 marker_lifetime: 0.8               # Marker lifetime for visualization (seconds)
 
 # Prediction scaling factors
-prediction_s_factor_min_size: 0.03      # Prediction s factor minimum size
-prediction_s_factor_max_size: 0.012     # Prediction s factor maximum size
+prediction_s_factor_min_size: 0.9      # Prediction s factor minimum size
+prediction_s_factor_max_size: 0.9     # Prediction s factor maximum size
 prediction_s_asym_scaling: 1.5          # Prediction s asymmetric scaling
-prediction_n_factor: 0.2                # Prediction n factor
+prediction_n_factor: 10.0                # Prediction n factor
 prediction_uncertainty_weight: 4.0      # Prediction uncertainty weight
 
 # Prediction factors for different object types
-prediction_s_factor_defender: 0.03      # Prediction s factor for defender
-prediction_n_factor_defender: 0.2       # Prediction n factor for defender
-prediction_s_factor_static: 0.05        # Prediction s factor for static objects
-prediction_n_factor_static: 0.35        # Prediction n factor for static objects
+prediction_s_factor_defender: 0.9      # Prediction s factor for defender
+prediction_n_factor_defender: 10.0       # Prediction n factor for defender
+prediction_s_factor_static: 0.9        # Prediction s factor for static objects
+prediction_n_factor_static: 10.0        # Prediction n factor for static objects
 
 # ========================================
 # Interface Parameters
@@ -180,8 +180,10 @@ enable_overtaking: true      # Enable overtaking maneuvers
 # ========================================
 from_bag: false              # Whether running from bag file (for testing/replay)
 measure: false               # Enable performance measurement/profiling
-following_distance: 5.0     # Target following distance to vehicle ahead (m)
-role: 0                      # Vehicle role: 0=no flag, 1=defender, 2=attacker
+following_distance: 0.5     # Target following distance to vehicle ahead (m)
+following_distance_factor_pos: 100.0   # Following distance factor positive
+following_distance_factor_neg: 40.0    # Following distance factor negative
+role: 2                      # Vehicle role: 0=no flag, 1=defender, 2=attacker
 gg_scaling: 1.0              # GG diagram scaling factor for dynamic adjustment
 overtaking_allowed: true     # Whether overtaking maneuvers are permitted
 
@@ -219,7 +221,7 @@ v_min: -5.0                     # Minimum velocity (m/s)
 # Length: lr (0.145m) + wheelbase (0.307m) + front_overhang (~0.05m) = ~0.50m
 # Width: Standard F1TENTH width = 0.20m
 width: 0.31                     # Vehicle width (m) - F1TENTH standard *** MUST BE 0.20 NOT 0.30 ***
-length: 0.58                    # Vehicle length (m) - calculated from wheelbase + overhangs
+length: 0.48                    # Vehicle length (m) - calculated from wheelbase + overhangs
 
 # Tire and drag parameters from car_model.yaml
 C_0d: 0.48                      # Drag coefficient constant
@@ -252,5 +254,3 @@ sampling_mode: "spatial"        # Sampling mode (spatial/temporal)
 V_thr_stillstand: 2.0           # Velocity threshold for stillstand (m/s)
 perception_offset_threshold: 2.0  # Perception offset threshold
 relative_long_sampling_threshold: 0.7  # Relative longitudinal sampling threshold
-following_distance_factor_pos: 100.0   # Following distance factor positive
-following_distance_factor_neg: 40.0    # Following distance factor negative

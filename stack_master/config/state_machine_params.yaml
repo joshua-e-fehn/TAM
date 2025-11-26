@@ -11,7 +11,7 @@ max_lidar_dist: 9.
 
 range_offset: 180  # LiDAR has 1080 range points, only consider [range_offset,-range_offset]
 track_width: 2.6  # approx gap distance on a straight when there are no obstacles (set debug to True to see gap distances during driving)
-max_speed: 6.0
+max_speed: 10.0
 ######################
 
 splini_ttl: 2 # [s] ttl counter for validity of spliner waypoints -> NOW DYNAMIC RECONFIGURABLE

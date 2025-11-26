@@ -19,7 +19,7 @@
   
   <!-- Car dimensions - calculated from car model parameters -->
   <!-- NUC2: wheelbase=0.307m, so total length ≈ 0.58m, width ≈ 0.31m -->
-  <arg name="car_length" default="0.58"/>  <!-- Total car length including overhangs -->
+  <arg name="car_length" default="0.48"/>  <!-- Total car length including overhangs -->
   <arg name="car_width" default="0.31"/>   <!-- Car width (F1TENTH standard) -->
   <arg name="safety_margin" default="0.2"/>
   

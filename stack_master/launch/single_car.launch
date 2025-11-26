@@ -49,6 +49,17 @@
          doc="Launch RViz visualization"/>
     
     <!-- ============================================= -->
+    <!-- INITIAL POSITION ARGUMENTS                   -->
+    <!-- ============================================= -->
+    <!-- Map-specific initial positions (same as car1 in multi_car mode) -->
+    <!-- f map: at s=0 (x=-4.882, y=-21.717, theta=3.081) -->
+    <!-- my_map_20%s_100%w_NUC2_mintime: at s=0 (x=-0.026, y=0.218, theta=0.116) -->
+    <!-- f_100%s_100%w_NUC2_mintime: at s=0 (x=-2.234, y=8.612, theta=1.643) - rotated to straight section -->
+    <arg name="car_init_x" default="$(eval '-2.2335654745865883' if arg('map_name') == 'f_100%s_100%w_NUC2_mintime' else ('-0.026211955996061177' if arg('map_name') == 'my_map_20%s_100%w_NUC2_mintime' else '-4.882160008533675'))"/>
+    <arg name="car_init_y" default="$(eval '8.611759259205732' if arg('map_name') == 'f_100%s_100%w_NUC2_mintime' else ('0.21828542156677372' if arg('map_name') == 'my_map_20%s_100%w_NUC2_mintime' else '-21.71655958369345'))"/>
+    <arg name="car_init_theta" default="$(eval '1.6434005878649065' if arg('map_name') == 'f_100%s_100%w_NUC2_mintime' else ('0.11582879839820794' if arg('map_name') == 'my_map_20%s_100%w_NUC2_mintime' else '3.081070705812035'))"/>
+    
+    <!-- ============================================= -->
     <!-- PLANNER & CONTROL ARGUMENTS                  -->
     <!-- ============================================= -->
     <arg name="planner" default="spliner" 
@@ -83,7 +94,7 @@
          doc="Sinusoidal lateral deviation frequency"/>
     <arg name="obstacle_path_phase" default="0.0" 
          doc="Sinusoidal lateral deviation phase offset"/>
-    <arg name="obstacle_max_speed_limit" default="6.35"
+    <arg name="obstacle_max_speed_limit" default="10.0"
          doc="Physical speed limit cap (m/s) applied before scaling - matches ego car limits"/>
     <arg name="obstacle_max_accel" default="3.0"
          doc="Maximum acceleration limit (m/s²) applied before scaling - matches ego car limits"/>
@@ -98,6 +109,11 @@
     <!-- BASE SYSTEM LAUNCH                           -->
     <!-- ============================================= -->
     <!-- Launches simulator/hardware base, localization, frenet conversion -->
+    <!-- Set initial position parameters for simulator -->
+    <param name="f1tenth_simulator/car_init_x" value="$(arg car_init_x)"/>
+    <param name="f1tenth_simulator/car_init_y" value="$(arg car_init_y)"/>
+    <param name="f1tenth_simulator/car_init_theta" value="$(arg car_init_theta)"/>
+    
     <include file="$(find stack_master)/launch/base_system.launch">
         <arg name="sim" value="$(arg sim)"/>
         <arg name="racecar_version" value="$(arg racecar_version)"/>

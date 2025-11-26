@@ -410,21 +410,25 @@ def PSAMPReadyTransition(state_machine: StateMachine) -> StateType:
 def PSSAMPGlobalTrackingTransition(state_machine: StateMachine) -> StateType:
     """Transitions for being in `StateType.GB_TRACK`"""
     valid_spline = state_machine._check_availability_splini_wpts()
-    enemy_in_front = state_machine._check_enemy_in_front()
     ot_sector = state_machine._check_ot_sector()
     gb_free = state_machine._check_gbfree()
     gb_predict_free = state_machine._check_prediction_gbfree()
     o_free = state_machine._check_ofree()
     force_trailing = state_machine._check_force_trailing()
+    opponent_behind = state_machine._check_opponent_behind()
+
+    # Predictive Sampler: Only enter OVERTAKE if opponent is within 5m
+    opponent_close_for_overtake = state_machine._check_opponent_within_distance(
+        10.0)
 
     if not state_machine._check_only_ftg_zone():
         if force_trailing:
             return StateType.TRAILING
-        elif valid_spline and o_free and ot_sector:
+        elif opponent_close_for_overtake and not opponent_behind and valid_spline and o_free and ot_sector:
             return StateType.OVERTAKE
-        elif enemy_in_front and gb_free and gb_predict_free and ot_sector and not force_trailing:
+        elif opponent_close_for_overtake and not opponent_behind and gb_free and gb_predict_free and ot_sector and not force_trailing:
             return StateType.GB_TRACK
-        elif enemy_in_front:
+        elif opponent_close_for_overtake and not opponent_behind:
             return StateType.TRAILING
         else:
             return StateType.GB_TRACK
@@ -444,25 +448,28 @@ def PSSAMPTrailingTransition(state_machine: StateMachine) -> StateType:
     on_avoidance_spline = state_machine._check_on_spline()
     on_merger = state_machine._check_on_merger()
     force_trailing = state_machine._check_force_trailing()
-
-    rospy.loginfo_throttle(
-        5.0, f"[StateMachine] Trailing Transition Check: ot_sector={ot_sector}, valid_spline={valid_spline}, emergency_break={emergency_break}, enemy_in_front={enemy_in_front}, gb_free={gb_free}, gb_predict_free={gb_predict_free}, o_free={o_free}, on_avoidance_spline={on_avoidance_spline}, on_merger={on_merger}, force_trailing={force_trailing}")
+    opponent_behind = state_machine._check_opponent_behind()
 
     if not state_machine._check_only_ftg_zone():
         # If we have been sitting around in TRAILING for a while then FTG
         if state_machine._check_ftg():
             return StateType.FTGONLY
-        elif force_trailing:
-            return StateType.TRAILING
+        # elif force_trailing:
+        #     return StateType.TRAILING
         elif valid_spline and not emergency_break and o_free and ot_sector and not on_merger:
+            # Start overtake when we have valid trajectory and conditions are right
+            # Removed o_free check - TAM trajectories are inherently close to obstacles during overtaking
             return StateType.OVERTAKE
         # Questionable if on_merger really helps in this case
         elif not enemy_in_front and on_avoidance_spline and not on_merger:
             return StateType.OVERTAKE
-        elif not enemy_in_front:
+        # NEW: If opponent is behind and we're close to raceline, overtake is done
+        elif opponent_behind and state_machine._check_close_to_raceline_tight():
+            return StateType.GB_TRACK
+        elif not enemy_in_front and state_machine._check_close_to_raceline_tight():
             return StateType.GB_TRACK
         # enemy_in_front and and best_ot_sector:
-        elif gb_free and gb_predict_free and ot_sector:
+        elif gb_free and gb_predict_free and ot_sector and state_machine._check_close_to_raceline_tight():
             return StateType.GB_TRACK
         else:
             return StateType.TRAILING
@@ -479,18 +486,32 @@ def PSSAMPSamplingTransition(state_machine: StateMachine) -> StateType:
         emergency_break = state_machine._check_emergency_break()
         on_avoidance_spline = state_machine._check_on_spline()
         o_free = state_machine._check_ofree()
-        force_trailing = state_machine._check_force_trailing()
+        opponent_behind = state_machine._check_opponent_behind()
+        close_to_raceline = state_machine._check_close_to_raceline_tight()
 
+        # Predictive Sampler: Exit OVERTAKE if opponent is more than 7m away
+        opponent_within_range = state_machine._check_opponent_within_distance(
+            10.0)
+
+        # Emergency conditions -> back to TRAILING
         if emergency_break or not ot_sector:
             return StateType.TRAILING
-        elif not o_free or force_trailing:
-            return StateType.TRAILING
+        # elif not o_free or force_trailing:
+        #     return StateType.TRAILING
+        elif opponent_behind and close_to_raceline:
+            return StateType.GB_TRACK
+        elif not opponent_within_range and not opponent_behind and close_to_raceline:
+            return StateType.GB_TRACK
         elif spline_valid and o_free and ot_sector:
             return StateType.OVERTAKE
         elif not spline_valid and not enemy_in_front and on_avoidance_spline:
             return StateType.OVERTAKE
-        elif not spline_valid and not enemy_in_front and not on_avoidance_spline:
+        elif not spline_valid and not enemy_in_front and not on_avoidance_spline and close_to_raceline:
+            # Only transition to GB_TRACK when close to raceline to avoid abrupt trajectory switch
             return StateType.GB_TRACK
+        elif not spline_valid and not enemy_in_front and not on_avoidance_spline:
+            # Not close enough to raceline yet, stay in OVERTAKE to follow TAM trajectory back
+            return StateType.OVERTAKE
         else:
             return StateType.TRAILING
     else:

@@ -790,7 +790,7 @@ class LongitudinalSampling:
             (s_dot_end_values_tmp, [max(V_target, 1.0), s_dot_end_rl]))
 
         # Clamp end values to vehicle limits with slack (1.5x for velocity)
-        max_velocity_with_slack = self.params.max_velocity * 1.5
+        max_velocity_with_slack = self.params.max_velocity * 1.1
         s_dot_end_values = np.minimum(
             s_dot_end_values, max_velocity_with_slack)
         s_dot_end_values = np.maximum(
@@ -837,16 +837,15 @@ class LongitudinalSampling:
             v_rl_min_in_trajectory = np.min(s_dot_rl_eval)
 
         # OPTIMIZATION: Pre-compute constant slack limits (avoid repeated calculation)
-        max_velocity_with_slack = self.params.max_velocity * 1.5
-        max_accel_with_slack = self.params.max_acceleration * 1.5
-        max_decel_with_slack = self.params.max_acceleration * 2.0
+        max_velocity_with_slack = self.params.max_velocity * 1.1
+        max_accel_with_slack = self.params.max_acceleration * 1.1
+        max_decel_with_slack = self.params.max_acceleration * 1.1
 
         # Track which samples are valid (will skip samples with negative velocities)
         # Store (index, s_vals, s_dot, s_ddot, t, s_end) tuples
         valid_sample_data = []
         samples_skipped = 0
 
-        # Slack: 1.5x for velocity/accel, 2.0x for decel
         rejection_stats = {
             'negative_velocity': 0,
             'over_max_velocity': 0,
@@ -1072,9 +1071,9 @@ class LongitudinalSampling:
                                         n_samples: (j + 1) * n_samples] = False
 
         # Check final trajectories for boundary violations
-        max_velocity_with_slack_check = self.params.max_velocity * 1.5
-        max_accel_with_slack_check = self.params.max_acceleration * 1.5
-        max_decel_with_slack_check = self.params.max_acceleration * 2.0
+        max_velocity_with_slack_check = self.params.max_velocity * 1.1
+        max_accel_with_slack_check = self.params.max_acceleration * 1.1
+        max_decel_with_slack_check = self.params.max_acceleration * 1.1
 
         all_neg_vel = np.sum(s_dot_array < 0)
         all_over_max_vel = np.sum(s_dot_array > max_velocity_with_slack_check)

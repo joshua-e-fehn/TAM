@@ -14,7 +14,7 @@ vehicle:
     diff_cog_y: 0.0              # [m]
     diff_cog_z: 0.0              # [m]
   brake:
-    brake_bias_front: 0.58                   # [-]
+    brake_bias_front: 0.48                   # [-]
     disc_area: 0.0                         # [m^2]
     disc_radius: 0.0                        # [m]
     pad_area: 0.0                            # [m^2]
