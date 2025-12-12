@@ -29,7 +29,7 @@ docker compose build sim_x86
 ```
 This should take much less time, less than 1 minute.
 
-**Step 3/4**: Create  folder structure that resembles the following. Note that the cache is inside the `race_stack` directory.
+**Step 3/4**: Create a folder structure that resembles the following. Note that the cache is inside the `race_stack` directory.
 
 ```bash
 <race_stack directory>/
@@ -75,7 +75,7 @@ export GID=$(id -g)
 docker compose build nuc
 ```
 
-**Step 3/4**: Create  folder structure that resembles the following. Note that the cache is inside the `race_stack` directory.
+**Step 3/4**: Create a folder structure that resembles the following. Note that the cache is inside the `race_stack` directory.
 
 ```bash
 <race_stack directory>/
