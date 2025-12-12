@@ -8,5 +8,5 @@ Overtaking_sector0:
   ot_flag: true
 Overtaking_sector1:
   start: 6001
-  end: 10561
+  end: 10421
   ot_flag: true

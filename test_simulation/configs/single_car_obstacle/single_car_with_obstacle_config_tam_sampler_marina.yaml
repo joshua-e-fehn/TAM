@@ -4,7 +4,52 @@
 
 test_matrix:
   - simulation_id: "scwo_0001"
-    name: "single_vs_obstacle_spliner"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.50
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0002"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.51
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0003"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.52
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0004"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.53
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0005"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.54
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0006"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -12,8 +57,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0002"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0007"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -21,8 +66,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0003"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0008"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -30,8 +75,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0004"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0009"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -39,8 +84,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0005"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0010"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -48,8 +93,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0006"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0011"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -57,8 +102,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0007"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0012"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -66,8 +111,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0008"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0013"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -75,8 +120,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0009"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0014"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -84,8 +129,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0010"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0015"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -93,8 +138,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0011"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0016"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -102,8 +147,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0012"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0017"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -111,8 +156,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0013"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0018"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -120,8 +165,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0014"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0019"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -129,8 +174,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0015"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0020"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -138,8 +183,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0016"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0021"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -147,8 +192,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0017"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0022"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -156,8 +201,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0018"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0023"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -165,8 +210,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0019"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0024"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -174,8 +219,8 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0020"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0025"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
@@ -183,12 +228,191 @@ test_matrix:
     obstacle_start_s: 3
     show_simulation_output: false
 
-  - simulation_id: "scwo_0021"
-    name: "single_vs_obstacle_spliner"
+  - simulation_id: "scwo_0026"
+    name: "single_vs_obstacle_tam_sampler"
     mode: "single_car_obstacle"
     planner: "tam_sampling"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
     obstacle_speed: 0.75
     obstacle_start_s: 3
     show_simulation_output: false
-  
+
+  - simulation_id: "scwo_0027"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.76
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0028"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.77
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0029"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.78
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0030"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.79
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0031"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.80
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0032"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.81
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0033"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.82
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0034"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.83
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0035"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.84
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0036"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.85
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0037"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.86
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0038"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.87
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0039"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.88
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0040"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.89
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0041"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.90
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0042"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.91
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0043"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.92
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0044"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.93
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0045"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.94
+    obstacle_start_s: 3
+    show_simulation_output: false
+
+  - simulation_id: "scwo_0046"
+    name: "single_vs_obstacle_tam_sampler"
+    mode: "single_car_obstacle"
+    planner: "tam_sampling"
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    obstacle_speed: 0.95
+    obstacle_start_s: 3
+    show_simulation_output: false

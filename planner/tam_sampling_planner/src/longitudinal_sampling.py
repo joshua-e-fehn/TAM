@@ -6,7 +6,6 @@ Velocity profile generation using kinematic constraints only
 SIMPLIFIED VERSION:
 - GGGV imports and physics-based acceleration limits commented out
 - Only kinematic sampling methods available: calc_samples() and calc_samples_s_based()
-- Physics-based method calc_samples_s_based_forward_backward() commented out
 - This provides basic trajectory generation without complex vehicle dynamics
 
 Ported from tam_race_stack/mod_planning/sampling_planner/sampling_planner/longitudinal_sampling.py
@@ -14,16 +13,6 @@ Ported from tam_race_stack/mod_planning/sampling_planner/sampling_planner/longit
 
 from track_handler_global_waypoints import GlobalWaypointsTrackHandler as Track
 import numpy as np
-
-# GGGV imports commented out - using only kinematic sampling methods
-# try:
-#     from planning_common.track.gggvManager import GGGVManager, Grip_Map
-#     REAL_GGGV_AVAILABLE = True
-#     rospy.loginfo("Using real GGGV manager from planning_common")
-# except ImportError:
-#     from simple_gggv_manager import SimpleGGGVManager as GGGVManager, GripMap as Grip_Map
-#     REAL_GGGV_AVAILABLE = False
-#     rospy.logwarn("Real GGGV manager not available, using SimpleGGGVManager fallback")
 
 from dataclasses import dataclass
 import rospy
@@ -34,6 +23,38 @@ from pacejka_tire_model import PacejkaTireModel
 
 @dataclass(init=False)
 class LongSamplingParams():
+    """
+    Data class containing all longitudinal sampling parameters.
+
+    No constructor parameters - all fields are populated by declare_and_update_parameters().
+
+    Velocity sampling parameters:
+        s_dot_end_min: Minimum end velocity for sampling [m/s]
+        relative_s_dot_min_percentage: Min velocity as fraction of max (0-1)
+        s_dot_max_positive_delta: Max velocity increase from current [m/s]
+        s_dot_discretization: Coarse velocity sample spacing [m/s]
+        s_dot_dense_min/max: Dense sampling range around raceline [m/s]
+        s_dot_dense_samples: Number of dense velocity samples
+
+    Discretization parameters:
+        n_samples: Number of lateral samples per velocity profile
+        n_dense_samples: Additional dense samples around raceline
+        num_samples: Number of points per trajectory
+
+    Behavior parameters:
+        horizon: Planning time horizon [s]
+        v_sampling_scale: Velocity scaling factor for upper bound
+        forward_backward_velocities: Enable forward/backward integration
+        samples_forward_backward: Number of forward/backward profiles
+        forward_backward_min/max_scale: Scaling range for profiles
+        forward_backward_max_v_to_rl_delta: Max velocity deviation from raceline [m/s]
+        tracjectory_length: Spatial planning horizon [m]
+
+    Vehicle limits:
+        max_velocity: Maximum allowed velocity [m/s]
+        max_acceleration: Maximum longitudinal acceleration [m/s²]
+        max_lateral_acceleration: Maximum lateral acceleration [m/s²]
+    """
     s_dot_end_min: float
     relative_s_dot_min_percentage: float
     s_dot_max_positive_delta: float
@@ -59,6 +80,16 @@ class LongSamplingParams():
 
 class LongitudinalSampling:
     def __init__(self, debugging=False):
+        """
+        Initialize the LongitudinalSampling class.
+
+        Sets up parameters from ROS parameter server and initializes the
+        Pacejka tire model for physics-based acceleration limits. Falls back
+        to fixed acceleration limits if tire model initialization fails.
+
+        Args:
+            debugging: Enable debug output (currently unused)
+        """
         self.params = LongSamplingParams()
         self.initalized_parameters = False
         skip_update = getattr(self, '_skip_param_updates', False)
@@ -327,8 +358,6 @@ class LongitudinalSampling:
             if max_accel > 20.0:  # 20 m/s² is quite high for racing
                 rospy.logwarn(
                     f"Very high acceleration detected: {max_accel:.2f} m/s²")
-
-            # rospy.loginfo("Raceline validation passed")
             return True
 
         except Exception as e:
@@ -396,6 +425,16 @@ class LongitudinalSampling:
             return {}
 
     def declare_and_update_parameters(self, skip_update=False):
+        """
+        Declare and update longitudinal sampling parameters from ROS parameter server.
+
+        On first call (initalized_parameters=False), loads defaults from YAML config
+        and sets them on the ROS parameter server. On subsequent calls, reads current
+        values from the parameter server to allow dynamic reconfiguration.
+
+        Args:
+            skip_update: If True, skip parameter updates entirely (performance optimization)
+        """
         if skip_update:
             return
 
@@ -549,7 +588,47 @@ class LongitudinalSampling:
             track_handler: Track,
             raceline_tendency: bool
     ):  # -> TrajectorySamples
+        """
+        Generate longitudinal trajectory samples using time-based quartic polynomials.
 
+        Creates velocity profiles by solving quartic polynomial boundary value problems
+        in time. Each profile satisfies initial conditions (position, velocity, acceleration)
+        and targets a specific end velocity from a sampled range.
+
+        The sampling strategy combines:
+        - Coarse samples across the velocity range (s_dot_min to s_dot_max)
+        - Dense samples around the raceline velocity
+        - Always includes target velocity and raceline velocity
+
+        Algorithm:
+        1. Determine velocity sampling range based on current state and raceline
+        2. For each target end velocity:
+           a. Construct 5x5 boundary condition matrix for quartic polynomial
+           b. Solve for polynomial coefficients
+           c. Evaluate s(t), s_dot(t), s_ddot(t) along time horizon
+        3. If raceline_tendency=True, sample relative to raceline trajectory
+
+        Args:
+            s_start: Initial arc length position [m]
+            s_dot_start: Initial longitudinal velocity [m/s]
+            s_ddot_start: Initial longitudinal acceleration [m/s²]
+            V_target: Target velocity to achieve [m/s]
+            V_max: Maximum allowed velocity [m/s]
+            postprocessed_raceline: Dict with 't_post', 's_post', 's_dot_post', 's_ddot_post'
+            track_handler: Track geometry handler
+            raceline_tendency: If True, sample relative to raceline; if False, absolute
+
+        Returns:
+            tuple: (s_array, s_dot_array, s_ddot_array, s_dot_end_values, s_end_values,
+                   rel_long_sampling_array, t_array)
+                - s_array: Arc length positions, shape (n_trajectories, num_samples)
+                - s_dot_array: Velocities, shape (n_trajectories, num_samples)
+                - s_ddot_array: Accelerations, shape (n_trajectories, num_samples)
+                - s_dot_end_values: Target end velocities for each profile
+                - s_end_values: Actual end positions for each profile
+                - rel_long_sampling_array: Boolean mask for relative vs absolute samples
+                - t_array: Time arrays for each trajectory
+        """
         skip_update = getattr(self, '_skip_param_updates', False)
         self.declare_and_update_parameters(skip_update=skip_update)
 
@@ -589,7 +668,6 @@ class LongitudinalSampling:
 
         # only generate relative samples that are close to raceline
         if raceline_tendency:
-            # TODO: implement parameter
             s_dot_min = self.params.relative_s_dot_min_percentage * s_dot_max
             # Dense sampling around raceline
             s_dot_dense_end_values = np.linspace(
@@ -727,7 +805,49 @@ class LongitudinalSampling:
             track_handler: Track,
             raceline_tendency: bool
     ):
+        """
+        Generate longitudinal trajectory samples using arc-length-based cubic polynomials.
 
+        Similar to calc_samples(), but parameterizes velocity as s_dot(s) instead of s(t).
+        This approach uses a fixed spatial horizon (trajectory_length) rather than time,
+        making trajectories independent of execution speed.
+
+        Key differences from calc_samples():
+        - Uses s'(s) = ds_dot/ds instead of time derivatives
+        - Fixed spatial horizon instead of time horizon
+        - Better numerical stability for variable-speed trajectories
+        - Validates and rejects samples violating vehicle limits
+
+        Algorithm:
+        1. Determine spatial horizon and raceline data
+        2. For each target end velocity:
+           a. Transform time derivatives to spatial derivatives: s' = s_ddot/s_dot
+           b. Construct 4x4 boundary condition matrix for cubic polynomial
+           c. Solve for polynomial coefficients in spatial domain
+           d. Evaluate s_dot(s), s'(s) along spatial grid
+           e. Transform back to time domain and validate limits
+        3. Reject samples with negative velocities or limit violations
+
+        Args:
+            s_start: Initial arc length position [m]
+            s_dot_start: Initial longitudinal velocity [m/s]
+            s_ddot_start: Initial longitudinal acceleration [m/s²]
+            V_target: Target velocity to achieve [m/s]
+            postprocessed_raceline: Dict with 's_post', 's_dot_post', 's_ddot_post'
+            track_handler: Track geometry handler
+            raceline_tendency: If True, sample relative to raceline; if False, absolute
+
+        Returns:
+            tuple: (s_array, s_dot_array, s_ddot_array, s_dot_end_values, s_end_values,
+                   rel_long_sampling_array, t_array)
+                - s_array: Arc length positions, shape (n_valid_trajectories, num_samples)
+                - s_dot_array: Velocities, shape (n_valid_trajectories, num_samples)
+                - s_ddot_array: Accelerations, shape (n_valid_trajectories, num_samples)
+                - s_dot_end_values: Target end velocities for valid profiles
+                - s_end_values: Actual end positions for valid profiles
+                - rel_long_sampling_array: Boolean mask for relative vs absolute samples
+                - t_array: Time arrays for each trajectory
+        """
         skip_update = getattr(self, '_skip_param_updates', False)
         self.declare_and_update_parameters(skip_update=skip_update)
 
@@ -1493,35 +1613,3 @@ class LongitudinalSampling:
             rospy.logwarn_throttle(
                 5.0, f"Error calculating tire limits: {e}, using fallback")
             return -self.params.max_acceleration, self.params.max_acceleration
-
-    # def __calc_ax_avail(self, s, n, chi, V, Omega_z, track_handler, gggv_handler, pitlane_mode):
-    #     ay_hat = V**2 * track_handler.omega_z(s)
-    #     _, ay_tilde, g_tilde = track_handler.calc_apparent_acceleration(
-    #         s,
-    #         n,
-    #         chi,
-    #         0.0,  # ax_hat not required for ay_tilde and g_tilde
-    #         ay_hat,
-    #         V,
-    #     )
-
-    #     _, ax_min_tilde, ax_max_tilde, ay_max_tilde, _ = gggv_handler.acc_interpolator(
-    #         np.array(V), np.array(g_tilde), np.array(
-    #             s), np.array(n), not pitlane_mode, False
-    #     )
-    #     ax_avail_min_tilde = -np.abs(ax_min_tilde) * np.power(
-    #         max((1.0 - np.power(min(np.abs(ay_tilde) / (ay_max_tilde), 1.0),
-    #             gggv_handler.gg_exponent_ax_neg)), 1e-4), 1.0 / gggv_handler.gg_exponent_ax_neg
-    #     )
-
-    #     ax_avail_max_tilde = np.abs(ax_max_tilde) * np.power(
-    #         max((1.0 - np.power(min(np.abs(ay_tilde) / (ay_max_tilde), 1.0),
-    #             gggv_handler.gg_exponent_ax_neg)), 1e-4), 1.0 / gggv_handler.gg_exponent_ax_neg
-    #     )
-
-    #     # DEBUG -- redeclairation of the linspace -> slow
-    #     ax_machine_lim = np.interp(V, np.linspace(
-    #         0.0, 90.0, 10), gggv_handler.ax_machine_limits)
-    #     ax_avail_max_tilde = np.minimum(ax_machine_lim, ax_avail_max_tilde)
-    #     # print('ax_max_tilde', ax_avail_max_tilde)
-    #     return ax_avail_min_tilde, ax_avail_max_tilde, ay_tilde, g_tilde

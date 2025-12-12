@@ -7,6 +7,9 @@ from visualization_msgs.msg import Marker, MarkerArray
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, ConstantKernel
 import time
+import os
+import pickle
+from datetime import datetime
 from scipy.optimize import fmin_l_bfgs_b
 from frenet_converter.frenet_converter import FrenetConverter
 
@@ -58,6 +61,28 @@ class GaussianProcessOppTraj(object):
         self._global_wpnts_dirty = True
         self.lap_count = 0.0
         self._last_prediction_mode = None
+
+        # GP data saving parameters
+        self._save_gp_data = rospy.get_param('~save_gp_data', True)
+        self._gp_data_save_path = rospy.get_param(
+            '~gp_data_save_path', '/tmp/gp_analysis')
+        self._gp_data_saved = False
+        self._gp_analysis_data = {}  # Store data for saving
+
+        # Use GP for lateral prediction (matches paper: two independent GPs)
+        # When True: uses GP with Matérn kernel for d(s) - provides uncertainty
+        # When False: uses CCMA smoothing for d(s) - no uncertainty (legacy behavior)
+        self._use_gp_for_lateral = rospy.get_param(
+            '~use_gp_for_lateral', False)
+        # Also check global parameter for runtime switching
+        self._use_gp_for_lateral = rospy.get_param(
+            '/race_test/use_gp_for_lateral', self._use_gp_for_lateral)
+        if self._use_gp_for_lateral:
+            rospy.loginfo(
+                "[GP Opp Traj] Using GP for lateral prediction (paper mode)")
+        else:
+            rospy.loginfo(
+                "[GP Opp Traj] Using CCMA for lateral prediction (legacy mode)")
 
     # Callback
     def proj_opp_traj_cb(self, data: ProjOppTraj):
@@ -287,6 +312,147 @@ class GaussianProcessOppTraj(object):
                       mode_label, node_switch, race_test_switch)
         self._last_prediction_mode = using_global_prediction
 
+    def save_gp_data(self, train_s, train_d, train_vs, train_vd,
+                     s_pred, d_pred, vs_pred, sigma_d, sigma_vs,
+                     gpr_vs, gpr_d=None, d_pred_ccma=None):
+        """
+        Save GP regression data for later analysis.
+
+        Saves:
+        - Training data (raw opponent detections)
+        - Prediction points and results
+        - Uncertainty estimates (sigma)
+        - Fitted GP models with kernel hyperparameters
+        - CCMA smoothed d predictions (if available)
+        - Experiment configuration (map, opponent path params, etc.)
+        """
+        # Read parameters dynamically to allow runtime enabling
+        # Check both private namespace and global /race_test/ namespace
+        save_enabled = rospy.get_param('~save_gp_data', self._save_gp_data) or \
+            rospy.get_param('/race_test/save_gp_data', True)
+        save_path = rospy.get_param(
+            '~gp_data_save_path', self._gp_data_save_path)
+        # Also check global path parameter
+        save_path = rospy.get_param('/race_test/gp_data_save_path', save_path)
+
+        if not save_enabled or self._gp_data_saved:
+            return
+
+        try:
+            # Create save directory if it doesn't exist
+            os.makedirs(save_path, exist_ok=True)
+
+            # Read experiment configuration from ROS params
+            use_gp_lateral = rospy.get_param(
+                '/race_test/use_gp_for_lateral', self._use_gp_for_lateral)
+            experiment_config = {
+                'map_name': rospy.get_param('/map_name', 'unknown'),
+                'path_amplitude': rospy.get_param('/obstacle_publisher/path_amplitude', 0.0),
+                'path_frequency': rospy.get_param('/obstacle_publisher/path_frequency', 0.0),
+                'path_phase': rospy.get_param('/obstacle_publisher/path_phase', 0.0),
+                'obstacle_speed': rospy.get_param('/obstacle_publisher/constant_speed', -1.0),
+                'speed_amplitude': rospy.get_param('/obstacle_publisher/speed_amplitude', 0.0),
+                'speed_scaler': rospy.get_param('/obstacle_publisher/speed_scaler', 0.8),
+                'use_global_prediction': self._use_global_prediction_param,
+                # True = paper mode (GP), False = legacy (CCMA)
+                'use_gp_for_lateral': use_gp_lateral,
+                'lap_count': self.lap_count,
+            }
+
+            # Prepare data dictionary
+            gp_data = {
+                'timestamp': datetime.now().isoformat(),
+                'track_length': self.track_length,
+                'experiment_config': experiment_config,
+
+                # Training data (raw opponent detections)
+                'training_data': {
+                    's': train_s.tolist() if isinstance(train_s, np.ndarray) else train_s,
+                    'd': train_d.tolist() if isinstance(train_d, np.ndarray) else train_d,
+                    'vs': train_vs.tolist() if isinstance(train_vs, np.ndarray) else train_vs,
+                    'vd': train_vd.tolist() if isinstance(train_vd, np.ndarray) else train_vd,
+                    'n_samples': len(train_s)
+                },
+
+                # Prediction points (ego waypoint s positions)
+                'prediction_points': {
+                    's': s_pred.flatten().tolist() if isinstance(s_pred, np.ndarray) else s_pred,
+                    'n_points': len(s_pred)
+                },
+
+                # GP predictions
+                'predictions': {
+                    'd': d_pred.tolist() if isinstance(d_pred, np.ndarray) else d_pred,
+                    'vs': vs_pred.tolist() if isinstance(vs_pred, np.ndarray) else vs_pred,
+                    'd_ccma': d_pred_ccma.tolist() if d_pred_ccma is not None and isinstance(d_pred_ccma, np.ndarray) else d_pred_ccma,
+                },
+
+                # Uncertainty estimates
+                'uncertainty': {
+                    'sigma_d': sigma_d.tolist() if isinstance(sigma_d, np.ndarray) else sigma_d,
+                    'sigma_vs': sigma_vs.tolist() if isinstance(sigma_vs, np.ndarray) else sigma_vs,
+                },
+
+                # GP model parameters (velocity)
+                'gp_vs_model': {
+                    'kernel_initial': str(self.kernel_vs),
+                    'kernel_fitted': str(gpr_vs.kernel_),
+                    'log_marginal_likelihood': float(gpr_vs.log_marginal_likelihood_value_),
+                    'n_features': gpr_vs.n_features_in_,
+                },
+            }
+
+            # Add d model if available (when not using CCMA for whole lap)
+            if gpr_d is not None:
+                gp_data['gp_d_model'] = {
+                    'kernel_initial': str(self.kernel_d),
+                    'kernel_fitted': str(gpr_d.kernel_),
+                    'log_marginal_likelihood': float(gpr_d.log_marginal_likelihood_value_),
+                    'n_features': gpr_d.n_features_in_,
+                }
+
+            # Generate filename with timestamp
+            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            json_filename = os.path.join(
+                save_path, f'gp_analysis_{timestamp_str}.pkl')
+
+            # Save as pickle (preserves numpy arrays and sklearn objects)
+            with open(json_filename, 'wb') as f:
+                pickle.dump(gp_data, f)
+
+            # Save GP model parameters (not the full models, as they contain unpicklable local functions)
+            # We save the fitted kernel parameters and training data which is sufficient for analysis
+            models_filename = os.path.join(
+                save_path, f'gp_models_{timestamp_str}.pkl')
+            models_data = {
+                # Save kernel parameters as strings (they contain the fitted hyperparameters)
+                'kernel_vs_fitted': str(gpr_vs.kernel_),
+                'kernel_d_fitted': str(gpr_d.kernel_) if gpr_d is not None else None,
+                'kernel_vs_initial': str(self.kernel_vs),
+                'kernel_d_initial': str(self.kernel_d),
+                # Save the training data for potential model reconstruction
+                'X_train_vs': gpr_vs.X_train_.tolist(),
+                'y_train_vs': gpr_vs.y_train_.tolist(),
+                'alpha_vs': gpr_vs.alpha_.tolist(),  # Dual coefficients
+            }
+            # Add d model training data if available
+            if gpr_d is not None:
+                models_data['X_train_d'] = gpr_d.X_train_.tolist()
+                models_data['y_train_d'] = gpr_d.y_train_.tolist()
+                models_data['alpha_d'] = gpr_d.alpha_.tolist()
+
+            with open(models_filename, 'wb') as f:
+                pickle.dump(models_data, f)
+
+            self._gp_data_saved = True
+            rospy.loginfo(
+                f"[GP Opp Traj] Saved GP analysis data to {json_filename}")
+            rospy.loginfo(
+                f"[GP Opp Traj] Saved GP models to {models_filename}")
+
+        except Exception as e:
+            rospy.logerr(f"[GP Opp Traj] Failed to save GP data: {e}")
+
     # Helper Functions
     def create_sorted_detection_list(self, proj_opponent_detections: list, sorted_detection_list: list, ego_s_original: list):
         """Sort the opponent trajectory based on the s position and return the sorted lists"""
@@ -485,14 +651,20 @@ class GaussianProcessOppTraj(object):
                 obj_func, initial_theta, bounds=bounds)
             return solution, function_value
 
-        # Fit Vs
+        # Fit Vs (always use GP for velocity as per paper)
         gpr_vs = GaussianProcessRegressor(
             kernel=self.kernel_vs, optimizer=optimizer_wrapper)
         gpr_vs.fit(opponent_s_sorted_reshape, opponent_vs_sorted_reshape)
         vs_pred, sigma_vs = gpr_vs.predict(s_pred, return_std=True)
 
-        # if not already predicted with CCMA fit D with GP
-        if not whole_lap:
+        # Check if we should use GP for lateral (runtime parameter check)
+        use_gp_lateral = rospy.get_param(
+            '/race_test/use_gp_for_lateral', self._use_gp_for_lateral)
+
+        # Fit D with GP if:
+        # 1. Not whole_lap yet (first half lap - always use GP), OR
+        # 2. use_gp_for_lateral is True (paper mode - always use GP)
+        if not whole_lap or use_gp_lateral:
             gpr_d = GaussianProcessRegressor(
                 kernel=self.kernel_d, optimizer=optimizer_wrapper)
             gpr_d.fit(opponent_s_sorted_reshape, opponent_d_sorted_reshape)
@@ -500,20 +672,64 @@ class GaussianProcessOppTraj(object):
 
         # shorten the copy lists (that was changed) to the length of the original ego_s
         if whole_lap:
+            # Check runtime parameter for GP lateral mode
+            use_gp_lateral = rospy.get_param(
+                '/race_test/use_gp_for_lateral', self._use_gp_for_lateral)
+
             n = 0
             for i in range(len(ego_s_sorted_copy)):
                 if ego_s_sorted_copy[i-n] >= self.track_length or ego_s_sorted_copy[i-n] < 0:
                     ego_s_sorted_copy.pop(i-n)
-                    if not whole_lap:  # (CCMA)
+                    # Filter GP predictions when using GP for lateral (before whole_lap or paper mode)
+                    if use_gp_lateral:
                         d_pred_GP = np.delete(d_pred_GP, i-n)
+                        sigma_d = np.delete(sigma_d, i-n)
+                    vs_pred = np.delete(vs_pred, i-n)
+                    n += 1
+        else:
+            # Not whole_lap yet - always using GP for lateral
+            n = 0
+            for i in range(len(ego_s_sorted_copy)):
+                if ego_s_sorted_copy[i-n] >= self.track_length or ego_s_sorted_copy[i-n] < 0:
+                    ego_s_sorted_copy.pop(i-n)
+                    d_pred_GP = np.delete(d_pred_GP, i-n)
+                    sigma_d = np.delete(sigma_d, i-n)
                     vs_pred = np.delete(vs_pred, i-n)
                     n += 1
 
-        if whole_lap:  # (CCMA)
-            # if False:
-            resampled_opponent_d = d_pred_CCMA
+        if whole_lap:
+            print("Saving GP data for whole lap prediction...", flush=True)
+            # if use_gp_lateral:
+            # Paper mode: Use GP for lateral prediction (provides uncertainty)
+            resampled_opponent_d = d_pred_GP
+            sigma_d_for_save = sigma_d
+            gpr_d_for_save = gpr_d
+            d_pred_ccma_for_save = None  # No CCMA in paper mode
+            # else:
+            #     # Legacy mode: Use CCMA for lateral prediction
+            #     resampled_opponent_d = d_pred_CCMA
+            #     sigma_d_for_save = np.zeros_like(vs_pred)
+            #     gpr_d_for_save = None
+            #     d_pred_ccma_for_save = d_pred_CCMA
+
+            # Save GP data after first full lap (whole_lap=True means we have complete data)
+            self.save_gp_data(
+                train_s=train_s,
+                train_d=train_d,
+                train_vs=train_vs,
+                train_vd=train_vd,
+                s_pred=s_pred,
+                d_pred=resampled_opponent_d,
+                vs_pred=vs_pred,
+                sigma_d=sigma_d_for_save,
+                sigma_vs=sigma_vs,
+                gpr_vs=gpr_vs,
+                gpr_d=gpr_d_for_save,
+                d_pred_ccma=d_pred_ccma_for_save
+            )
         else:
             resampled_opponent_d = d_pred_GP
+            # Don't save GP data for half-lap predictions - wait for full lap
         resampled_opponent_vs = vs_pred
         resampled_opponent_vd = np.interp(
             ego_s_sorted, opponent_s_sorted, opponent_vd_sorted)
@@ -540,7 +756,11 @@ class GaussianProcessOppTraj(object):
                     oppwpnts_list[i].vd_mps = resampled_opponent_vd[j]
                     if not whole_lap:
                         oppwpnts_list[i].d_var = sigma_d[j]
+                    elif use_gp_lateral:
+                        # Paper mode: use GP uncertainty for lateral
+                        oppwpnts_list[i].d_var = sigma_d[j]
                     else:
+                        # Legacy CCMA mode: no lateral uncertainty
                         oppwpnts_list[i].d_var = 0
                     oppwpnts_list[i].vs_var = sigma_vs[j]
         opp_traj_marker_array = self._visualize_opponent_wpnts(

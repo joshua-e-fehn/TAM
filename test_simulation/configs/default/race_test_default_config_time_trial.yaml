@@ -4,7 +4,7 @@ critical_distance: 0.8  # meters
 collision_distance: 0.4  # meters
 
 # Monitoring parameters
-check_rate: 80.0  # Hz
+check_rate: 144.0  # Hz
 
 # Race completion parameters
 target_laps: 4

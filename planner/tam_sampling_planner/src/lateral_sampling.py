@@ -249,7 +249,36 @@ class LateralSampling:
             # Vehicle parameters dict containing 'total_width' and other vehicle dimensions
             vehicle_params: dict,
     ):
+        """
+        Generate lateral trajectory samples using time-based quintic polynomials.
 
+        Creates multiple lateral (n) trajectory candidates by solving quintic polynomial
+        boundary value problems in time. Each trajectory satisfies initial conditions
+        (position, velocity, acceleration) and target end conditions across the track width.
+
+        The sampling strategy combines:
+        - Uniform samples across track width (n_samples - 1 points from n_min to n_max)
+        - Dense samples around the raceline (n_dense_samples in [n_dense_min, n_dense_max])
+        - One sample exactly on the raceline
+
+        Quintic polynomials ensure C2 continuity (continuous position, velocity, acceleration)
+        which is essential for smooth, physically realizable trajectories.
+
+        Algorithm:
+        1. For each longitudinal trajectory (s_end, s_dot_end pair):
+           a. Construct 6x6 boundary condition matrix for quintic polynomial
+           b. Calculate lateral end positions spanning track width with safety margins
+           c. Optionally compute geometric lateral velocities for track-following
+           d. Solve for polynomial coefficients via matrix inversion
+           e. Evaluate n(t), n_dot(t), n_ddot(t) along time array
+        2. If raceline_tendency=True, add raceline offset to relative samples
+
+        Returns:
+            tuple: (n_array, n_dot_array, n_ddot_array)
+                - n_array: Lateral positions [m], shape (total_samples, n_points)
+                - n_dot_array: Lateral velocities [m/s], shape (total_samples, n_points)
+                - n_ddot_array: Lateral accelerations [m/s²], shape (total_samples, n_points)
+        """
         skip_update = getattr(self, '_skip_param_updates', False)
         self.declare_and_update_parameters(skip_update=skip_update)
 
@@ -515,7 +544,41 @@ class LateralSampling:
             # Vehicle parameters dict containing 'total_width' and other vehicle dimensions
             vehicle_params: dict,
     ):
+        """
+        Generate lateral trajectory samples using arc-length-based quintic polynomials.
 
+        Similar to calc_samples(), but parameterizes lateral motion as n(s) instead of n(t).
+        This approach is more natural for path planning as it decouples the geometric path
+        from the velocity profile, making trajectories independent of speed variations.
+
+        Key differences from calc_samples():
+        - Uses n'(s) = dn/ds and n''(s) = d²n/ds² instead of time derivatives
+        - Polynomial is evaluated along arc length s, not time t
+        - Better numerical stability for variable-speed trajectories
+        - More intuitive geometric interpretation of lateral motion
+
+        The sampling strategy is identical to calc_samples():
+        - Uniform samples across track width
+        - Dense samples around the raceline
+        - One sample exactly on the raceline
+
+        Algorithm:
+        1. Convert initial conditions from time derivatives to s derivatives:
+           n' = n_dot / s_dot, n'' = (n_ddot - n' * s_ddot) / s_dot²
+        2. For each longitudinal trajectory:
+           a. Construct 6x6 boundary condition matrix for quintic polynomial in s
+           b. Calculate lateral end positions spanning track width
+           c. Solve for polynomial coefficients
+           d. Evaluate n(s), n'(s), n''(s) along arc length
+           e. Convert back to time derivatives: n_dot = n' * s_dot
+        3. If raceline_tendency=True, add raceline offset to relative samples
+
+        Returns:
+            tuple: (n_array, n_dot_array, n_ddot_array)
+                - n_array: Lateral positions [m], shape (total_samples, n_points)
+                - n_dot_array: Lateral velocities [m/s], shape (total_samples, n_points)
+                - n_ddot_array: Lateral accelerations [m/s²], shape (total_samples, n_points)
+        """
         self.declare_and_update_parameters()
 
         n_array = np.zeros_like(s_array)

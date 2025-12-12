@@ -8,12 +8,12 @@ test_matrix:
     mode: "single_car_obstacle"
     planner: "predictive_spliner"
     global_map: "my_map_20%s_100%w_NUC2_mintime"
-    obstacle_speed: 0.50
-    obstacle_start_s: 3
-    show_simulation_output: false
-    use_global_prediction: true
+    obstacle_speed: 0.8
+    obstacle_start_s: 0
+    show_simulation_output: true
+    use_global_prediction: false
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -21,11 +21,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0002"
     name: "single_vs_obstacle_predictive_spliner"
@@ -37,7 +37,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -45,11 +45,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0003"
     name: "single_vs_obstacle_predictive_spliner"
@@ -61,7 +61,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -69,11 +69,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0004"
     name: "single_vs_obstacle_predictive_spliner"
@@ -85,7 +85,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -93,11 +93,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0005"
     name: "single_vs_obstacle_predictive_spliner"
@@ -109,7 +109,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -117,11 +117,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0006"
     name: "single_vs_obstacle_predictive_spliner"
@@ -133,7 +133,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -141,11 +141,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0007"
     name: "single_vs_obstacle_predictive_spliner"
@@ -157,7 +157,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -165,11 +165,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0008"
     name: "single_vs_obstacle_predictive_spliner"
@@ -181,7 +181,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -189,11 +189,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0009"
     name: "single_vs_obstacle_predictive_spliner"
@@ -205,7 +205,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -213,11 +213,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0010"
     name: "single_vs_obstacle_predictive_spliner"
@@ -229,7 +229,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -237,11 +237,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0011"
     name: "single_vs_obstacle_predictive_spliner"
@@ -253,7 +253,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -261,11 +261,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0012"
     name: "single_vs_obstacle_predictive_spliner"
@@ -277,7 +277,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -285,11 +285,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0013"
     name: "single_vs_obstacle_predictive_spliner"
@@ -301,7 +301,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -309,11 +309,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0014"
     name: "single_vs_obstacle_predictive_spliner"
@@ -325,7 +325,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -333,11 +333,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0015"
     name: "single_vs_obstacle_predictive_spliner"
@@ -349,7 +349,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -357,11 +357,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0016"
     name: "single_vs_obstacle_predictive_spliner"
@@ -373,7 +373,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -381,11 +381,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0017"
     name: "single_vs_obstacle_predictive_spliner"
@@ -397,7 +397,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -405,11 +405,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0018"
     name: "single_vs_obstacle_predictive_spliner"
@@ -421,7 +421,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -429,11 +429,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0019"
     name: "single_vs_obstacle_predictive_spliner"
@@ -445,7 +445,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -453,11 +453,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0020"
     name: "single_vs_obstacle_predictive_spliner"
@@ -469,7 +469,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -477,11 +477,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0021"
     name: "single_vs_obstacle_predictive_spliner"
@@ -493,7 +493,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -501,11 +501,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0022"
     name: "single_vs_obstacle_predictive_spliner"
@@ -517,7 +517,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -525,11 +525,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0023"
     name: "single_vs_obstacle_predictive_spliner"
@@ -541,7 +541,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -549,11 +549,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0024"
     name: "single_vs_obstacle_predictive_spliner"
@@ -565,7 +565,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -573,11 +573,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0025"
     name: "single_vs_obstacle_predictive_spliner"
@@ -589,7 +589,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -597,11 +597,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0026"
     name: "single_vs_obstacle_predictive_spliner"
@@ -613,7 +613,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -621,11 +621,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0027"
     name: "single_vs_obstacle_predictive_spliner"
@@ -637,7 +637,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -645,11 +645,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0028"
     name: "single_vs_obstacle_predictive_spliner"
@@ -661,7 +661,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -669,11 +669,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0029"
     name: "single_vs_obstacle_predictive_spliner"
@@ -685,7 +685,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -693,11 +693,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0030"
     name: "single_vs_obstacle_predictive_spliner"
@@ -709,7 +709,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -717,11 +717,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0031"
     name: "single_vs_obstacle_predictive_spliner"
@@ -733,7 +733,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -741,11 +741,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0032"
     name: "single_vs_obstacle_predictive_spliner"
@@ -757,7 +757,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -765,11 +765,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0033"
     name: "single_vs_obstacle_predictive_spliner"
@@ -781,7 +781,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -789,11 +789,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0034"
     name: "single_vs_obstacle_predictive_spliner"
@@ -805,7 +805,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -813,11 +813,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0035"
     name: "single_vs_obstacle_predictive_spliner"
@@ -829,7 +829,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -837,11 +837,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0036"
     name: "single_vs_obstacle_predictive_spliner"
@@ -853,7 +853,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -861,11 +861,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0037"
     name: "single_vs_obstacle_predictive_spliner"
@@ -877,7 +877,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -885,11 +885,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0038"
     name: "single_vs_obstacle_predictive_spliner"
@@ -901,7 +901,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -909,11 +909,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0039"
     name: "single_vs_obstacle_predictive_spliner"
@@ -925,7 +925,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -933,11 +933,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0040"
     name: "single_vs_obstacle_predictive_spliner"
@@ -949,7 +949,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -957,11 +957,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0041"
     name: "single_vs_obstacle_predictive_spliner"
@@ -973,7 +973,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -981,11 +981,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0042"
     name: "single_vs_obstacle_predictive_spliner"
@@ -997,7 +997,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -1005,11 +1005,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0043"
     name: "single_vs_obstacle_predictive_spliner"
@@ -1021,7 +1021,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -1029,11 +1029,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0044"
     name: "single_vs_obstacle_predictive_spliner"
@@ -1045,7 +1045,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -1053,11 +1053,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0045"
     name: "single_vs_obstacle_predictive_spliner"
@@ -1069,7 +1069,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -1077,11 +1077,11 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0
 
   - simulation_id: "scwo_0046"
     name: "single_vs_obstacle_predictive_spliner"
@@ -1093,7 +1093,7 @@ test_matrix:
     show_simulation_output: false
     use_global_prediction: true
 
-    predictive_spliner_spline_bound_mindist: 0.15
+    predictive_spliner_spline_bound_mindist: 0.3
     predictive_spliner_lookahead_dist: 20.0
     predictive_spliner_max_v: 10.0
     predictive_spliner_min_v: 1.0
@@ -1101,8 +1101,8 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.1
+    predictive_spliner_evasion_dist: 0.6
     predictive_spliner_back_to_raceline_before: 10.0
-    predictive_spliner_back_to_raceline_after: 17.0
-    predictive_spliner_save_distance_front: 0.6
-    predictive_spliner_save_distance_back: 0.6
+    predictive_spliner_back_to_raceline_after: 30.0
+    predictive_spliner_save_distance_front: 3.0
+    predictive_spliner_save_distance_back: 3.0

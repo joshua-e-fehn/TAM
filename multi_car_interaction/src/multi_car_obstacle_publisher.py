@@ -312,9 +312,6 @@ class MultiCarObstaclePublisher:
                     relative_s_start = obs_s + s_diff - \
                         (self.car_length + self.safety_margin) / 2.0
 
-                    # rospy.loginfo_throttle(2.0,
-                    #                        f"[{car_name}] {other_car_name}: abs_s={s_center:.2f}m, rel_s={s_diff:.2f}m, d={d_center:.2f}m")
-
                 else:
                     rospy.logwarn(
                         f"Frenet conversion failed for {other_car_name} observed by {car_name}")
@@ -478,27 +475,6 @@ class MultiCarObstaclePublisher:
                     )
                     markers.markers.append(viz_marker)
                     marker_id += 1
-
-                    # # Log detection for debugging with both distances
-                    # if car_name in self.car_positions:
-                    #     frenet_dist = self.calculate_frenet_distance(
-                    #         car_name,
-                    #         self.car_positions[car_name]['pose'],
-                    #         other_car_data['pose']
-                    #     )
-                    #     if frenet_dist is not None:
-                    #         track_dist, lateral_dist, car_s, other_s = frenet_dist
-                    #         rospy.loginfo_throttle(2.0,
-                    #                                f"{car_name} published {other_car_name} as obstacle: "
-                    #                                f"track_dist={track_dist:.2f}m, lateral={lateral_dist:.2f}m, "
-                    #                                f"s_coords=({car_s:.1f}, {other_s:.1f})")
-                    #     else:
-                    #         cartesian_dist = self.calculate_distance(
-                    #             self.car_positions[car_name]['pose'],
-                    #             other_car_data['pose']
-                    #         )
-                    #         rospy.logdebug(f"{car_name} detects {other_car_name} at {cartesian_dist:.2f}m "
-                    #                        f"(s={obstacle.s_center:.2f}, d={obstacle.d_center:.2f})")
 
             # Publish obstacle array for this car (integrates with existing perception pipeline)
             if obstacle_array.obstacles:

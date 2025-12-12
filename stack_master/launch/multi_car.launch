@@ -1,21 +1,27 @@
 <?xml version="1.0"?>
 <launch>
   <!-- Optimized Multi-Car Launch File with Reduced Relay Dependencies -->
-  <!-- September 2025: Streamlined architecture replacing excessive relay chains -->
+  <!-- December 2025: Streamlined architecture replacing excessive relay chains -->
   
-  <!-- List of car namespaces to spawn -->
+  <!-- ============================================= -->
+  <!-- LEGACY ARGUMENTS (NOT USED - kept for reference) -->
+  <!-- These comma-separated args are NOT parsed; use per-car args below instead -->
+  <!-- ============================================= -->
   <arg name="cars" default="car1,car2"/>
-  <!-- Per-car planner selection (comma separated, aligns with cars) -->
-  <!-- Available planners: spliner, predictive_spliner, tam_sampling, predictive_sampler, graph_based, frenet -->
   <arg name="planners" default="spliner,spliner"/>
-  <!-- Per-car map names (comma separated) -->
   <arg name="maps" default="M1,M1"/>
+  <arg name="versions" default="NUC2,NUC2"/>
+  <arg name="frame_prefixes" default="car1_,car2_"/>
+  <arg name="speed_multipliers" default="1.0,0.8"/>
+  <arg name="accel_multipliers" default="1.0,0.8"/>
+  
+  <!-- ============================================= -->
+  <!-- ACTIVE CONFIGURATION                          -->
+  <!-- ============================================= -->
   <!-- Single global map argument (preferred). Overrides individual defaults unless explicitly set per car. -->
   <arg name="global_map" default="M1"/>
-  <!-- Per-car racecar versions (hardware profiles) -->
-  <arg name="versions" default="NUC2,NUC2"/>
-  <!-- Optional per-car frame prefixes (comma separated) -->
-  <arg name="frame_prefixes" default="car1_,car2_"/>
+  <!-- Available planners: spliner, predictive_spliner, tam_sampling, predictive_sampler, graph_based, frenet -->
+  
   <!-- Simulation flag applied to all cars -->
   <arg name="sim" default="True"/>
   <!-- Launch a single consolidated RViz instead of one per car -->
@@ -34,6 +40,7 @@
   <!-- ============================================= -->
   
   <!-- Multi-Car Interaction Arguments -->
+  <arg name="car_model" default="NUC2"/>
   <arg name="enable_car_interaction" default="True"/>
   <arg name="enable_collision_detection" default="True"/>
   <arg name="collision_warning_distance" default="1.5"/>
@@ -42,14 +49,23 @@
   <!-- Race Start Controller Configuration -->
   <arg name="enable_race_start_controller" default="True"/>
   
+  <!-- Global Prediction Mode for Collision Prediction -->
+  <!-- When true: uses global trajectory for opponent prediction (testing mode) -->
+  <!-- When false: uses local perception-based prediction (realistic mode) -->
+  <arg name="use_global_prediction" default="false"/>
+  
   <!-- Performance Scaling Arguments for Multi-Car Differentiation -->
   <!-- These multipliers scale each car's speed and acceleration independently -->
-  <!-- Range: ]0, 2] where 1.0 = no scaling, 0.5 = half performance, 2.0 = double performance -->
-  <arg name="speed_multipliers" default="1.0,0.8"/>  <!-- speed scaling per car (car1, car2, ...) -->
-  <arg name="accel_multipliers" default="1.0,0.8"/>  <!-- acceleration scaling per car (car1, car2, ...) -->
+  <!-- Values < 1.0 reduce performance, > 1.0 increase performance (no range enforcement) -->
+  <arg name="speed_multiplier_car1" default="1.0"/>
+  <arg name="speed_multiplier_car2" default="1.0"/>
+  <arg name="speed_multiplier_car3" default="1.0"/>
+  <arg name="speed_multiplier_car4" default="1.0"/>
   
-  <!-- Car Model Configuration for Multi-Car Interaction -->
-  <arg name="car_model" default="NUC2"/>  <!-- Car model for dimensions (NUC2, TAM, etc.) -->
+  <arg name="accel_multiplier_car1" default="1.0"/>
+  <arg name="accel_multiplier_car2" default="1.0"/>
+  <arg name="accel_multiplier_car3" default="1.0"/>
+  <arg name="accel_multiplier_car4" default="1.0"/>
 
   <!-- Global Map Server - shared by all cars -->
   <node pkg="map_server" name="global_map_server" type="map_server" 
@@ -60,12 +76,14 @@
     <param name="global_republisher/map_name" value="$(arg global_map)"/>
   </node>
 
-  <!-- Helper python expansion using eval is brittle; split CSV lists in bash style via subst args -->
-  <!-- We iterate by index because roslaunch lacks native list iteration; replicate pattern for 4 cars max -->
+  <!-- ============================================= -->
+  <!-- PER-CAR CONFIGURATION ARGUMENTS              -->
+  <!-- These are the ACTIVE per-car args (override these, not CSV args above) -->
+  <!-- ============================================= -->
   <arg name="car1" default="car1"/>
   <arg name="car2" default="car2"/>
-  <arg name="car3" default=""/>
-  <arg name="car4" default=""/>
+  <arg name="car3" default=""/>  <!-- Empty = disabled -->
+  <arg name="car4" default=""/>  <!-- Empty = disabled -->
 
   <!-- Internal: map each idx to selected value by position using subst; users can override directly -->
   <arg name="planner_car1" default="spliner"/>
@@ -87,17 +105,6 @@
   <arg name="frame_prefix_car2" default="car2_"/>
   <arg name="frame_prefix_car3" default="car3_"/>
   <arg name="frame_prefix_car4" default="car4_"/>
-  
-  <!-- Performance scaling parameters per car -->
-  <arg name="speed_multiplier_car1" default="1.0"/>
-  <arg name="speed_multiplier_car2" default="1.0"/>
-  <arg name="speed_multiplier_car3" default="1.0"/>
-  <arg name="speed_multiplier_car4" default="1.0"/>
-  
-  <arg name="accel_multiplier_car1" default="1.0"/>
-  <arg name="accel_multiplier_car2" default="1.0"/>
-  <arg name="accel_multiplier_car3" default="1.0"/>
-  <arg name="accel_multiplier_car4" default="1.0"/>
 
   <!-- Initial position parameters per car (centralized configuration) -->
   <!-- Map-specific initial positions (s=0 for car1, s=3 for car2) -->
@@ -219,9 +226,8 @@
     <node pkg="topic_tools" type="relay" name="behavior_mux_relay" 
           args="behavior_controller/mux mux_controller/mux" />
     
-    <!-- REMOVED: behavior_odom_relay & behavior_scan_relay -->
-    <!-- OPTIMIZATION: Behavior controller should subscribe directly to car_state/odom and scan -->
-    <!-- This eliminates 2 relay nodes per car -->
+    <!-- NOTE: behavior_odom_relay & behavior_scan_relay were removed in optimization -->
+    <!-- Behavior controller subscribes directly to car_state/odom and scan topics -->
     
     <!-- Auto-enable navigation mux for reliable autonomous operation -->
     <node pkg="rostopic" type="rostopic" name="auto_enable_nav_mux"
@@ -356,8 +362,10 @@
   <!-- ============================================= -->
   <!-- FUTURE EXTENSION: Car 3 & 4 Templates       -->
   <!-- ============================================= -->
-  <!-- Additional cars (3 & 4) can be enabled by setting car3 / car4 args -->
-  <!-- These follow the same optimized pattern as cars 1 & 2 -->
+  <!-- Additional cars (3 & 4) can be enabled by setting car3/car4 args -->
+  <!-- WARNING: These are INCOMPLETE stubs - missing relays, frenet republisher, -->
+  <!-- control pipeline, and behavior controller setup that cars 1 & 2 have. -->
+  <!-- Copy the full car1/car2 pattern if you need to enable cars 3 or 4. -->
   
   <group if="$(eval car3 != '')" ns="$(arg car3)">
     <param name="frame_prefix" value="$(arg frame_prefix_car3)"/>
@@ -438,6 +446,9 @@
   
   <!-- Pass race start controller enable flag to state machines -->
   <param name="enable_race_start_controller" value="$(arg enable_race_start_controller)"/>
+  
+  <!-- Set use_global_prediction parameter for collision prediction -->
+  <param name="/race_test/use_global_prediction" value="$(arg use_global_prediction)"/>
   
   <!-- Load velocity scaler debug parameter globally -->
   <param name="/velocity_scaler/debug_plot" value="false"/>

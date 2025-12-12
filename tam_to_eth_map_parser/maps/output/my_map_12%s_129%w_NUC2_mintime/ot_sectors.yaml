@@ -1,8 +1,0 @@
-Overtaking_sector0:
-  end: 6336
-  ot_flag: true
-  start: 0
-n_sectors: 1
-ot_sector_begin: 0.5
-spline_len: 50
-yeet_factor: 2

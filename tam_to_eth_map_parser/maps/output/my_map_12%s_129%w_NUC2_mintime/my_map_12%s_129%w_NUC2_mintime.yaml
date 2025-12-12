@@ -1,9 +1,0 @@
-free_thresh: 0.196
-image: my_map_12%s_129%w_NUC2_mintime.png
-negate: 0
-occupied_thresh: 0.65
-origin:
-- -46.34758864
-- -92.21706123999999
-- 0
-resolution: 0.05

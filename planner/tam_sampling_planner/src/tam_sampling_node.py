@@ -54,21 +54,30 @@ except ImportError as e:
 
 class TAMSamplingPlannerNode:
     """
-    Complete TAM Sampling Planner ROS1 Node with Namespaced Topics
+    Complete TAM Sampling Planner ROS1 Node with Namespaced Topics.
 
-    Subscribes to (all topics automatically namespaced):
-        - global_waypoints: Global racing line waypoints
-        - global_waypoints_scaled: Speed-scaled global waypoints  
-        - car_state/odom_frenet: Vehicle state in Frenet coordinates
-        - perception/obstacles: Detected obstacles
-        - prediction/opponent_waypoints: Opponent trajectory predictions
-        - state_machine: State machine state for race coordination
+    This node integrates the TAM (Trajectory Analysis and Motion) sampling-based
+    planner into the F1TENTH racing stack with full namespace support for multi-car
+    racing scenarios.
 
-    Publishes to (all topics automatically namespaced):
-        - planner/avoidance/otwpnts: Planned trajectory for state machine
-        - planner/avoidance/markers: Visualization markers
-        - planner/avoidance/all_samples: All sampled trajectories visualization
-        - planner/avoidance/latency: Planning computation time
+    Operating Modes:
+        - tam_sampling: Continuous planning (always plans trajectories)
+        - predictive_sampler: Conditional planning (only plans when in OT states)
+
+    Subscribes to (all topics automatically namespaced by ROS):
+        - global_waypoints (WpntArray): Global racing line waypoints
+        - global_waypoints_scaled (WpntArray): Speed-scaled global waypoints (legacy)
+        - car_state/odom_frenet (Odometry): Vehicle state in Frenet coordinates
+        - perception/obstacles (ObstacleArray): Detected obstacles
+        - prediction/opponent_waypoints (OpponentTrajectory): Opponent trajectory predictions
+        - state_machine (String): State machine state for race coordination
+        - ot_section_check (Bool): Overtaking section flag (predictive_sampler mode only)
+
+    Publishes to (all topics automatically namespaced by ROS):
+        - planner/avoidance/otwpnts (OTWpntArray): Planned trajectory for state machine
+        - planner/avoidance/markers (MarkerArray): Visualization markers for RViz
+        - planner/avoidance/all_samples (MarkerArray): All sampled trajectories visualization
+        - planner/avoidance/latency (Float32): Planning computation time in ms (if measuring=True)
     """
 
     def __init__(self):
@@ -478,7 +487,20 @@ class TAMSamplingPlannerNode:
                 'overtaking_allowed', self.overtaking_allowed)
 
     def global_waypoints_callback(self, msg: WpntArray):
-        """Process global waypoints and initialize F1Tenth track handler"""
+        """
+        Process global waypoints and initialize F1Tenth track handler.
+
+        This callback:
+        1. Stores the received waypoints for raceline extraction
+        2. Calculates track length for conditional planning
+        3. Converts WpntArray to dictionary format for GlobalWaypointsTrackHandler
+        4. Initializes/updates the track_handler in both this node and TAM planner core
+        5. Calculates legacy track data (centerline, headings, curvature) for compatibility
+
+        Args:
+            msg: WpntArray containing global racing line waypoints with fields:
+                 s_m, x_m, y_m, d_m, d_left, d_right, psi_rad, kappa_radpm, vx_mps
+        """
         self.global_waypoints = msg
 
         if len(msg.wpnts) > 0:
@@ -516,9 +538,6 @@ class TAMSamplingPlannerNode:
 
                 # Update the track handler in the TAM planner core
                 self.tam_planner.track_handler = self.track_handler
-
-                # rospy.loginfo(
-                #     f"{self.log_name} ✓ Track handler initialized with {len(msg.wpnts)} waypoints")
             except Exception as e:
                 rospy.logerr(
                     f"{self.log_name} Failed to initialize track handler: {e}")
@@ -556,17 +575,9 @@ class TAMSamplingPlannerNode:
                 'd_omega_z': d_omega_z
             }
 
-            # rospy.loginfo_throttle(
-            #     5, f"{self.log_name} Track data updated: {len(msg.wpnts)} waypoints")
-
     def global_waypoints_scaled_callback(self, msg: WpntArray):
         """Process scaled global waypoints and extract raceline data (LEGACY - not used in F1Tenth)"""
         self.global_waypoints_scaled = msg
-
-        # COMMENTED OUT - F1Tenth uses GlobalWaypointsTrackHandler instead of raceline_data
-        # self.raceline_data = TAMSamplingUtils.waypoints_to_raceline_data(msg)
-        # rospy.loginfo_throttle(
-        #     5, f"{self.log_name} Raceline data updated with {len(msg.wpnts)} points")
 
     def state_callback(self, msg: Odometry):
         """Process vehicle state in Frenet coordinates"""
@@ -616,23 +627,13 @@ class TAMSamplingPlannerNode:
         except:
             self.current_state['heading'] = 0.0
 
-        # Debug logging to verify state updates
-        # rospy.logwarn_throttle(1.0,
-        #                        f"{self.log_name} State: s={self.current_state['s']:.2f}, n={self.current_state['n']:.3f}, "
-        #                        f"x={self.current_state['x']:.2f}, y={self.current_state['y']:.2f}, "
-        #                        f"v={self.current_state['s_dot']:.2f} m/s")
-
     def obstacles_callback(self, msg: ObstacleArray):
         """Process detected obstacles"""
         self.obs = msg
-        # rospy.loginfo_throttle(
-        #     10, f"{self.log_name} Obstacles updated: {len(msg.obstacles)} detected")
 
     def opponent_prediction_callback(self, msg: OpponentTrajectory):
         """Process opponent trajectory predictions from TAM custom predictor"""
         self.opponent_predictions = msg
-        # rospy.loginfo_throttle(
-        #     5, f"{self.log_name} Predictions updated: {len(msg.oppwpnts)} predicted opponent waypoints")
 
     def state_machine_callback(self, msg: String):
         """Callback for state machine state - used to coordinate race start"""
@@ -645,10 +646,6 @@ class TAMSamplingPlannerNode:
             rospy.loginfo(
                 f"{self.log_name} 🏁 Race started! Disabling parameter updates for performance.")
 
-        # Log state transitions for debugging
-        # rospy.loginfo_throttle(
-        #     2.0, f"{self.log_name} State machine state: {self.state_machine_state}")
-
     def ot_section_check_cb(self, msg: Bool):
         """Callback for overtaking section check (used in predictive_sampler mode)"""
         self.ot_section_check = msg.data
@@ -657,11 +654,13 @@ class TAMSamplingPlannerNode:
         """
         Determine if TAM should execute planning cycle.
 
-        In predictive_sampler mode: Only plan when obstacles nearby + in OT sector (mimics SQP behavior)
-        In tam_sampling mode: Always plan (original TAM behavior)
+        In tam_sampling mode: Always returns True (continuous planning)
+        In predictive_sampler mode: Returns True if:
+            - state_machine_state is in ['OVERTAKE', 'TRAILING', 'TAM_PLANNING'], OR
+            - Vehicle is significantly off-centerline (|n| > 0.2m)
 
         Returns:
-            True if planning should execute, False otherwise
+            True if planning should execute, False to skip this cycle
         """
         # If not in conditional planning mode, always plan
         if not self.conditional_planning_mode:
@@ -805,99 +804,6 @@ class TAMSamplingPlannerNode:
 
         return planning_requests
 
-    # ========== LEGACY VISUALIZATION METHODS - COMMENTED OUT FOR F1TENTH ==========
-    # These methods work with FrenetTrajectory objects from old TAM
-    # Use create_f1tenth_visualization_markers() instead
-
-    # def create_trajectory_message(self, trajectory: FrenetTrajectory) -> OTWpntArray:
-    #     """Convert TAM trajectory to ROS message format (LEGACY - not used in F1Tenth)"""
-    #     msg = OTWpntArray()
-    #     msg.header.stamp = rospy.Time.now()
-    #     msg.header.frame_id = "map"
-    #
-    #     # Convert trajectory points to waypoints
-    #     min_length = min(len(trajectory.t), len(trajectory.x),
-    #                      len(trajectory.y), len(trajectory.V))
-    #
-    #     for i in range(min_length):
-    #         wpnt = Wpnt()
-    #         wpnt.x_m = trajectory.x[i]
-    #         wpnt.y_m = trajectory.y[i]
-    #         wpnt.psi_rad = trajectory.psi[i] if i < len(
-    #             trajectory.psi) else 0.0
-    #         wpnt.s_m = trajectory.s[i] if i < len(
-    #             trajectory.s) else trajectory.V[i] * 0.1  # Fallback
-    #         wpnt.d_m = trajectory.n[i] if i < len(trajectory.n) else 0.0
-    #         wpnt.v_mps = trajectory.V[i]
-    #
-    #         # Additional information
-    #         if i < len(trajectory.ax_vf):
-    #             wpnt.ax_mps2 = trajectory.ax_vf[i]
-    #         if i < len(trajectory.ay_vf):
-    #             wpnt.ay_mps2 = trajectory.ay_vf[i]
-    #
-    #         msg.wpnts.append(wpnt)
-    #
-    #     rospy.loginfo_throttle(
-    #         1, f"{self.log_name} Created trajectory message with {len(msg.wpnts)} points")
-    #     return msg
-
-    # def create_visualization_markers(self, trajectory: FrenetTrajectory) -> MarkerArray:
-    #     """Create comprehensive visualization markers for the planned trajectory (LEGACY)"""
-    #     marker_array = MarkerArray()
-    #
-    #     if len(trajectory.x) == 0:
-    #         return marker_array
-    #
-    #     # Main trajectory line
-    #     trajectory_marker = Marker()
-    #     trajectory_marker.header.frame_id = "map"
-    #     trajectory_marker.header.stamp = rospy.Time.now()
-    #     trajectory_marker.ns = f"{self.car_namespace}_tam_trajectory" if self.car_namespace else "tam_trajectory"
-    #     trajectory_marker.id = 0
-    #     trajectory_marker.type = Marker.LINE_STRIP
-    #     trajectory_marker.action = Marker.ADD
-    #     trajectory_marker.scale.x = 0.15  # Line width
-    #     trajectory_marker.color.a = 1.0
-    #     trajectory_marker.color.r = 0.0
-    #     trajectory_marker.color.g = 1.0
-    #     trajectory_marker.color.b = 0.0
-    #
-    #     # Add trajectory points
-    #     for i in range(len(trajectory.x)):
-    #         point = Point()
-    #         point.x = trajectory.x[i]
-    #         point.y = trajectory.y[i]
-    #         point.z = 0.1
-    #         trajectory_marker.points.append(point)
-    #
-    #     marker_array.markers.append(trajectory_marker)
-    #
-    #     # Velocity visualization
-    #     if len(trajectory.V) > 0:
-    #         velocity_marker = Marker()
-    #         velocity_marker.header.frame_id = "map"
-    #         velocity_marker.header.stamp = rospy.Time.now()
-    #         velocity_marker.ns = f"{self.car_namespace}_tam_velocity" if self.car_namespace else "tam_velocity"
-    #         velocity_marker.id = 1
-    #         velocity_marker.type = Marker.TEXT_VIEW_FACING
-    #         velocity_marker.action = Marker.ADD
-    #         velocity_marker.scale.z = 0.5
-    #         velocity_marker.color.a = 1.0
-    #         velocity_marker.color.r = 1.0
-    #         velocity_marker.color.g = 1.0
-    #         velocity_marker.color.b = 0.0
-    #
-    #         # Show velocity at trajectory start
-    #         if len(trajectory.x) > 0:
-    #             velocity_marker.pose.position.x = trajectory.x[0]
-    #             velocity_marker.pose.position.y = trajectory.y[0]
-    #             velocity_marker.pose.position.z = 1.0
-    #             velocity_marker.text = f"TAM: {trajectory.V[0]:.1f} m/s\nCost: {trajectory.cost:.1f}"
-    #             marker_array.markers.append(velocity_marker)
-    #
-    #     return marker_array
-
     def interpolate_trajectory_to_controller_spacing(
         self,
         wpnt_array: WpntArray,
@@ -1020,16 +926,25 @@ class TAMSamplingPlannerNode:
         # Log interpolation result
         wrap_around = (s_continuous[-1] - s_continuous[0]) > max_s * 0.5
         wrap_info = " (wrap-around)" if wrap_around else ""
-        # rospy.loginfo_throttle(
-        #     5.0,
-        #     f"{self.log_name} Interpolated trajectory{wrap_info}: {len(wpnt_array.wpnts)} points ({trajectory_length:.1f}m) → "
-        #     f"{n_dense_points} points (spacing ~{target_spacing:.2f}m)"
-        # )
 
         return dense_wpnt_array
 
     def create_f1tenth_visualization_markers(self, trajectory_dict: Dict, wpnt_array: WpntArray) -> MarkerArray:
-        """Create F1Tenth visualization markers from trajectory dict and WpntArray"""
+        """
+        Create F1Tenth visualization markers for RViz from trajectory data.
+
+        Creates two markers:
+        1. LINE_STRIP marker showing the planned trajectory path
+           - Green for normal trajectory, Red for emergency trajectory
+        2. TEXT_VIEW_FACING marker showing velocity and cost info at trajectory start
+
+        Args:
+            trajectory_dict: Trajectory dictionary with 'emergency' and 'cost' keys
+            wpnt_array: WpntArray with (x_m, y_m, vx_mps) for each waypoint
+
+        Returns:
+            MarkerArray containing trajectory line and velocity text markers
+        """
         marker_array = MarkerArray()
 
         # Extract Cartesian coordinates from trajectory_dict using track_handler
@@ -1117,9 +1032,6 @@ class TAMSamplingPlannerNode:
         """
         marker_array = MarkerArray()
 
-        # rospy.loginfo_throttle(
-        #     2, f"{self.log_name} create_all_samples_markers called")
-
         if s_array is None or n_array is None or track_handler is None:
             rospy.logwarn_throttle(
                 2, f"{self.log_name} create_all_samples_markers: missing inputs - s_array={s_array is not None}, n_array={n_array is not None}, track_handler={track_handler is not None}")
@@ -1132,14 +1044,10 @@ class TAMSamplingPlannerNode:
 
         try:
             num_trajectories = s_array.shape[0]
-            # rospy.loginfo_throttle(
-            #     2, f"{self.log_name} Processing {num_trajectories} trajectories for visualization")
 
             # Limit visualization to avoid performance issues (e.g., max 500 trajectories)
             max_viz_trajectories = 600
             if num_trajectories > max_viz_trajectories:
-                # rospy.logwarn_throttle(10,
-                #                        f"{self.log_name} Too many trajectories ({num_trajectories}), visualizing only first {max_viz_trajectories}")
                 num_trajectories = max_viz_trajectories
 
             markers_created = 0
@@ -1208,9 +1116,6 @@ class TAMSamplingPlannerNode:
                 elif i < 5:  # Log first few empty markers
                     rospy.logwarn_throttle(
                         5, f"{self.log_name} Marker {i} has no valid points (s range: [{s_traj[0]:.2f}, {s_traj[-1]:.2f}], n range: [{n_traj[0]:.2f}, {n_traj[-1]:.2f}])")
-
-            # rospy.loginfo_throttle(
-            #     2, f"{self.log_name} Created {markers_created} markers with {points_created} total points")
 
         except Exception as e:
             rospy.logerr_throttle(
@@ -1306,7 +1211,18 @@ class TAMSamplingPlannerNode:
                 f"{self.log_name} Failed to publish stop trajectory: {e}")
 
     def run_planning_cycle(self):
-        """Execute one complete F1Tenth TAM planning cycle"""
+        """
+        Execute one complete F1Tenth TAM planning cycle.
+
+        This is the main entry point called from the planning loop.
+        Handles:
+        1. Re-entrancy protection (skips if previous cycle still running)
+        2. Conditional planning check (in predictive_sampler mode)
+        3. Delegates actual planning to _execute_planning_cycle() under lock
+
+        If planning conditions aren't met (conditional mode), publishes empty
+        trajectory and clears visualization markers.
+        """
 
         # Check if a planning cycle is already running
         if self.planning_in_progress:
@@ -1334,7 +1250,25 @@ class TAMSamplingPlannerNode:
                 self.planning_in_progress = False
 
     def _execute_planning_cycle(self):
-        """Internal method that does the actual planning work"""
+        """
+        Internal method that executes the actual TAM planning pipeline.
+
+        Planning steps:
+        1. Propagate skip_param_updates flag for performance optimization
+        2. Update parameters from ROS param server (if not race_started)
+        3. Verify required data is available (waypoints, track_handler)
+        4. Build prediction dict from opponent_predictions
+        5. Map current_state to TAM state_estimate format
+        6. Extract raceline from global_waypoints
+        7. Create planning_requests with V_max, following_distance, etc.
+        8. Call tam_planner.calc_trajectory() to generate trajectory
+        9. Convert result to WpntArray format
+        10. Interpolate to dense controller spacing (0.1m)
+        11. Wrap in OTWpntArray and publish
+        12. Log timing and publish latency if measuring
+
+        On failure, publishes empty OTWpntArray to allow state machine to continue.
+        """
 
         # Propagate race_started flag to child modules for parameter update optimization
         self.tam_planner._skip_param_updates = self.race_started

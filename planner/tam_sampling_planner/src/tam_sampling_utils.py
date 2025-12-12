@@ -12,11 +12,39 @@ import math
 
 
 class TAMSamplingUtils:
-    """Utility functions for coordinate transformations and data processing"""
+    """
+    Utility functions for coordinate transformations and data processing.
+
+    Provides static methods for:
+    - Converting ROS messages to internal data formats
+    - Frenet-Cartesian coordinate transformations
+    - Trajectory visualization (ROS Path and MarkerArray)
+    - Trajectory interpolation and validation
+
+    All methods are static and do not require class instantiation.
+    """
 
     @staticmethod
     def ros_odom_to_frenet_state(odom_msg, track_centerline: np.ndarray) -> Dict:
-        """Convert ROS Odometry message to Frenet state"""
+        """
+        Convert ROS Odometry message to Frenet state.
+
+        Performs simplified Frenet conversion by finding the closest point
+        on the track centerline. For accurate conversion, use FrenetConverter.
+
+        Args:
+            odom_msg: ROS nav_msgs/Odometry message with pose and twist
+            track_centerline: Nx2 array of (x, y) centerline coordinates
+
+        Returns:
+            dict: Frenet state with keys:
+                - s: Arc length position [m] (simplified as index)
+                - n: Lateral offset [m]
+                - s_dot: Longitudinal velocity [m/s]
+                - n_dot: Lateral velocity [m/s] (simplified to 0)
+                - s_ddot, n_ddot: Accelerations (set to 0)
+                - x, y: Original Cartesian position
+        """
 
         # Extract Cartesian state
         x = odom_msg.pose.pose.position.x
@@ -50,7 +78,25 @@ class TAMSamplingUtils:
 
     @staticmethod
     def waypoints_to_raceline_data(waypoints_msg) -> Dict:
-        """Convert ROS waypoints to raceline data"""
+        """
+        Convert ROS WpntArray message to postprocessed raceline format.
+
+        Extracts velocity and position data from waypoints and creates
+        arrays compatible with the longitudinal/lateral sampling modules.
+
+        Args:
+            waypoints_msg: ROS WpntArray message with wpnts list
+
+        Returns:
+            dict: Raceline data with keys:
+                - s_post: Arc length array [m]
+                - n_post: Lateral offset array [m] (zeros for centerline)
+                - s_dot_post: Velocity array [m/s]
+                - t_post: Time array [s]
+                - n: Scalar lateral offset (0.0)
+                - s_dot, V: Mean velocity [m/s]
+                - V_target: Maximum velocity [m/s]
+        """
 
         if len(waypoints_msg.wpnts) == 0:
             return {'n': 0.0, 's_dot': 10.0, 'V': 10.0}
@@ -85,7 +131,25 @@ class TAMSamplingUtils:
 
     @staticmethod
     def obstacles_to_tam_format(obstacles_msg) -> List[Dict]:
-        """Convert ROS obstacles to TAM format (F1Tenth Frenet-based obstacles)"""
+        """
+        Convert ROS ObstacleArray message to TAM internal format.
+
+        Transforms F1Tenth Frenet-based obstacle data into dictionaries
+        compatible with the TAM prediction and collision checking modules.
+
+        Args:
+            obstacles_msg: ROS ObstacleArray message with Frenet coordinates
+
+        Returns:
+            list[dict]: List of obstacle dictionaries with keys:
+                - s: Longitudinal position along track [m]
+                - d: Lateral offset from centerline [m]
+                - radius: Obstacle radius [m]
+                - velocity_s: Longitudinal velocity [m/s]
+                - velocity_d: Lateral velocity [m/s]
+                - is_static: Boolean flag for static obstacles
+                - is_visible: Boolean flag for visibility
+        """
 
         obstacles = []
         for obs in obstacles_msg.obstacles:
@@ -104,7 +168,19 @@ class TAMSamplingUtils:
 
     @staticmethod
     def frenet_trajectory_to_ros_path(trajectory, frame_id: str = "map"):
-        """Convert FrenetTrajectory to ROS Path message"""
+        """
+        Convert FrenetTrajectory to ROS Path message for visualization.
+
+        Creates a nav_msgs/Path message from trajectory Cartesian coordinates.
+        Heading is converted to quaternion orientation.
+
+        Args:
+            trajectory: Trajectory object with x, y, heading arrays
+            frame_id: TF frame ID for the path header
+
+        Returns:
+            nav_msgs/Path: ROS Path message with PoseStamped waypoints
+        """
         from nav_msgs.msg import Path
         from geometry_msgs.msg import PoseStamped
 
@@ -131,7 +207,21 @@ class TAMSamplingUtils:
 
     @staticmethod
     def frenet_trajectory_to_marker_array(trajectories: List, frame_id: str = "map", namespace: str = "tam_trajectories"):
-        """Convert list of FrenetTrajectories to ROS MarkerArray for visualization"""
+        """
+        Convert list of FrenetTrajectories to ROS MarkerArray for visualization.
+
+        Creates LINE_STRIP markers for each trajectory with color coding:
+        - Valid trajectories: Green (low cost) to Red (high cost)
+        - Invalid trajectories: Transparent red
+
+        Args:
+            trajectories: List of trajectory objects with x, y arrays
+            frame_id: TF frame ID for marker headers
+            namespace: ROS marker namespace for grouping
+
+        Returns:
+            visualization_msgs/MarkerArray: Array of LINE_STRIP markers
+        """
         from visualization_msgs.msg import MarkerArray, Marker
         from geometry_msgs.msg import Point
         from std_msgs.msg import ColorRGBA
@@ -190,7 +280,22 @@ class TAMSamplingUtils:
 
     @staticmethod
     def frenet_state_to_cartesian(frenet_state: Dict, track_centerline: np.ndarray) -> Dict:
-        """Convert Frenet state to Cartesian coordinates"""
+        """
+        Convert Frenet state to Cartesian coordinates.
+
+        Performs simplified Frenet-to-Cartesian conversion using the track
+        centerline. Uses linear interpolation for position and velocities.
+
+        Args:
+            frenet_state: Dict with s, n, s_dot, n_dot keys
+            track_centerline: Nx2 array of (x, y) centerline coordinates
+
+        Returns:
+            dict: Cartesian state with keys:
+                - x, y: Position [m]
+                - heading: Heading angle [rad]
+                - vx, vy: Velocity components [m/s]
+        """
 
         if len(track_centerline) == 0:
             return {
@@ -252,7 +357,18 @@ class TAMSamplingUtils:
 
     @staticmethod
     def validate_trajectory_data(trajectory) -> bool:
-        """Validate trajectory data consistency"""
+        """
+        Validate trajectory data for consistency.
+
+        Checks that the trajectory has a time array and that all state
+        arrays (s, n, s_dot, n_dot) have matching lengths.
+
+        Args:
+            trajectory: Trajectory object with t, s, n, s_dot, n_dot attributes
+
+        Returns:
+            bool: True if trajectory data is valid, False otherwise
+        """
 
         if not hasattr(trajectory, 't') or len(trajectory.t) == 0:
             return False
@@ -271,7 +387,21 @@ class TAMSamplingUtils:
 
     @staticmethod
     def interpolate_trajectory_at_time(trajectory, target_time: float) -> Dict:
-        """Interpolate trajectory state at specific time"""
+        """
+        Interpolate trajectory state at a specific time.
+
+        Performs linear interpolation between trajectory points to estimate
+        the state at an arbitrary time. Handles boundary conditions by
+        clamping to first/last point.
+
+        Args:
+            trajectory: Trajectory object with t, s, n, s_dot, n_dot arrays
+            target_time: Time at which to interpolate [s]
+
+        Returns:
+            dict: Interpolated state with keys t, s, n, s_dot, n_dot, s_ddot, n_ddot.
+                  Returns empty dict if trajectory validation fails.
+        """
 
         if not TAMSamplingUtils.validate_trajectory_data(trajectory):
             return {}

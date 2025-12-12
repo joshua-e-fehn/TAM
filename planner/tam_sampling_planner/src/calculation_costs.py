@@ -4,37 +4,6 @@ TAM Calculation Costs Module
 Multi-objective cost function calculations following original TAM approach
 
 Ported from tam_race_stack/mod_planning/sampling_planner/sampling_planner/calculation_costs.py
-
-ROS Parameters (relative namespace):
-- costs/curvature_cost_weight (default: 500000.0): Weight for curvature cost
-- costs/curvature_cost_threshold (default: 30.0): Speed threshold for curvature cost
-- costs/raceline_cost_weight (default: 3.5): Weight for raceline deviation cost
-- costs/velocity_cost_weight (default: 3.0): Weight for velocity cost
-- costs/friction_cost_weight (default: 5000.0): Weight for friction violation cost
-- costs/lateral_jerk_cost_weight (default: 0.0): Weight for lateral jerk cost
-- overtaking_weights/raceline_cost_weight_overtaking (default: 2.0): Raceline cost weight when overtaking
-- overtaking_weights/velocity_cost_weight_overtaking (default: 8.0): Velocity cost weight when overtaking
-- overtaking_weights/lateral_jerk_cost_weight_overtaking (default: 0.0): Lateral jerk cost weight when overtaking
-- costs/prediction_cost_weight (default: 100000.0): Weight for prediction cost
-- costs/additional_absolute_sample_cost (default: 50.0): Additional cost for absolute samples
-- costs/collision_cost_weight (default: 100000000.0): Weight for collision cost
-- behavior/horizon (default: 4.0): Planning horizon in seconds
-- costs/prediction_s_factor_min_size (default: 0.03): Minimum longitudinal prediction factor
-- costs/prediction_s_factor_max_size (default: 0.012): Maximum longitudinal prediction factor
-- costs/prediction_s_asym_scaling (default: 1.5): Asymmetric scaling for prediction
-- costs/prediction_n_factor (default: 0.2): Lateral prediction factor
-- costs/prediction_s_factor_defender (default: 0.03): Longitudinal prediction factor for defender
-- costs/prediction_n_factor_defender (default: 0.2): Lateral prediction factor for defender
-- costs/prediction_s_factor_static (default: 0.05): Longitudinal prediction factor for static objects
-- costs/prediction_n_factor_static (default: 0.35): Lateral prediction factor for static objects
-- costs/prediction_uncertainty_weight (default: 4.0): Weight for prediction uncertainty
-- costs/increasing_rl_cost (default: True): Whether to use increasing raceline cost over horizon
-- costs/velocity_excess_cost_multiplier (default: 2.0): Multiplier for velocity excess cost
-- behavior/max_deceleration_on_target_change (default: 5.0): Maximum deceleration on target change
-- costs/V_diff_max_costs (default: 15.0): Maximum velocity difference costs
-- behavior/collision_check_horizon_s (default: 1.5): Collision check horizon in seconds
-- behavior/tube_width (default: 1.0): Tube width for collision checking
-- safety_distances/safety_distance_vehicles (default: 0.0): Safety distance to other vehicles
 """
 
 from track_handler_global_waypoints import GlobalWaypointsTrackHandler
@@ -464,7 +433,15 @@ class CalculationCosts():
         return time_coords
 
     def _load_yaml_defaults(self):
-        """Load default parameters from tam_sampling_params.yaml"""
+        """
+        Load default parameters from tam_sampling_params.yaml configuration file.
+
+        Attempts to find the tam_sampling_planner package and load its
+        default configuration. Falls back to empty dict if file not found.
+
+        Returns:
+            dict: Parameter dictionary from YAML file, or empty dict on failure
+        """
         import rospkg
         import yaml
         import os
@@ -483,9 +460,19 @@ class CalculationCosts():
             return {}
 
     def declare_and_update_parameters(self, skip_update=False):
+        """
+        Declare and update cost calculation parameters from ROS parameter server.
+
+        On first call (initialized_params=False), loads defaults from YAML and
+        sets them on the ROS parameter server. On subsequent calls, reads
+        current values from the parameter server to allow dynamic reconfiguration.
+
+        Args:
+            skip_update: If True, skip parameter updates entirely
+        """
         if skip_update:
             return
-        
+
         if not self.initialized_params:
             yaml_defaults = self._load_yaml_defaults()
 
@@ -747,6 +734,18 @@ class CalculationCosts():
                 self.params.safety_distance_vehicles)
 
     def set_action_space_parameters(self, parameters):
+        """
+        Set cost weights from an external parameter object.
+
+        Used for Bayesian optimization or other parameter tuning methods
+        that need to override the default cost weights.
+
+        Args:
+            parameters: Object with attributes for each cost weight
+                       (curvature_cost_weight, raceline_cost_weight,
+                        velocity_cost_weight, friction_cost_weight,
+                        collision_cost_weight)
+        """
         self.params.curvature_cost_weight = parameters.curvature_cost_weight
         self.params.raceline_cost_weight = parameters.raceline_cost_weight
         self.params.velocity_cost_weight = parameters.velocity_cost_weight
@@ -755,6 +754,12 @@ class CalculationCosts():
         # print("new parameters set")
 
     def debug_params(self):
+        """
+        Print current cost weight parameters to console for debugging.
+
+        Outputs curvature, raceline, velocity, friction, and collision
+        cost weights in a formatted block.
+        """
         print(
             "*****************************************************************************")
         print(f"Curvature Cost Weight: {self.params.curvature_cost_weight}")
@@ -765,12 +770,19 @@ class CalculationCosts():
         print(
             "*****************************************************************************")
 
-    def sort_trajectories_by_cost(self,
-                                  valid_array,
-                                  cost_array):
-        # get sorted indices of costs, from lowest to highest
-        sorted_idx = np.argsort(cost_array[valid_array])
+    def sort_trajectories_by_cost(self, valid_array, cost_array):
+        """
+        Sort valid trajectories by their cost values.
 
+        Args:
+            valid_array: Boolean array indicating which trajectories are valid
+            cost_array: Array of cost values for all trajectories
+
+        Returns:
+            np.ndarray: Indices that would sort valid trajectories by cost
+                       (lowest to highest)
+        """
+        sorted_idx = np.argsort(cost_array[valid_array])
         return sorted_idx
 
     def calc_costs(
@@ -794,7 +806,48 @@ class CalculationCosts():
             emergency_brake: bool,
             vehicle_params: dict,
     ) -> int:
+        """
+        Calculate multi-objective costs for candidate trajectories.
 
+        Evaluates each valid trajectory against multiple cost terms:
+        - Curvature cost: Penalizes deviation from raceline curvature at high speeds
+        - Lateral jerk cost: Penalizes abrupt lateral accelerations
+        - Velocity cost: Penalizes deviation from target/raceline velocity
+        - Raceline cost: Penalizes lateral deviation from optimal raceline
+        - Friction cost: Penalizes tire utilization beyond limits
+        - Prediction cost: Soft cost for proximity to predicted opponent positions
+        - Collision cost: Hard cost for trajectories that collide with predictions
+
+        Cost weights are adjusted based on role (attacker/defender) and
+        whether overtaking is allowed.
+
+        Args:
+            valid_array: Boolean array indicating valid trajectories
+            rel_long_sampling_array: Boolean array for relative vs absolute sampling
+            track_handler: Track geometry and waypoint handler
+            s_array: Longitudinal positions [m] for each trajectory
+            n_array: Lateral positions [m] for each trajectory
+            t_array: Time values [s] for each trajectory
+            V_array: Velocity values [m/s] for each trajectory
+            Omega_z_array: Yaw rate values [rad/s] for each trajectory
+            ay_array: Lateral acceleration [m/s²] for each trajectory
+            raceline: Raceline data (global waypoints or postprocessed format)
+            prediction: Dict of opponent predictions keyed by ID
+            V_target: Target velocity [m/s]
+            planning_requests: Dict with 'role' and 'overtaking_allowed' keys
+            tire_util_array: Tire utilization ratio for each trajectory
+            pitlane_mode: Whether in pitlane mode
+            vehicle_ahead: Whether there is a vehicle ahead
+            emergency_brake: Whether emergency braking is required
+            vehicle_params: Dict with 'total_length' and 'total_width'
+
+        Returns:
+            tuple: (cost_array, cost_components, cost_extensive_array)
+                - cost_array: Total cost for each trajectory
+                - cost_components: List of individual cost arrays
+                  [curvature, velocity, raceline, prediction, lat_jerk, friction, collision]
+                - cost_extensive_array: Detailed per-timestep costs (if debugging) or None
+        """
         skip_update = getattr(self, '_skip_param_updates', False)
         self.declare_and_update_parameters(skip_update=skip_update)
 
@@ -962,7 +1015,6 @@ class CalculationCosts():
         friction_violation_array = np.maximum(
             0.0, (tire_util_array[valid_array][:, :-1] - 1)) ** 3
 
-        # TODO: remove SPAX factor for cost function weight
         friction_cost_array[valid_array] = 50000 * self.params.friction_cost_weight * np.add.reduce(
             np.abs(friction_violation_array) * diff_time_array,
             axis=1

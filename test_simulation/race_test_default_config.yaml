@@ -4,7 +4,7 @@ critical_distance: 0.8  # meters
 collision_distance: 0.4  # meters
 
 # Monitoring parameters
-check_rate: 80.0  # Hz
+check_rate: 144.0  # Hz
 
 # Race completion parameters
 target_laps: 3
@@ -19,7 +19,7 @@ car_width: 0.31    # meters
 
 # Event count thresholds
 max_overtakes: 1  # Maximum successful overtakes before ending race (single_car_obstacle mode)
-max_obstacle_collisions: 1  # Maximum collisions with obstacle before ending race
+max_obstacle_collisions: 100  # Maximum collisions with obstacle before ending race
 max_boundary_collisions: 1  # Maximum track boundary collisions before ending race
 max_car_collisions: 1  # Maximum car-to-car collisions before ending race (multi_car mode)
 

@@ -1,8 +1,0 @@
-Sector0:
-  end: 6336
-  no_FTG: false
-  only_FTG: false
-  scaling: 0.5
-  start: 0
-global_limit: 0.5
-n_sectors: 1

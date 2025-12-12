@@ -1,0 +1,73 @@
+================================================================================
+SETUP MODE STATISTICS
+================================================================================
+
+Total simulations: 936
+
+Single Car With Obstacle: 269 simulations
+  - F map: 99 simulations
+  - Marina map: 170 simulations
+
+Multi-Car: 667 simulations
+  - F map: 331 simulations
+  - Marina map: 336 simulations
+
+Unique setup modes: 40
+  - Single Car With Obstacle: 8 modes
+      - F map: 4 modes
+      - Marina map: 4 modes
+  - Multi-Car: 32 modes
+      - F map: 16 modes
+      - Marina map: 16 modes
+
+--------------------------------------------------------------------------------
+DETAILED BREAKDOWN BY SETUP MODE
+--------------------------------------------------------------------------------
+
+📦 SINGLE CAR WITH OBSTACLE
+
+  single_car_with_obstacle | f | predictive_sampler: 21 simulations
+  single_car_with_obstacle | f | predictive_spliner: 36 simulations
+  single_car_with_obstacle | f | spliner: 21 simulations
+  single_car_with_obstacle | f | tam_sampling: 21 simulations
+  single_car_with_obstacle | marina | predictive_sampler: 46 simulations
+  single_car_with_obstacle | marina | predictive_spliner: 46 simulations
+  single_car_with_obstacle | marina | spliner: 39 simulations
+  single_car_with_obstacle | marina | tam_sampling: 39 simulations
+
+🏎️  MULTI-CAR
+
+  multi_car | f | car1:predictive_sampler vs car2:predictive_sampler: 21 simulations
+  multi_car | f | car1:predictive_sampler vs car2:predictive_spliner: 21 simulations
+  multi_car | f | car1:predictive_sampler vs car2:spliner: 21 simulations
+  multi_car | f | car1:predictive_sampler vs car2:tam_sampling: 21 simulations
+  multi_car | f | car1:predictive_spliner vs car2:predictive_sampler: 21 simulations
+  multi_car | f | car1:predictive_spliner vs car2:predictive_spliner: 21 simulations
+  multi_car | f | car1:predictive_spliner vs car2:spliner: 21 simulations
+  multi_car | f | car1:predictive_spliner vs car2:tam_sampling: 21 simulations
+  multi_car | f | car1:spliner vs car2:predictive_sampler: 21 simulations
+  multi_car | f | car1:spliner vs car2:predictive_spliner: 21 simulations
+  multi_car | f | car1:spliner vs car2:spliner: 21 simulations
+  multi_car | f | car1:spliner vs car2:tam_sampling: 21 simulations
+  multi_car | f | car1:tam_sampling vs car2:predictive_sampler: 16 simulations
+  multi_car | f | car1:tam_sampling vs car2:predictive_spliner: 21 simulations
+  multi_car | f | car1:tam_sampling vs car2:spliner: 21 simulations
+  multi_car | f | car1:tam_sampling vs car2:tam_sampling: 21 simulations
+  multi_car | marina | car1:predictive_sampler vs car2:predictive_sampler: 21 simulations
+  multi_car | marina | car1:predictive_sampler vs car2:predictive_spliner: 21 simulations
+  multi_car | marina | car1:predictive_sampler vs car2:spliner: 21 simulations
+  multi_car | marina | car1:predictive_sampler vs car2:tam_sampling: 21 simulations
+  multi_car | marina | car1:predictive_spliner vs car2:predictive_sampler: 21 simulations
+  multi_car | marina | car1:predictive_spliner vs car2:predictive_spliner: 21 simulations
+  multi_car | marina | car1:predictive_spliner vs car2:spliner: 21 simulations
+  multi_car | marina | car1:predictive_spliner vs car2:tam_sampling: 21 simulations
+  multi_car | marina | car1:spliner vs car2:predictive_sampler: 21 simulations
+  multi_car | marina | car1:spliner vs car2:predictive_spliner: 21 simulations
+  multi_car | marina | car1:spliner vs car2:spliner: 21 simulations
+  multi_car | marina | car1:spliner vs car2:tam_sampling: 21 simulations
+  multi_car | marina | car1:tam_sampling vs car2:predictive_sampler: 21 simulations
+  multi_car | marina | car1:tam_sampling vs car2:predictive_spliner: 21 simulations
+  multi_car | marina | car1:tam_sampling vs car2:spliner: 21 simulations
+  multi_car | marina | car1:tam_sampling vs car2:tam_sampling: 21 simulations
+
+================================================================================

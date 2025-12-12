@@ -17,7 +17,7 @@ state_machine:
   splini_hyst_timer_sec: 0.75  # Hysteresis timer for trajectory stability
   
   # Overtaking parameters
-  overtaking_horizon_m: 6.9  # Horizon for overtaking checks
+  overtaking_horizon_m: 4.0  # Horizon for overtaking checks
   lateral_width_ot_m: 0.3    # Lateral width margin for overtaking
   
   # Graph-based parameters (used for checks)

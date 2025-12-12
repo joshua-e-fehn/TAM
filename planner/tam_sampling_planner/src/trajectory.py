@@ -1,3 +1,17 @@
+"""Trajectory generation and emergency braking module for TAM Sampling Planner.
+
+This module provides trajectory extension and emergency braking trajectory
+generation using physics-based tire models. It calculates braking limits
+using either Pacejka tire model (preferred) or simplified friction circle
+fallback.
+
+Key Features:
+    - Emergency braking trajectory generation with optimal deceleration
+    - Performance trajectory extension to meet minimum length requirements
+    - Pacejka tire model integration for accurate force limits
+    - Track-aware calculations (banking, elevation effects)
+"""
+
 from track_handler_global_waypoints import GlobalWaypointsTrackHandler as Track
 from pacejka_tire_model import PacejkaTireModel
 import numpy as np
@@ -8,6 +22,25 @@ import rospy
 
 @dataclass
 class TrajectoryParams():
+    """Configuration parameters for trajectory generation.
+
+    Attributes:
+        tube_width: Safety margin width around trajectory [m]. Default 0.6m
+            (reduced from 1.0m for tighter racing, car width ~0.5m).
+        num_samples: Number of discrete samples in trajectory. Default 51.
+        min_trajectory_length: Minimum required trajectory length [m]. Default 10.0m.
+        extension_emergency_time_offset: Time offset for emergency extension start [s].
+        extension_n_samples: Number of extension length samples to try.
+        extension_point_distance: Distance between extension points [m].
+        extension_min_resolution: Minimum number of extension samples.
+        extension_max_s_sample: Maximum arc-length for extension sampling [m].
+        additional_const_time_emergency: Additional constant time for emergency [s].
+        const_trajectory_time: Constant trajectory time period [s].
+        add_emergency_safety_distance_left: Extra left safety margin for emergency [m].
+        add_emergency_safety_distance_right: Extra right safety margin for emergency [m].
+        max_braking_deceleration_g: Fallback max braking in g's (when GGGV unavailable).
+        max_lateral_acceleration_g: Fallback max lateral acceleration in g's.
+    """
     # Reduced from 1.0 to 0.6m for tighter racing (car width ~0.5m)
     tube_width: float = 0.6
     num_samples: int = 51
@@ -28,7 +61,26 @@ class TrajectoryParams():
 
 
 class Trajectory():
+    """Trajectory generation and extension handler for TAM planner.
+
+    Provides emergency braking trajectory calculation and performance trajectory
+    extension. Uses Pacejka tire model for accurate tire force limits when available,
+    with simplified physics fallback.
+
+    Attributes:
+        params (TrajectoryParams): Configuration parameters.
+        initialized_params (bool): Whether parameters have been initialized from YAML.
+        debugging (bool): Enable debug output.
+        pacejka_model (PacejkaTireModel or None): Tire model for force calculations.
+        use_pacejka (bool): Whether Pacejka model is available and active.
+    """
+
     def __init__(self, debugging):
+        """Initialize trajectory handler.
+
+        Args:
+            debugging: Enable debug logging and output.
+        """
         self.params = TrajectoryParams()
         self.initialized_params = False
         self.declare_and_update_parameters()
@@ -47,7 +99,12 @@ class Trajectory():
             self.use_pacejka = False
 
     def _load_yaml_defaults(self):
-        """Load default parameters from tam_sampling_params.yaml"""
+        """Load default parameters from tam_sampling_params.yaml.
+
+        Returns:
+            dict: Parameter dictionary from YAML file, or empty dict on failure.
+                Keys match ROS parameter names (e.g., 'tube_width', 'num_samples').
+        """
         import rospkg
         import yaml
         import os
@@ -170,11 +227,32 @@ class Trajectory():
                 'behavior/max_lateral_acceleration_g', self.params.max_lateral_acceleration_g)
 
     def __calc_ax_avail(self, s, n, chi, V, Omega_z, track_handler, gggv_handler, pitlane_mode):
-        """
-        Calculate available braking acceleration.
+        """Calculate available braking acceleration considering current lateral load.
 
-        NOTE: GGGV diagram functionality is commented out as Pacejka tire model is used instead.
-        Uses simplified physics-based braking limits as fallback.
+        Uses friction ellipse to determine available longitudinal (braking) acceleration
+        given current lateral acceleration from cornering. Prefers Pacejka tire model
+        for accurate calculations, falls back to simplified friction circle.
+
+        NOTE: gggv_handler parameter is kept for API compatibility but not used.
+        GGGV diagram functionality is commented out as Pacejka tire model is used instead.
+
+        Args:
+            s: Arc-length position on track [m].
+            n: Lateral offset from centerline [m].
+            chi: Heading angle relative to track tangent [rad].
+            V: Vehicle velocity [m/s].
+            Omega_z: Yaw rate / curvature [rad/m]. Note: Named Omega_z but represents
+                path curvature (kappa), not vehicle yaw rate.
+            track_handler: Track geometry handler for coordinate transforms.
+            gggv_handler: GGGV handler (NOT USED - kept for compatibility).
+            pitlane_mode: Whether in pitlane mode (NOT USED with current implementation).
+
+        Returns:
+            tuple: (ax_avail_tilde, ay_tilde, g_tilde)
+                - ax_avail_tilde: Available braking acceleration in apparent frame [m/s²]
+                  (negative value indicating deceleration)
+                - ay_tilde: Lateral acceleration in apparent frame [m/s²]
+                - g_tilde: Apparent gravity accounting for track geometry [m/s²]
         """
         ay_hat = V**2 * Omega_z
         _, ay_tilde, g_tilde = track_handler.calc_apparent_acceleration(
@@ -260,6 +338,30 @@ class Trajectory():
         msgs_logger
 
     ):
+        """Extend emergency trajectory with smooth polynomial lateral profile.
+
+        Generates a 5th-order polynomial extension that smoothly brings the vehicle
+        back to the centerline (n=0) while maintaining C2 continuity at the junction.
+        Tries multiple extension lengths from s_range until one passes track bounds.
+
+        Args:
+            trajectory: Trajectory dict to extend IN-PLACE. Must contain keys:
+                V, s_dot, s, n, chi, Omega_z, n_dot, t, s_loc, and acceleration fields.
+            track_handler: Track geometry for bounds checking and curvature.
+            s_range: Array of extension lengths to try [m], from longest to shortest.
+            vehicle_params: Dict with 'total_width' for collision checking.
+            msgs_logger: Logger instance (currently unused in this method).
+
+        Returns:
+            bool: True if extension succeeded and trajectory was modified,
+                  False if no valid extension found within track bounds.
+
+        Notes:
+            - Modifies trajectory dict in-place by appending extension arrays.
+            - Uses boundary conditions: start matches trajectory end (n, n', n''),
+              end targets centerline (n=0, n'=0, n''=0).
+            - Extension includes tube_width and emergency safety distances in bounds.
+        """
         # Safety check: ensure trajectory has sufficient points
         if len(trajectory.get("V", [])) == 0:
             rospy.logerr("Emergency trajectory extension: trajectory is empty")
@@ -493,7 +595,6 @@ class Trajectory():
                     s=s, n=n, chi=chi, Omega_z=Omega_z, V=V, track_handler=track_handler, gggv_handler=gggv_handler, pitlane_mode=pitlane_mode)
                 ax_avail_hat, ay_hat = track_handler.calc_acceleration(
                     s, chi, ax_avail_tilde, ay_tilde)
-                # TODO: acc in tilde frame probably correct, both left here for now
                 emergency_trajectory["ax"][i] = ax_avail_hat
                 emergency_trajectory["ay"][i] = ay_hat
                 emergency_trajectory["ax_tilde"][i] = ax_avail_tilde
@@ -594,6 +695,26 @@ class Trajectory():
         trajectory: dict,
         track_handler: Track,
     ):
+        """Extend performance trajectory to meet minimum length requirement.
+
+        If the trajectory is shorter than min_trajectory_length, extends it by
+        appending constant-velocity, constant-lateral-offset samples. The extension
+        maintains the final velocity and lateral offset of the original trajectory.
+
+        Args:
+            trajectory: Trajectory dict to extend IN-PLACE. Must contain keys:
+                s_loc, V, n, s, t, and kinematic state fields.
+            track_handler: Track geometry for curvature and coordinate transforms.
+
+        Returns:
+            dict: The extended trajectory (same object, modified in-place).
+
+        Notes:
+            - Only extends if current length < min_trajectory_length (with 1μm tolerance).
+            - Extension follows track centerline offset by final 'n' value.
+            - Acceleration fields (ax, jx, jy) are set to zero in extension.
+            - Lateral dynamics (n_dot, n_ddot, chi) are set to zero (straight tracking).
+        """
         # Reload parameters in case they've been updated
         skip_update = getattr(self, '_skip_param_updates', False)
         self.declare_and_update_parameters(skip_update=skip_update)

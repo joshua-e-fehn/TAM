@@ -38,7 +38,16 @@ def GlobalTracking(state_machine: StateMachine) -> List[Wpnt]:
 
 def Trailing(state_machine: StateMachine) -> List[Wpnt]:
     # This allows us to trail on the last valid spline if necessary
-    if (state_machine.ot_planner in ["spliner", "predictive_spliner", "predictive_sampler"]) and state_machine.last_valid_avoidance_wpnts is not None:
+    # BUT only if force_trailing is False (opponent has completed at least 1 lap)
+    force_trailing = state_machine._check_force_trailing()
+    use_avoidance = (
+        state_machine.ot_planner in [
+            "spliner", "predictive_spliner", "predictive_sampler"]
+        and state_machine.last_valid_avoidance_wpnts is not None
+        and not force_trailing  # Don't use avoidance trajectory when force_trailing
+    )
+
+    if use_avoidance:
         splini_wpts = state_machine.get_splini_wpts()
         s = int(state_machine.cur_s/state_machine.waypoints_dist + 0.5)
         return [splini_wpts[(s + i) % state_machine.num_glb_wpnts] for i in range(state_machine.n_loc_wpnts)]
@@ -130,9 +139,6 @@ def TAMTracking(state_machine: StateMachine) -> List[Wpnt]:
         return selected_wpnts
     else:
         # Fallback: No TAM trajectory available, use global waypoints
-        # This happens when TAM planning fails or during initialization
-        # rospy.logerr(
-        #     f"[{state_machine.name}] ⚠️⚠️⚠️ TAM TRAJECTORY NOT AVAILABLE! --> Fallback to GLOBAL RACELINE waypoints.")
 
         # Mark source as global fallback for visualization
         state_machine.tam_waypoint_source = 'global_fallback'

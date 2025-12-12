@@ -79,7 +79,13 @@ class CoordinateTransformation:
             return {}
 
     def load_and_update_ros_parameters(self):
-        """Load parameters from ROS parameter server with YAML defaults as fallback"""
+        """
+        Load and update parameters from ROS parameter server.
+
+        On first call (initialized_params=False), loads defaults from YAML config
+        and sets them on the ROS parameter server. On subsequent calls, reads
+        current values from the parameter server to allow dynamic reconfiguration.
+        """
         if not self.initialized_params:
             yaml_defaults = self._load_yaml_defaults()
 
@@ -105,7 +111,39 @@ class CoordinateTransformation:
         n_ddot_array: np.ndarray,
         postprocessed_raceline: dict
     ):
+        """
+        Transform Frenet frame derivatives to velocity frame quantities.
 
+        Converts trajectory states from Frenet coordinates (s, n) and their
+        time derivatives to velocity frame quantities used by the controller.
+        This includes absolute velocity, heading angle relative to track,
+        and accelerations in the velocity-aligned frame.
+
+        The velocity frame is aligned with the instantaneous velocity vector,
+        making ax the tangential acceleration and ay the centripetal acceleration.
+
+        Args:
+            track_handler: Track geometry handler for curvature interpolation
+            s_array: Longitudinal position along track centerline [m]
+            s_dot_array: Time derivative of s (longitudinal velocity component) [m/s]
+            s_ddot_array: Second time derivative of s [m/s²]
+            n_array: Lateral offset from centerline [m]
+            n_dot_array: Time derivative of n (lateral velocity component) [m/s]
+            n_ddot_array: Second time derivative of n [m/s²]
+            postprocessed_raceline: Dict with raceline data including:
+                - s_post, n_post: Raceline Frenet coordinates
+                - s_dot_post, s_ddot_post: Raceline s derivatives
+                - n_ddot_post: Raceline lateral acceleration
+
+        Returns:
+            tuple: (v_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array, kappa_vf_array)
+                - v_array: Absolute velocity magnitude [m/s]
+                - chi_array: Heading angle relative to track tangent [rad]
+                - ax_vf_array: Longitudinal acceleration in velocity frame [m/s²]
+                - ay_vf_array: Lateral acceleration in velocity frame [m/s²]
+                - Omega_z_vf_array: Yaw rate in velocity frame [rad/s]
+                - kappa_vf_array: Path curvature (Omega_z / v) [rad/m]
+        """
         self.load_and_update_ros_parameters()
 
         # angular velocity of road frame with respect to s expressed in road frame (ommited around x and y axis)
@@ -212,7 +250,20 @@ class CoordinateTransformation:
         return v_array, chi_array, ax_vf_array, ay_vf_array, Omega_z_vf_array, kappa_vf_array
 
     def __cut_trajectory_at_zero(self, trajectory_N):
+        """
+        Cut trajectory after velocity reaches zero (for emergency trajectories).
 
+        Finds the first point where velocity drops to near-zero and truncates
+        the trajectory shortly after (with a small buffer). This prevents
+        publishing trajectory points beyond a full stop.
+
+        Args:
+            trajectory_N: Trajectory dict with 'v' field. Modified in-place
+                         to truncate all array fields at the zero-velocity point.
+
+        Note:
+            Prints a warning if the trajectory never reaches zero velocity.
+        """
         self.load_and_update_ros_parameters()
 
         # get indices where emergency trajectory is zero
@@ -235,7 +286,17 @@ class CoordinateTransformation:
             print("WARNING: Emergency trajectory does not reach zero!")
 
     def __recalc_ax_profile(self, trajectory_N):
-        # recalc ax profile
+        """
+        Recalculate longitudinal acceleration profile from velocity differences.
+
+        Uses the kinematic relationship: ax = (v2² - v1²) / (2 * ds)
+        to ensure consistency between velocity and acceleration profiles.
+        Sets acceleration to zero where velocity is near-zero.
+
+        Args:
+            trajectory_N: Trajectory dict with 'v' and 's_loc' fields.
+                         Modified in-place to update 'ax' field.
+        """
         trajectory_N["ax"] = np.zeros_like(trajectory_N["v"])
 
         # Safety check: need at least 2 points to calculate acceleration

@@ -184,29 +184,6 @@ class ObstacleSpliner:
             self.post_apex_2,
         ]
 
-        # Debug output with all parameter values
-        rospy.logwarn(
-            f"{'='*70}\n"
-            f"[{self.name}] 🔧 DYNAMIC PARAMETERS UPDATED\n"
-            f"{'='*70}\n"
-            f"  Namespace: {car_namespace if car_namespace else 'global'}\n"
-            f"  Spline control points [m]: {spline_params}\n"
-            f"  ├─ pre_apex_0:  {self.pre_apex_0:7.2f} m (config: {-self.pre_apex_0:.2f})\n"
-            f"  ├─ pre_apex_1:  {self.pre_apex_1:7.2f} m (config: {-self.pre_apex_1:.2f})\n"
-            f"  ├─ pre_apex_2:  {self.pre_apex_2:7.2f} m (config: {-(self.pre_apex_2-0.1):.2f})\n"
-            f"  ├─ post_apex_0: {self.post_apex_0:7.2f} m\n"
-            f"  ├─ post_apex_1: {self.post_apex_1:7.2f} m\n"
-            f"  └─ post_apex_2: {self.post_apex_2:7.2f} m\n"
-            f"  Avoidance parameters:\n"
-            f"  ├─ evasion_dist:         {self.evasion_dist:.3f} m\n"
-            f"  ├─ obs_traj_tresh:       {self.obs_traj_tresh:.3f} m\n"
-            f"  └─ spline_bound_mindist: {self.spline_bound_mindist:.3f} m\n"
-            f"  Prediction parameters:\n"
-            f"  ├─ kd_obs_pred:          {self.kd_obs_pred:.3f}\n"
-            f"  └─ fixed_pred_time:      {self.fixed_pred_time:.3f} s\n"
-            f"{'='*70}"
-        )
-
     #############
     # MAIN LOOP #
     #############
@@ -371,7 +348,7 @@ class ObstacleSpliner:
                 dst = dst * np.clip(1.0 + self.cur_vs / self.gb_vmax, 1, 1.5)
                 # If we overtake on the outside, we smoothen the spline
                 if outside == more_space:
-                    si = s_apex + dst * 1.75  # TODO make parameter
+                    si = s_apex + dst * 1.75
                 else:
                     si = s_apex + dst
                 di = d_apex if dst == 0 else 0
@@ -380,7 +357,6 @@ class ObstacleSpliner:
             evasion_points = np.array(evasion_points)
 
             # Spline spatialy for d with s as base
-            # TODO read from ros params to make consistent in case it changes
             spline_resolution = 0.1
             spatial_spline = Spline(
                 x=evasion_points[:, 0], y=evasion_points[:, 1])
@@ -409,13 +385,9 @@ class ObstacleSpliner:
                 if abs(evasion_d[i]) > spline_resolution:
                     tb_dist = gb_wpnts[gb_wpnt_i].d_left if more_space == "left" else gb_wpnts[gb_wpnt_i].d_right
                     if abs(evasion_d[i]) > abs(tb_dist) - self.spline_bound_mindist:
-                        # rospy.loginfo_throttle_identical(
-                        #     2, f"{self.log_name}: Evasion trajectory too close to TRACKBOUNDS, aborting evasion"
-                        # )
                         danger_flag = True
                         break
                 # Get V from gb wpnts and go slower if we are going through the inside
-                # TODO make speed scaling ros param
                 vi = gb_wpnts[gb_wpnt_i].vx_mps if outside == more_space else gb_wpnts[gb_wpnt_i].vx_mps * 0.9
                 wpnts.wpnts.append(
                     self.xyv_to_wpnts(
@@ -466,9 +438,7 @@ class ObstacleSpliner:
 
     def _predict_obs_movement(self, obs: Obstacle, mode: str = "constant") -> Obstacle:
         """
-        Predicts the movement of an obstacle based on the current state and mode.
-
-        TODO: opponent prediction should be completely isolated for added modularity       
+        Predicts the movement of an obstacle based on the current state and mode.  
 
         Args:
             obs (Obstacle): The obstacle to predict the movement for.
@@ -478,7 +448,7 @@ class ObstacleSpliner:
             Obstacle: The updated obstacle with the predicted movement.
         """
         # propagate opponent by time dependent on distance
-        if (obs.s_center - self.cur_s) % self.gb_max_s < 10:  # TODO make param
+        if (obs.s_center - self.cur_s) % self.gb_max_s < 10:
             if mode == "adaptive":
                 # distance in s coordinate
                 cur_s = self.cur_s
@@ -542,10 +512,7 @@ class ObstacleSpliner:
         return obs
 
     def _check_ot_side_possible(self, more_space) -> bool:
-        # TODO make rosparam for cur_d threshold
         if abs(self.cur_d) > 0.25 and more_space != self.last_ot_side:
-            # rospy.loginfo(
-            #     f"{self.log_name}: Can't switch sides, because we are not on the raceline")
             return False
         return True
 

@@ -305,20 +305,25 @@ class LocalSamplingPlanner:
         Processes OpponentTrajectory message from tam_prediction_node which provides
         opponent predicted trajectory as a list of OppWpnt waypoints in Frenet coordinates.
 
+        Features (aligned with C++ implementation):
+        - Spatial window filtering: Rejects predictions outside configurable s/n window
+        - Proper time offset calculation: Accounts for perception-to-planning delay
+        - Quadratic following velocity controller: Smooth speed adaptation based on distance error
+
         Args:
             raw_prediction: Raw prediction from tam_prediction_node with 'oppwpnts' list
                            or legacy dict format for backward compatibility
-            state_estimate: Current vehicle state with 's', 'n', 'vel_current'
+            state_estimate: Current vehicle state with 's', 'n', 'vel_current', 'time_ns'
             track_handler: Track handler object
             perception_offset_threshold: Threshold for perception offset
             t_offset_state_estimate_to_start: Time offset from state estimate to planning start
             following_distance_target: Target following distance
-            following_distance_factor_pos: Positive following distance factor
-            following_distance_factor_neg: Negative following distance factor
-            planning_requests: Planning requests dictionary
-            following_vel: Current following velocity
+            following_distance_factor_pos: Positive following distance factor (controls acceleration toward target)
+            following_distance_factor_neg: Negative following distance factor (controls deceleration when too close)
+            planning_requests: Planning requests dictionary with 'overtaking_allowed'
+            following_vel: Current following velocity (unused, kept for API compatibility)
             traj_cnt: Trajectory counter
-            vehicle_ahead: Flag indicating vehicle ahead
+            vehicle_ahead: Flag indicating vehicle ahead (unused, kept for API compatibility)
             node_monitor: Node monitor object
             msgs_logger: Message logger
             debugging: Debug flag
@@ -340,6 +345,26 @@ class LocalSamplingPlanner:
         )[-1] if hasattr(track_handler, 's_coord') else 100.0
         half_track = track_length * 0.5
 
+        # Get ego position
+        ego_s = state_estimate.get('s', 0.0)
+        ego_n = state_estimate.get('n', 0.0)
+
+        # Spatial window filtering parameters (aligned with C++ implementation)
+        # These define the region around ego where predictions are considered valid
+        prediction_s_window_neg = getattr(
+            self, 'prediction_s_window_neg', 50.0)  # meters behind
+        prediction_s_window_pos = getattr(
+            self, 'prediction_s_window_pos', 100.0)  # meters ahead
+        prediction_filter_n = getattr(
+            self, 'prediction_filter_n', 5.0)  # lateral margin
+
+        # Calculate s-window boundaries with wraparound
+        s_window_start = (ego_s - prediction_s_window_neg) % track_length
+        s_window_end = (ego_s + prediction_s_window_pos) % track_length
+
+        # Get overtaking settings
+        overtaking_allowed = planning_requests.get('overtaking_allowed', False)
+
         # Check if this is tam_prediction_node format (has 'oppwpnts')
         if 'oppwpnts' in raw_prediction:
             # TAM prediction node format - process opponent trajectory waypoints
@@ -348,8 +373,17 @@ class LocalSamplingPlanner:
             if len(oppwpnts) == 0:
                 return postprocessed_prediction, new_following_vel, new_vehicle_ahead
 
-            # Extract ego position for segment extraction
-            ego_s = state_estimate.get('s', 0.0)
+            # Get prediction timestamp for time offset calculation
+            t_abs_perception = raw_prediction.get('t_abs_perception', 0.0)
+            state_time_ns = state_estimate.get('time_ns', 0)
+
+            # Calculate time offset: perception delay + planning offset
+            # This accounts for the time between when the prediction was made and when planning starts
+            if t_abs_perception > 0 and state_time_ns > 0:
+                time_offset_sec = (state_time_ns - t_abs_perception) * \
+                    1e-9 + t_offset_state_estimate_to_start
+            else:
+                time_offset_sec = t_offset_state_estimate_to_start
 
             # OPTIMIZATION: Determine message format once (ROS message vs dict)
             first_wp = oppwpnts[0]
@@ -363,6 +397,8 @@ class LocalSamplingPlanner:
                 y_all = np.array([wp.y_m for wp in oppwpnts])
                 vel_s_all = np.array([wp.proj_vs_mps for wp in oppwpnts])
                 vel_n_all = np.array([wp.vd_mps for wp in oppwpnts])
+                t_all = np.array([getattr(wp, 't', i * 0.1)
+                                 for i, wp in enumerate(oppwpnts)])
             else:
                 s_all = np.array([wp['s_m'] for wp in oppwpnts])
                 n_all = np.array([wp['d_m'] for wp in oppwpnts])
@@ -371,18 +407,75 @@ class LocalSamplingPlanner:
                 vel_s_all = np.array([wp['proj_vs_mps'] for wp in oppwpnts])
                 vel_n_all = np.array([wp.get('vd_mps', 0.0)
                                      for wp in oppwpnts])
+                t_all = np.array([wp.get('t', i * 0.1)
+                                 for i, wp in enumerate(oppwpnts)])
 
-            # OPTIMIZATION: Vectorized wraparound calculation
+            # ========================================================================
+            # SPATIAL WINDOW FILTERING (aligned with C++ implementation)
+            # ========================================================================
+            # Check if first waypoint is within the spatial window
+            first_s = s_all[0]
+            first_n = n_all[0]
+
+            # Check s-coordinate is within window (handle wraparound)
+            if s_window_start <= s_window_end:
+                # Normal case: window doesn't wrap around track
+                in_s_window = (first_s >= s_window_start) and (
+                    first_s <= s_window_end)
+            else:
+                # Wraparound case: window spans start/finish line
+                in_s_window = (first_s >= s_window_start) or (
+                    first_s <= s_window_end)
+
+            # Check n-coordinate is within lateral margin
+            in_n_window = abs(first_n) <= prediction_filter_n
+
+            if not (in_s_window and in_n_window):
+                # First prediction point is outside spatial window - skip this prediction
+                if debugging:
+                    rospy.logdebug_throttle(
+                        5.0, f"[Prediction] Filtered: first point outside window "
+                        f"(s={first_s:.1f}, n={first_n:.2f}, window=[{s_window_start:.1f}, {s_window_end:.1f}])")
+                return postprocessed_prediction, new_following_vel, new_vehicle_ahead
+
+            # ========================================================================
+            # TIME OFFSET AND FILTERING (aligned with C++ implementation)
+            # ========================================================================
+            # Apply time offset to get time relative to planning start
+            t_with_offset = t_all - time_offset_sec
+
+            # Filter out waypoints with negative time (already in the past)
+            # For dynamic objects, if final time is not positive, skip entirely
+            if len(t_with_offset) > 0 and t_with_offset[-1] <= 0.0:
+                if debugging:
+                    rospy.logdebug_throttle(
+                        5.0, f"[Prediction] Filtered: all waypoints in the past "
+                        f"(t_final={t_with_offset[-1]:.2f}s)")
+                return postprocessed_prediction, new_following_vel, new_vehicle_ahead
+
+            # Find first waypoint with positive time (in the future)
+            future_mask = t_with_offset >= 0.0
+            if np.any(future_mask):
+                first_future_idx = np.argmax(future_mask)
+            else:
+                first_future_idx = 0
+
+            # OPTIMIZATION: Vectorized wraparound calculation for segment selection
             s_diff = s_all - ego_s
             s_diff = np.where(s_diff > half_track,
                               s_diff - track_length, s_diff)
             s_diff = np.where(s_diff < -half_track,
                               s_diff + track_length, s_diff)
 
-            # Find first waypoint ahead (s_diff >= 0) or closest if all behind
+            # Find first waypoint ahead (s_diff >= 0) starting from first_future_idx
             ahead_mask = s_diff >= 0
-            if np.any(ahead_mask):
-                # Use first waypoint ahead of ego
+            combined_mask = ahead_mask & future_mask
+
+            if np.any(combined_mask):
+                # Use first waypoint that is both ahead and in the future
+                start_idx = np.argmax(combined_mask)
+            elif np.any(ahead_mask):
+                # Fallback: use first waypoint ahead (even if slightly in past)
                 start_idx = np.argmax(ahead_mask)
             else:
                 # All waypoints behind - use closest (should rarely happen)
@@ -396,25 +489,31 @@ class LocalSamplingPlanner:
             distance_horizon = 2.0 * self.trajectory_length
 
             # OPTIMIZATION: Vectorized distance/time accumulation with early exit
-            ds_all = np.diff(s_all[start_idx:])
-            ds_all = np.where(ds_all < 0, ds_all + track_length, ds_all)
-            d_cumulative = np.concatenate(([0.0], np.cumsum(np.abs(ds_all))))
+            if start_idx < len(s_all) - 1:
+                ds_all = np.diff(s_all[start_idx:])
+                ds_all = np.where(ds_all < 0, ds_all + track_length, ds_all)
+                d_cumulative = np.concatenate(
+                    ([0.0], np.cumsum(np.abs(ds_all))))
 
-            # Vectorized time calculation
-            v_avg = 0.5 * (vel_s_all[start_idx:-1] + vel_s_all[start_idx+1:])
-            v_avg_safe = np.where(v_avg > 0.1, v_avg, 1e-6)
-            dt_all = ds_all / v_avg_safe
-            t_cumulative = np.concatenate(([0.0], np.cumsum(dt_all)))
+                # Vectorized time calculation
+                v_avg = 0.5 * (vel_s_all[start_idx:-1] +
+                               vel_s_all[start_idx+1:])
+                v_avg_safe = np.where(v_avg > 0.1, v_avg, 1e-6)
+                dt_all = ds_all / v_avg_safe
+                t_cumulative = np.concatenate(([0.0], np.cumsum(dt_all)))
 
-            # Find end index where limits are exceeded
-            exceed_dist = d_cumulative > distance_horizon
-            exceed_time = t_cumulative > time_horizon
-            exceed_mask = exceed_dist | exceed_time
+                # Find end index where limits are exceeded
+                exceed_dist = d_cumulative > distance_horizon
+                exceed_time = t_cumulative > time_horizon
+                exceed_mask = exceed_dist | exceed_time
 
-            if np.any(exceed_mask):
-                end_idx = start_idx + np.argmax(exceed_mask)
+                if np.any(exceed_mask):
+                    end_idx = start_idx + np.argmax(exceed_mask)
+                else:
+                    end_idx = len(s_all)
             else:
                 end_idx = len(s_all)
+                t_cumulative = np.array([0.0])
 
             # Ensure we have at least some points
             if end_idx <= start_idx:
@@ -427,29 +526,33 @@ class LocalSamplingPlanner:
             y_segment = y_all[start_idx:end_idx]
             vel_s_segment = vel_s_all[start_idx:end_idx]
             vel_n_segment = vel_n_all[start_idx:end_idx]
+            t_segment_raw = t_all[start_idx:end_idx]
 
             N = len(s_segment)
 
             if N == 0:
                 return postprocessed_prediction, new_following_vel, new_vehicle_ahead
 
-            # OPTIMIZATION: Vectorized time calculation (already computed above)
-            # Extract time segment corresponding to the extracted waypoint segment
+            # Apply time offset to segment times
+            t_segment_with_offset = t_segment_raw - time_offset_sec
+
+            # Also compute cumulative time from segment start (for internal use)
             segment_length = N
             if segment_length <= len(t_cumulative):
-                t_segment = t_cumulative[:segment_length]
+                t_segment_cumulative = t_cumulative[:segment_length]
             else:
                 # Fallback for edge cases
-                t_segment = np.zeros(N)
+                t_segment_cumulative = np.zeros(N)
                 if N > 1:
                     ds_segment = np.diff(s_segment)
                     ds_segment = np.where(
                         ds_segment < 0, ds_segment + track_length, ds_segment)
                     v_avg_seg = 0.5 * (vel_s_segment[:-1] + vel_s_segment[1:])
                     v_avg_seg = np.where(v_avg_seg > 1e-6, v_avg_seg, 1e-6)
-                    t_segment[1:] = np.cumsum(ds_segment / v_avg_seg)
+                    t_segment_cumulative[1:] = np.cumsum(
+                        ds_segment / v_avg_seg)
 
-            # OPTIMIZATION: Simplified wraparound calculation
+            # Compute global distance at t=0 with wraparound handling
             dist_at_t0 = s_segment[0] - ego_s
             abs_dist = abs(dist_at_t0)
             if abs_dist > half_track:
@@ -461,25 +564,39 @@ class LocalSamplingPlanner:
             # OPTIMIZATION: Vectorized velocity calculation
             vel_total = np.sqrt(vel_s_segment**2 + vel_n_segment**2)
 
-            # OPTIMIZATION: Vectorized following distance check
-            if s_glob_dist > 0:  # Opponent ahead
-                # Calculate all distances at once with wraparound
-                s_dist_all = s_segment - ego_s
-                abs_dist_all = np.abs(s_dist_all)
-                wrap_mask = abs_dist_all > half_track
-                s_dist_all = np.where(wrap_mask,
-                                      np.sign(-s_dist_all) *
-                                      (track_length - abs_dist_all),
-                                      s_dist_all)
+            # ========================================================================
+            # FOLLOWING VELOCITY LOGIC (aligned with C++ quadratic controller)
+            # ========================================================================
+            # Only compute following velocity if overtaking is NOT allowed
+            if not overtaking_allowed and s_glob_dist >= 0.0:
+                # Opponent is ahead - compute following velocity using quadratic error formula
+                new_vehicle_ahead = True
 
-                # Find points within following distance and ahead
-                within_range = (s_dist_all > 0) & (
-                    s_dist_all < following_distance_target)
-                if np.any(within_range):
-                    min_vel_in_range = np.min(vel_total[within_range])
-                    if min_vel_in_range < new_following_vel:
-                        new_following_vel = min_vel_in_range
-                        new_vehicle_ahead = True
+                # Calculate average prediction velocity
+                pred_vel = np.mean(vel_total) if len(vel_total) > 0 else 0.0
+
+                # Calculate distance tracking error
+                # Positive error = too close (need to slow down)
+                # Negative error = too far (can speed up)
+                distance_tracking_error = following_distance_target - s_glob_dist
+
+                if distance_tracking_error >= 0.0:
+                    # Too close to target - reduce velocity quadratically
+                    # following_vel = pred_vel - (error² / factor_neg)
+                    new_following_vel = max(
+                        0.0,
+                        pred_vel - (distance_tracking_error ** 2 /
+                                    following_distance_factor_neg)
+                    )
+                else:
+                    # Too far from target - increase velocity quadratically
+                    # following_vel = pred_vel + (error² / factor_pos)
+                    pos_error = -distance_tracking_error  # Make error positive
+                    new_following_vel = max(
+                        0.0,
+                        pred_vel + (pos_error ** 2 /
+                                    following_distance_factor_pos)
+                    )
 
             # Structure output in expected format
             postprocessed_prediction['opponent_0'] = {
@@ -487,32 +604,29 @@ class LocalSamplingPlanner:
                 'n': n_segment,
                 'x': x_segment,
                 'y': y_segment,
-                't': t_segment,
-                'time_w_offset': t_segment,  # Alias for calculation_costs compatibility
+                't': t_segment_cumulative,
+                'time_w_offset': t_segment_with_offset,  # Time with perception offset applied
                 'vel': vel_total,
                 'vel_s': vel_s_segment,
                 'vel_n': vel_n_segment,
                 's_glob_dist': s_glob_dist,
                 'valid': True,
                 'prediction_type': 'dynamic',
-                'time_offset': 0.0  # Time offset from state estimate to prediction start
+                'time_offset': time_offset_sec  # Actual time offset from perception to planning
             }
 
-            # if debugging:
-            #     rospy.loginfo_throttle(5.0,
-            #                            f"[Traj {traj_cnt}] Processed prediction: {N} waypoints, "
-            #                            f"s_glob_dist={s_glob_dist:.2f}m, "
-            #                            f"following_vel={new_following_vel:.2f}m/s, "
-            #                            f"vehicle_ahead={new_vehicle_ahead}")
+            if debugging:
+                rospy.loginfo_throttle(1.0,
+                                       f"[Traj {traj_cnt}] Processed prediction: {N} waypoints, "
+                                       f"s_glob_dist={s_glob_dist:.2f}m, "
+                                       f"following_vel={new_following_vel:.2f}m/s, "
+                                       f"vehicle_ahead={new_vehicle_ahead}, "
+                                       f"time_offset={time_offset_sec:.3f}s")
 
         else:
             # Legacy format for backward compatibility
             rospy.logwarn_throttle(
                 10.0, "Using legacy prediction format - consider updating to tam_prediction_node format")
-
-            # Get overtaking settings
-            overtaking_allowed = planning_requests.get(
-                'overtaking_allowed', False)
 
             # Process each predicted object (old format)
             for obj_id, obj_data in raw_prediction.items():
@@ -694,7 +808,19 @@ class LocalSamplingPlanner:
         return aligned_traj, s_start, s_dot_start, s_ddot_start, n_start, n_dot_start, n_ddot_start, const_part_traj, t_start, s_loc_start
 
     def _load_yaml_defaults(self):
-        """Load default parameter values from YAML configuration file"""
+        """
+        Load default parameter values from YAML configuration file.
+
+        Attempts to load parameters from 'config/tam_sampling_params.yaml' in the
+        tam_sampling_planner package directory.
+
+        Returns:
+            dict: Loaded configuration dictionary, or empty dict if loading fails.
+
+        Note:
+            Uses rospkg to locate package path. Falls back to empty dict with
+            warning if file cannot be loaded.
+        """
         try:
             # Get the path to the config file
             import rospkg
@@ -716,7 +842,27 @@ class LocalSamplingPlanner:
             return {}
 
     def declare_and_update_parameters(self, skip_update=False):
-        """Load required parameters from ROS parameter server with defaults from YAML"""
+        """
+        Load and update parameters from ROS parameter server with YAML defaults.
+
+        On first call (initialized_params=False):
+        - Loads defaults from YAML config file
+        - Gets parameters from ROS param server with YAML as fallback
+        - Sets parameters back to ROS param server for visibility
+
+        On subsequent calls:
+        - Only reads current values from ROS param server
+        - Allows runtime parameter tuning
+
+        Args:
+            skip_update: If True, skip all parameter updates (for performance during race)
+
+        Parameters loaded include:
+        - Core behavior: horizon, trajectory_length, sampling_mode, etc.
+        - Vehicle limits: max_speed, max_accel, vehicle dimensions
+        - Prediction filtering: s/n window parameters
+        - Logging: log levels and enable flags
+        """
 
         # Check if parameter updates should be skipped (e.g., during race)
         if skip_update:
@@ -777,6 +923,19 @@ class LocalSamplingPlanner:
                 'following_distance_factor_neg', rospy.get_param('following_distance_factor_neg', 40.0))
             rospy.set_param('following_distance_factor_neg',
                             self.following_distance_factor_neg)
+
+            # Prediction spatial window filtering parameters (aligned with C++ implementation)
+            self.prediction_s_window_neg = yaml_defaults.get(
+                'prediction_s_window_neg', rospy.get_param('prediction_s_window_neg', 50.0))
+            rospy.set_param('prediction_s_window_neg',
+                            self.prediction_s_window_neg)
+            self.prediction_s_window_pos = yaml_defaults.get(
+                'prediction_s_window_pos', rospy.get_param('prediction_s_window_pos', 100.0))
+            rospy.set_param('prediction_s_window_pos',
+                            self.prediction_s_window_pos)
+            self.prediction_filter_n = yaml_defaults.get(
+                'prediction_filter_n', rospy.get_param('prediction_filter_n', 5.0))
+            rospy.set_param('prediction_filter_n', self.prediction_filter_n)
 
             # Vehicle and track configuration
             self.vehicle_name = yaml_defaults.get(
@@ -892,6 +1051,14 @@ class LocalSamplingPlanner:
             self.following_distance_factor_neg = rospy.get_param(
                 'following_distance_factor_neg', self.following_distance_factor_neg)
 
+            # Prediction spatial window filtering parameters
+            self.prediction_s_window_neg = rospy.get_param(
+                'prediction_s_window_neg', self.prediction_s_window_neg)
+            self.prediction_s_window_pos = rospy.get_param(
+                'prediction_s_window_pos', self.prediction_s_window_pos)
+            self.prediction_filter_n = rospy.get_param(
+                'prediction_filter_n', self.prediction_filter_n)
+
             # Vehicle and track configuration
             self.vehicle_name = rospy.get_param(
                 'vehicle_name', self.vehicle_name)
@@ -945,6 +1112,49 @@ class LocalSamplingPlanner:
             prediction: dict,
             planning_requests: dict,
     ):
+        """
+        Main trajectory planning method - generates optimal trajectory from current state.
+
+        This is the core planning loop that:
+        1. Projects current vehicle state to Frenet coordinates
+        2. Matches onto previous trajectory for warm-starting (if available)
+        3. Handles state machine transitions (stillstand/driving/stopping)
+        4. Postprocesses prediction data for obstacle avoidance
+        5. Postprocesses raceline for local planning
+        6. Samples candidate trajectories in Frenet space
+        7. Transforms trajectories to velocity frame
+        8. Validates trajectories against constraints (track bounds, vehicle limits)
+        9. Calculates costs and selects optimal trajectory
+        10. Generates emergency trajectory
+        11. Converts to Cartesian coordinates for controller
+
+        Args:
+            state_estimate: Current vehicle state with keys:
+                - 'x_current', 'y_current', 'z_current': Position [m]
+                - 'psi_current': Heading [rad]
+                - 'vel_current': Current velocity [m/s]
+                - 'time_ns': Timestamp [ns] (optional)
+            raceline: Global raceline waypoints (dict with 'wpnts' list or list format)
+            prediction: Opponent prediction data from tam_prediction_node (dict with 'oppwpnts')
+            planning_requests: Planning parameters with keys:
+                - 'V_max': Maximum allowed velocity [m/s]
+                - 'following_distance': Target following distance [m]
+                - 'overtaking_allowed': Whether overtaking is permitted (bool)
+
+        Returns:
+            If debugging=False: Tuple of (performance_trajectory, emergency_trajectory, 
+                                         s_start, n_start, V_target)
+            If debugging=True: Extended tuple with additional debug arrays including
+                              valid_array, cost_array, sampled trajectories, etc.
+
+        Note:
+            Updates internal state:
+            - self.performance_trajectory: Best valid trajectory
+            - self.emergency_trajectory: Emergency braking trajectory
+            - self.status: Current state machine state
+            - self.following_vel: Computed following velocity
+            - self.vehicle_ahead: Whether opponent detected ahead
+        """
         import time as time_module  # Import to avoid conflicts with other 'time' usage
 
         # Pass skip_update flag if available from parent node
@@ -1191,7 +1401,6 @@ class LocalSamplingPlanner:
                 self.performance_trajectory["tire_util"] = tire_util_array[optimal_idx]
 
                 # Unwrap s_loc (compatible with NumPy < 1.21 which lacks 'period' parameter)
-                # TODO: Necessary?
                 s_traj = self.performance_trajectory["s"]
                 track_length = self.track_handler.get_track_length()
                 s_unwrapped = s_traj.copy()
@@ -1214,8 +1423,6 @@ class LocalSamplingPlanner:
                 # extend trajectory if necessary
                 # checks are omitted since this succeeds the planning (time) horizon
                 if self.performance_trajectory["s_loc"][-1] < self.min_trajectory_length:
-                    # rospy.logerr(
-                    #     f"[Sampling Core] Extending trajectory because it is {self.performance_trajectory['s_loc'][-1]} instead of {self.min_trajectory_length} m long.")
 
                     self.performance_trajectory = self.trajectory.extend_performance_trajectory(
                         trajectory=self.performance_trajectory,
@@ -1308,9 +1515,6 @@ class LocalSamplingPlanner:
             # Reset to stillstand to force clean re-evaluation
             self.status = self.status_dict["stillstand"]
 
-        # rospy.loginfo(
-        #     f"[Sampling Core]🚗 calc_trajectory: Finished trajectory calculation")
-
         if not self.debugging:
             return self.performance_trajectory, self.emergency_trajectory, s_start, n_start, V_target,
         else:
@@ -1351,6 +1555,23 @@ class LocalSamplingPlanner:
         state_estimate: dict,
         V_thr_stillstand: float,
     ):
+        """
+        Handle state machine transitions between stillstand, driving, and stopping modes.
+
+        State transitions:
+        - STILLSTAND -> DRIVING: When V_max > 0.5 m/s (start requested)
+        - DRIVING -> STOPPING: When V_max == 0.0 (stop requested)
+        - STOPPING -> DRIVING: When V_max > 0.5 m/s (resume requested)
+        - STOPPING -> STILLSTAND: When vel_current < V_thr_stillstand (vehicle stopped)
+
+        Args:
+            planning_requests: Dict with 'V_max' key indicating requested max velocity [m/s]
+            state_estimate: Dict with 'vel_current' key for current velocity [m/s]
+            V_thr_stillstand: Velocity threshold below which vehicle is considered stopped [m/s]
+
+        Note:
+            Modifies self.status in-place based on transition logic.
+        """
         # handle state transitions
         if self.status == self.status_dict["stillstand"]:
             # case stillstand
@@ -1383,10 +1604,21 @@ class LocalSamplingPlanner:
 
     def change_track(self, track_handler):
         """
-        Update trajectories when track changes.
+        Update trajectories when track/map changes (e.g., switching to pitlane).
+
+        Re-projects the existing performance trajectory onto the new track by:
+        1. Converting Cartesian (x, y) coordinates to new Frenet (s, n) coordinates
+        2. Recalculating heading angle chi from global heading psi
+        3. Recomputing Frenet velocities (s_dot, n_dot) from velocity V and heading chi
+        4. Zeroing accelerations (s_ddot, n_ddot) since curvature may have changed
 
         Args:
-            track_handler: New track handler with updated waypoints
+            track_handler: New track handler with updated waypoints and centerline
+
+        Note:
+            - Modifies self.track_handler in-place
+            - Modifies self.performance_trajectory in-place
+            - Assumes performance_trajectory has 'x', 'y', 'z', 'psi', 'V', 'n' fields
         """
         # Update internal track handler
         self.track_handler = track_handler
@@ -1416,12 +1648,12 @@ class LocalSamplingPlanner:
             )
         )
         self.performance_trajectory["s_ddot"] = np.zeros_like(
-            self.performance_trajectory["s"])  # TODO
+            self.performance_trajectory["s"])
         self.performance_trajectory["n_dot"] = self.performance_trajectory["V"] * np.sin(
             self.performance_trajectory["chi"]
         )
         self.performance_trajectory["n_ddot"] = np.zeros_like(
-            self.performance_trajectory["s"])  # TODO
+            self.performance_trajectory["s"])
         self.performance_trajectory["pitlane_mode"] = self.pitlane_mode
 
     def perform_trajectory_sampling(
@@ -1439,7 +1671,38 @@ class LocalSamplingPlanner:
             postprocessed_raceline: dict,
             hybrid_long_sampling: bool,
     ):
-        # V_target = 90.0  # DEBUG TEST WHY NOT FULL ACCELL FROM 0
+        """
+        Generate candidate trajectories by sampling in Frenet coordinate space.
+
+        Combines longitudinal and lateral sampling to create a grid of candidate
+        trajectories. Supports hybrid sampling (both relative and absolute) and
+        optional forward-backward velocity sampling.
+
+        Args:
+            track_handler: Track handler for coordinate transformations
+            s_start: Initial arc length position [m]
+            s_dot_start: Initial longitudinal velocity [m/s]
+            s_ddot_start: Initial longitudinal acceleration [m/s²]
+            n_start: Initial lateral offset from centerline [m]
+            n_dot_start: Initial lateral velocity [m/s]
+            n_ddot_start: Initial lateral acceleration [m/s²]
+            V_target: Target velocity for sampling [m/s]
+            enable_relative_sampling: Whether to enable raceline-relative sampling
+            sampling_mode: Sampling mode ("spatial" or "temporal")
+            postprocessed_raceline: Preprocessed raceline segment from postprocess_raceline()
+            hybrid_long_sampling: Whether to combine relative and absolute sampling
+
+        Returns:
+            Tuple of 8 arrays, each with shape (num_trajectories, num_samples):
+            - s_array: Arc length positions [m]
+            - s_dot_array: Longitudinal velocities [m/s]
+            - s_ddot_array: Longitudinal accelerations [m/s²]
+            - n_array: Lateral offsets [m]
+            - n_dot_array: Lateral velocities [m/s]
+            - n_ddot_array: Lateral accelerations [m/s²]
+            - rel_long_sampling_array: Boolean flags for relative sampling
+            - t_array: Time stamps [s]
+        """
         s_array = np.array([])
         s_dot_array = np.array([])
         s_ddot_array = np.array([])

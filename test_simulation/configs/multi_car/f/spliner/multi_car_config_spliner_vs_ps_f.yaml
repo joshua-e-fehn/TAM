@@ -1,0 +1,781 @@
+# Multi-Car Test Configuration
+# Two cars racing against each other
+# Tests different planner matchups and speed configurations
+
+test_matrix:
+  - simulation_id: "mult_0001"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 5.0
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 1.5
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.50
+    accel_multiplier_car2: 0.50
+
+  - simulation_id: "mult_0002"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 5.2
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 1.56
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.52
+    accel_multiplier_car2: 0.52
+
+  - simulation_id: "mult_0003"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 5.4
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 1.62
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.54
+    accel_multiplier_car2: 0.54
+
+  - simulation_id: "mult_0004"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 5.6
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 1.68
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.56
+    accel_multiplier_car2: 0.56
+
+  - simulation_id: "mult_0005"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 5.8
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 1.74
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.58
+    accel_multiplier_car2: 0.58
+
+  - simulation_id: "mult_0006"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 6.0
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 1.8
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.60
+    accel_multiplier_car2: 0.60
+
+  - simulation_id: "mult_0007"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 6.2
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 1.86
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.62
+    accel_multiplier_car2: 0.62
+
+  - simulation_id: "mult_0008"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 6.4
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 1.92
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.64
+    accel_multiplier_car2: 0.64
+
+  - simulation_id: "mult_0009"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 6.6
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 1.98
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.66
+    accel_multiplier_car2: 0.66
+
+  - simulation_id: "mult_0010"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 6.8
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.04
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.68
+    accel_multiplier_car2: 0.68
+
+  - simulation_id: "mult_0011"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 7.0
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.1
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.70
+    accel_multiplier_car2: 0.70
+
+  - simulation_id: "mult_0012"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 7.2
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.16
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.72
+    accel_multiplier_car2: 0.72
+
+  - simulation_id: "mult_0013"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 7.4
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.22
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.74
+    accel_multiplier_car2: 0.74
+
+  - simulation_id: "mult_0014"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 7.6
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.28
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.76
+    accel_multiplier_car2: 0.76
+
+  - simulation_id: "mult_0015"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 7.8
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.34
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.78
+    accel_multiplier_car2: 0.78
+
+  - simulation_id: "mult_0016"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 8.0
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.4
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.80
+    accel_multiplier_car2: 0.80
+
+  - simulation_id: "mult_0017"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 8.2
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.46
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.82
+    accel_multiplier_car2: 0.82
+
+  - simulation_id: "mult_0018"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 8.4
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.52
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.84
+    accel_multiplier_car2: 0.84
+
+  - simulation_id: "mult_0019"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 8.6
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.58
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.86
+    accel_multiplier_car2: 0.86
+
+  - simulation_id: "mult_0020"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 8.8
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.64
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.88
+    accel_multiplier_car2: 0.88
+
+  - simulation_id: "mult_0021"
+    name: "spliner_vs_predictive_spliner"
+    mode: "multi_car"
+    planner_car1: "spliner"
+    planner_car2: "predictive_spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "f_100%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car1_spliner_spline_bound_mindist: 0.3
+    car1_spliner_evasion_dist: 0.925
+    car1_spliner_pre_apex_dist0: 4
+    car1_spliner_pre_apex_dist1: 3
+    car1_spliner_pre_apex_dist2: 2
+    car1_spliner_post_apex_dist0: 4
+    car1_spliner_post_apex_dist1: 5
+    car1_spliner_post_apex_dist2: 6
+
+    car2_predictive_spliner_lookahead_dist: 20.0
+    car2_predictive_spliner_max_v: 9.0
+    car2_predictive_spliner_min_v: 1.0
+    car2_predictive_spliner_max_a: 2.7
+    car2_predictive_spliner_min_a: 0.0
+    car2_predictive_spliner_max_expire_counter: 15
+
+    car2_predictive_spliner_spline_bound_mindist: 0.15
+    car2_predictive_spliner_evasion_dist: 1.0
+    car2_predictive_spliner_back_to_raceline_before: 6.0
+    car2_predictive_spliner_back_to_raceline_after: 11.0
+    car2_predictive_spliner_save_distance_front: 0.6
+    car2_predictive_spliner_save_distance_back: 0.6
+
+    speed_multiplier_car2: 0.90
+    accel_multiplier_car2: 0.90

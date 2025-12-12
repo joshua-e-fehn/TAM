@@ -2,14 +2,15 @@
 <!--
   Single-Car Complete Launch File
   
-  This unified launch file combines base_system, headtohead, and obstacle_publisher
-  into one convenient command with all configurable parameters.
+  This unified launch file includes base_system.launch, headtohead.launch, and 
+  optionally obstacle_publisher.launch into one convenient command with all 
+  configurable parameters.
   
   Usage:
-    # Basic launch with defaults (spliner planner, no obstacles):
+    # Basic launch with defaults (spliner planner, no obstacles, map 'f'):
     roslaunch stack_master single_car.launch
     
-    # With dummy obstacle (perception is automatically disabled to avoid conflicts):
+    # With dummy obstacle (perception is automatically disabled to avoid topic conflicts):
     roslaunch stack_master single_car.launch enable_dummy_obstacle:=true
     
     # With predictive_spliner and custom obstacle speed:
@@ -18,11 +19,12 @@
     # TAM sampling planner:
     roslaunch stack_master single_car.launch planner:=tam_sampling
     
-  Start the race:
-    rosservice call /race_control/start_both
+    # Available planners: spliner, predictive_spliner, tam_sampling, predictive_sampler, graph_based, frenet
     
-  Reset:
-    rosservice call /race_control/reset_cars
+  Race Control Services:
+    rosservice call /race_control/start_both    # Start car (and obstacle if enabled)
+    rosservice call /race_control/reset_cars    # Reset to initial positions
+    rosservice call /race_control/emergency_stop # Emergency stop
     
   Note: When enable_dummy_obstacle is True, the perception module is automatically 
         disabled to prevent topic conflicts (both would publish to /perception/obstacles).
@@ -91,19 +93,27 @@
     <arg name="obstacle_path_amplitude" default="0.1" 
          doc="Sinusoidal lateral deviation amplitude (meters)"/>
     <arg name="obstacle_path_frequency" default="0.15" 
-         doc="Sinusoidal lateral deviation frequency"/>
+         doc="Sinusoidal lateral deviation frequency (rad/m)"/>
     <arg name="obstacle_path_phase" default="0.0" 
-         doc="Sinusoidal lateral deviation phase offset"/>
+         doc="Sinusoidal lateral deviation phase offset (radians)"/>
+    <arg name="obstacle_speed_amplitude" default="0.0"
+         doc="Sinusoidal speed variation amplitude (m/s) - adds/subtracts from raceline speed"/>
     <arg name="obstacle_max_speed_limit" default="10.0"
          doc="Physical speed limit cap (m/s) applied before scaling - matches ego car limits"/>
     <arg name="obstacle_max_accel" default="3.0"
          doc="Maximum acceleration limit (m/s²) applied before scaling - matches ego car limits"/>
     
     <!-- ============================================= -->
+    <!-- GP PREDICTION SETTINGS                       -->
+    <!-- ============================================= -->
+    <arg name="use_global_prediction" default="false"
+         doc="Use global waypoint prediction instead of GP-based trajectory prediction (for testing without trained GP model)"/>
+    
+    <!-- ============================================= -->
     <!-- RACE START CONTROL                           -->
     <!-- ============================================= -->
     <arg name="enable_race_start_controller" default="True" 
-         doc="Enable manual race start control (car waits in READY until start service called)"/>
+         doc="Enable race start controller (state machine starts in READY until /race_control/start_both service is called)"/>
     
     <!-- ============================================= -->
     <!-- BASE SYSTEM LAUNCH                           -->
@@ -152,9 +162,12 @@
         <arg name="obstacles_topic" value="/perception/obstacles"/>
         <!-- Pass race start controller enable flag to headtohead.launch -->
         <arg name="enable_race_start_controller" value="$(arg enable_race_start_controller)"/>
-        <!-- Pass obstacle enable flag to headtohead.launch for race controller -->
+        <!-- Pass obstacle enable flag to race_start_controller for coordinated start (obstacle starts with car) -->
         <arg name="enable_obstacle" value="$(arg enable_dummy_obstacle)"/>
     </include>
+    
+    <!-- Set use_global_prediction parameter for GP trajectory and collision prediction -->
+    <param name="/race_test/use_global_prediction" value="$(arg use_global_prediction)"/>
     
     <!-- ============================================= -->
     <!-- DUMMY OBSTACLE PUBLISHER (OPTIONAL)          -->
@@ -169,6 +182,7 @@
             <arg name="path_amplitude" value="$(arg obstacle_path_amplitude)"/>
             <arg name="path_frequency" value="$(arg obstacle_path_frequency)"/>
             <arg name="path_phase" value="$(arg obstacle_path_phase)"/>
+            <arg name="speed_amplitude" value="$(arg obstacle_speed_amplitude)"/>
             <arg name="max_speed_limit" value="$(arg obstacle_max_speed_limit)"/>
             <arg name="max_accel" value="$(arg obstacle_max_accel)"/>
         </include>

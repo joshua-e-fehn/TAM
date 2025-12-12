@@ -25,6 +25,9 @@ class CollisionPredictor:
         # ROS Parameters
         self.opponent_traj_topic = 'opponent_trajectory'
 
+        # Flag for opponent lap completion from race_event_monitor
+        self.opponent_lap_complete = False
+
         # Subscriber
         rospy.Subscriber("perception/obstacles",
                          ObstacleArray, self.opponent_state_cb)
@@ -36,6 +39,9 @@ class CollisionPredictor:
         rospy.Subscriber("state_machine", String, self.state_cb)
         rospy.Subscriber(
             "dynamic_collision_tuner_node/parameter_updates", Config, self.dyn_param_cb)
+        # Subscribe to opponent lap complete from race_event_monitor
+        rospy.Subscriber("/opponent_lap_complete", Bool,
+                         self.opponent_lap_complete_cb)
 
         self.frenet2glob = rospy.ServiceProxy(
             "convert_frenet2globarr_service", Frenet2GlobArr)
@@ -81,10 +87,15 @@ class CollisionPredictor:
         self.collision_obs_pub = rospy.Publisher(
             "collision_prediction/obstacles", ObstacleArray, queue_size=10)
         self.force_trailing_pub = rospy.Publisher(
-            "collision_prediction/force_trailing", Bool, queue_size=10)
+            "collision_prediction/force_trailing", Bool, queue_size=10, latch=True)
 
-    ### CALLBACKS ###
-    # TODO: Only sees the first dynamic obstacle as opponent...
+        # Use global prediction replaces the learned trajectory with the global waypoints, therefore no trailing is required
+        self.use_global_prediction = rospy.get_param(
+            "/race_test/use_global_prediction", False)
+        initial_force_trailing = not self.use_global_prediction
+        self.force_trailing_pub.publish(Bool(data=initial_force_trailing))
+        rospy.loginfo(f"[CollisionPredictor] Initialized force_trailing={initial_force_trailing} "
+                      f"(use_global_prediction={self.use_global_prediction})")
 
     def opponent_state_cb(self, data: ObstacleArray):
         self.opponent_pos.header = data.header
@@ -113,6 +124,13 @@ class CollisionPredictor:
 
     def state_cb(self, data: String):
         self.state = data.data
+
+    def opponent_lap_complete_cb(self, data: Bool):
+        """Callback for opponent lap complete flag from race_event_monitor"""
+        if data.data and not self.opponent_lap_complete:
+            rospy.loginfo(
+                "[CollisionPredictor] Received opponent_lap_complete=True from race_event_monitor")
+        self.opponent_lap_complete = data.data
 
         # Callback triggered by dynamic spline reconf
     def dyn_param_cb(self, params: Config):
@@ -155,16 +173,6 @@ class CollisionPredictor:
         self.speed_offset = get_param(
             "speed_offset", "dynamic_collision_tuner_node/speed_offset", 0)
 
-        print(
-            f"[Coll. Pred.] Dynamic reconf triggered new params:\n"
-            f" N time stepts: {self.time_steps}, \n"
-            f" dt: {self.dt} [s], \n"
-            f" save_distance_front: {self.save_distance_front} [m], \n"
-            f" save_distance_back: {self.save_distance_back} [m], \n"
-            f" max_v, min_v, max_a, min_a: {self.max_v, self.min_v, self.max_a, self.min_a}, \n"
-            f" max_expire_counter: {self.max_expire_counter}"
-        )
-
     ### HELPER FUNCTIONS ###
 
     def marker_init(self, a=1, r=1, g=0, b=0, id=0):
@@ -201,6 +209,7 @@ class CollisionPredictor:
         Compute the Region of collision.
         """
         rate = rospy.Rate(self.loop_rate)
+        print("Starting Collision Predictor Loop...", flush=True)
         rospy.loginfo("[Coll. Pred.] Collision Predictor wating...")
         rospy.wait_for_message("global_waypoints", WpntArray)
         rospy.wait_for_message("global_waypoints_scaled", WpntArray)
@@ -212,6 +221,8 @@ class CollisionPredictor:
         rospy.loginfo("[Coll. Pred.] Obstacles reveived!")
         rospy.loginfo("[Coll. Pred.] Collision Predictor ready!")
 
+        print("Starting Collision Predictor Loop...", flush=True)
+
         while not rospy.is_shutdown():
 
             # First, publish current multi-car obstacles for SQP planner to use
@@ -222,12 +233,6 @@ class CollisionPredictor:
                     obstacles=self.opponent_pos.obstacles
                 )
                 self.collision_obs_pub.publish(current_obstacles_msg)
-                # Debug info for obstacle positions
-                # for obs in self.opponent_pos.obstacles:
-                #     rospy.loginfo_throttle(5.0,
-                #                            f"[Coll. Pred.] Publishing obstacle id={obs.id}, s={obs.s_center:.2f}, d={obs.d_center:.3f}, static={obs.is_static}")
-                # rospy.loginfo_throttle(5.0,
-                #                        f"[Coll. Pred.] Published {len(self.opponent_pos.obstacles)} current obstacles for SQP")
 
             opponent_pos_copy = copy.deepcopy(self.opponent_pos)
 
@@ -251,10 +256,23 @@ class CollisionPredictor:
                     s_points_global_array - opponent_position).argmin()
                 opponent_raceline_d = self.wpnts_opponent[opponent_approx_indx].d_m
 
-                if abs(current_opponent_d - opponent_raceline_d) > 0.25 or self.opponent_lap_count < 1:
-                    self.force_trailing_pub.publish(True)
-                else:
+                # When use_global_prediction=True (testing), always allow overtaking
+                # Skip both lap count and deviation checks for immediate testing
+                if self.use_global_prediction:
                     self.force_trailing_pub.publish(False)
+                else:
+                    # Check opponent lap completion from either:
+                    # 1. opponent_trajectory topic (self.opponent_lap_count >= 1), OR
+                    # 2. race_event_monitor flag (self.opponent_lap_complete)
+                    # The race_event_monitor flag provides reliable lap detection independent
+                    # of opponent trajectory prediction pipeline
+                    opponent_completed_lap = (
+                        self.opponent_lap_count is not None and self.opponent_lap_count >= 1) or self.opponent_lap_complete
+
+                    if not opponent_completed_lap:
+                        self.force_trailing_pub.publish(True)
+                    else:
+                        self.force_trailing_pub.publish(False)
 
                 # Get current speed of the ego car
                 current_ego_speed = self.car_odom.twist.twist.linear.x

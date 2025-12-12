@@ -21,9 +21,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -45,9 +45,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -69,9 +69,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -93,9 +93,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -117,9 +117,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -141,9 +141,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -165,9 +165,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -189,9 +189,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -213,9 +213,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -237,9 +237,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -261,9 +261,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -285,9 +285,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -309,9 +309,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -333,9 +333,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -357,9 +357,9 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6
 
@@ -381,8 +381,8 @@ test_matrix:
     predictive_spliner_min_a: 0.0
     predictive_spliner_max_expire_counter: 15
 
-    predictive_spliner_evasion_dist: 1.25
+    predictive_spliner_evasion_dist: 1.0
     predictive_spliner_back_to_raceline_before: 6.0
-    predictive_spliner_back_to_raceline_after: 10.0
+    predictive_spliner_back_to_raceline_after: 11.0
     predictive_spliner_save_distance_front: 0.6
     predictive_spliner_save_distance_back: 0.6

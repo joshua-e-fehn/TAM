@@ -3,7 +3,7 @@
 Simple Racing Simulation Test Framework (Rahmenprogramm)
 
 Launches multiple race simulations sequentially with different parameters.
-Each simulation runs until /simulation_complete parameter is True.
+Each simulation runs until /race_test/simulation_complete parameter is True.
 
 Usage:
     python3 race_test_framework.py
@@ -78,6 +78,11 @@ class RaceTestFramework:
 
         self.launch_process = None
         self.test_results = []
+
+        # Track recent completion reasons for early stopping detection
+        # If last 3 tests all ended due to lap completion, stop the run
+        self.recent_completion_reasons = []
+        self.consecutive_lap_completions_threshold = 3
 
         print(f"Loaded {len(self.test_configs)} total test configurations")
         print()
@@ -366,6 +371,7 @@ class RaceTestFramework:
                 f'obstacle_path_amplitude:={test_config.get("obstacle_path_amplitude", 0.0)}',
                 f'obstacle_path_frequency:={test_config.get("obstacle_path_frequency", 0.15)}',
                 f'obstacle_path_phase:={test_config.get("obstacle_path_phase", 0.0)}',
+                f'obstacle_speed_amplitude:={test_config.get("obstacle_speed_amplitude", 0.0)}',
                 f'obstacle_max_speed_limit:={test_config.get("obstacle_max_speed_limit", default_speed_limit)}',
                 f'obstacle_max_accel:={test_config.get("obstacle_max_accel", 3.0)}'
             ])
@@ -461,6 +467,15 @@ class RaceTestFramework:
         try:
             params_set = 0
             for param_name, param_value in self.default_config.items():
+                # Special handling for target_laps in multi-car mode with predictive_sampler
+                if param_name == 'target_laps' and self.mode == 'multi_car':
+                    planner_car1 = test_config.get('planner_car1', '')
+                    if planner_car1 in ['predictive_sampler', 'predictive_spliner']:
+                        original_value = param_value
+                        param_value = param_value + 1
+                        print(f"   🔧 Increasing target_laps from {original_value} to {param_value} "
+                              f"(predictive_sampler needs extra lap for opponent trajectory learning)")
+
                 param_path = f'/race_test/{param_name}'
                 rospy.set_param(param_path, param_value)
                 print(f"   ✅ {param_path} = {param_value}")
@@ -867,15 +882,16 @@ class RaceTestFramework:
             print(f"   ⚠️  Service not available: {e}")
             return False
 
-    def wait_for_completion(self, timeout=2000):
+    def wait_for_completion(self, timeout=1200):
         """
-        Wait until /simulation_complete parameter is True or timeout
+        Wait until /race_test/simulation_complete parameter is True or timeout.
 
         Args:
-            timeout: Maximum time to wait in seconds (default: 300s = 5 minutes)
+            timeout: Maximum time to wait in seconds (default: 1200s = 20 minutes)
 
         Returns:
-            dict with status and elapsed time
+            dict with 'status' ('complete' or 'timeout'), 'time' (elapsed seconds),
+            and 'reason' (completion reason string)
         """
 
         # Initialize ROS node if not already initialized
@@ -1062,6 +1078,10 @@ class RaceTestFramework:
         # Enable predictive spliner switch so overtaking prediction is available immediately
         self.set_global_prediction_switch(test_config)
 
+        # Set planner specific variable params
+        # Set for car1 (and car2 if multi mode)
+        self.set_planner_params(test_config)
+
         # Launch simulation based on mode
         if test_mode in ['single_car_no_obstacle', 'single_car_obstacle']:
             # Single-car mode
@@ -1119,7 +1139,7 @@ class RaceTestFramework:
                 return None
 
         # Wait for completion
-        result = self.wait_for_completion(timeout=2000)
+        result = self.wait_for_completion(timeout=1200)
 
         # Add test info to result
         result['test_name'] = test_name
@@ -1136,6 +1156,52 @@ class RaceTestFramework:
 
         return result
 
+    def should_stop_early_due_to_lap_completions(self):
+        """
+        Check if the test run should stop early due to consecutive lap completions.
+
+        Rules:
+        - In 'multi_car' mode: stop if last 3 tests ended with 'car2_finished_laps' 
+          (from check_condition_lap_completion - car2 completed target laps)
+        - In 'single_car_obstacle' mode: stop if last 3 tests ended with 'single_car_lap_completion'
+          (from check_condition_single_car_lap_completion)
+
+        Returns:
+            bool: True if should stop early, False otherwise
+        """
+        if len(self.recent_completion_reasons) < self.consecutive_lap_completions_threshold:
+            return False
+
+        # Get the last N completion reasons
+        recent = self.recent_completion_reasons[-self.consecutive_lap_completions_threshold:]
+
+        # Check if all recent completions are lap-based
+        # These patterns match the actual reason strings from race_event_monitor.py
+        lap_completion_patterns = [
+            'car2_finished_laps',       # multi_car mode: check_condition_lap_completion
+            # single_car modes: check_condition_single_car_lap_completion
+            'single_car_lap_completion'
+        ]
+
+        all_lap_completions = all(
+            any(pattern in reason.lower()
+                for pattern in lap_completion_patterns)
+            for reason in recent
+        )
+
+        if all_lap_completions:
+            print("\n" + "="*70)
+            print("🛑 EARLY STOPPING TRIGGERED")
+            print("="*70)
+            print(
+                f"   Last {self.consecutive_lap_completions_threshold} tests all ended due to lap completion.")
+            print(f"   Recent reasons: {recent}")
+            print("   Stopping test run to avoid unnecessary simulations.")
+            print("="*70 + "\n")
+            return True
+
+        return False
+
     def run_all_tests(self):
         """Execute all tests in the configuration sequentially"""
 
@@ -1151,6 +1217,19 @@ class RaceTestFramework:
 
             if result:
                 self.test_results.append(result)
+
+                # Track completion reason for early stopping detection
+                reason = result.get('reason', 'unknown')
+                self.recent_completion_reasons.append(reason)
+
+                # Check if we should stop early due to consecutive lap completions
+                # Only check for multi_car and single_car_obstacle modes
+                test_mode = result.get('mode', 'multi_car')
+                # if test_mode in ['multi_car', 'single_car_obstacle']:
+                #     if self.should_stop_early_due_to_lap_completions():
+                #         print(
+                #             f"\n⏹️  Skipping remaining {total_tests - idx} tests due to early stopping.")
+                #         break
 
         # Print summary
         self.print_summary()

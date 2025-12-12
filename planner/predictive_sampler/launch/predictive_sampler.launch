@@ -67,7 +67,7 @@
     <!-- === COLLISION PREDICTION === -->
     <!-- Predicts 4-second horizon ROCs (Regions of Collision) -->
     <group ns="$(arg veh_name)">
-        <node pkg="predictive_spliner" type="collision_prediction_node.py" name="collision_prediction" output="screen">
+        <node pkg="predictive_spliner" type="collision_prediction.py" name="collision_prediction" output="screen">
             <rosparam file="$(arg collision_pred_config)" command="load"/>
             
             <!-- Opponent namespace for trajectory prediction -->

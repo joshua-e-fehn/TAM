@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 """
 Transitions should loosely follow the following template (basically a match-case)
 
-if (logic sum of bools obtained by methods of state_machine):   
+if (logic sum of bools obtained by methods of state_machine):
     return StateType.<DESIRED STATE>
 elif (e.g. state_machine.obstacles are near):
     return StateType.<ANOTHER DESIRED STATE>
@@ -19,11 +19,11 @@ elif (e.g. state_machine.obstacles are near):
 
 NOTE: ideally put the most common cases on top of the match-case
 
-NOTE 2: notice that, when implementing new states, if an attribute/condition in the 
-    StateMachine is not available, your IDE will tell you, but only if you have a smart 
+NOTE 2: notice that, when implementing new states, if an attribute/condition in the
+    StateMachine is not available, your IDE will tell you, but only if you have a smart
     enough IDE. So use vscode, pycharm, fleet or whatever has specific python syntax highlights.
 
-NOTE 3: transistions must not have side effects on the state machine! 
+NOTE 3: transistions must not have side effects on the state machine!
     i.e. any attribute of the state machine should not be modified in the transitions.
 """
 
@@ -171,10 +171,8 @@ def PSTrailingTransition(state_machine: StateMachine) -> StateType:
         # If we have been sitting around in TRAILING for a while then FTG
         if state_machine._check_ftg():
             return StateType.FTGONLY
-        # elif force_trailing:
-        #     rospy.logerr_throttle(
-        #         0.5, "[StateMachine] NOT OVERTAKING: force_trailing is True")
-        #     return StateType.TRAILING
+        elif force_trailing:
+            return StateType.TRAILING
         elif valid_spline and not emergency_break and o_free and ot_sector and not on_merger:
             return StateType.OVERTAKE
         # Questionable if on_merger really helps in this case
@@ -204,7 +202,7 @@ def PSOvertakingTransition(state_machine: StateMachine) -> StateType:
 
         if emergency_break or not ot_sector:
             return StateType.TRAILING
-        if not o_free or force_trailing:
+        elif not o_free or force_trailing:
             return StateType.TRAILING
         elif spline_valid and o_free and ot_sector:
             return StateType.OVERTAKE
@@ -419,7 +417,7 @@ def PSSAMPGlobalTrackingTransition(state_machine: StateMachine) -> StateType:
 
     # Predictive Sampler: Only enter OVERTAKE if opponent is within 5m
     opponent_close_for_overtake = state_machine._check_opponent_within_distance(
-        10.0)
+        15.0)
 
     if not state_machine._check_only_ftg_zone():
         if force_trailing:
@@ -454,8 +452,8 @@ def PSSAMPTrailingTransition(state_machine: StateMachine) -> StateType:
         # If we have been sitting around in TRAILING for a while then FTG
         if state_machine._check_ftg():
             return StateType.FTGONLY
-        # elif force_trailing:
-        #     return StateType.TRAILING
+        elif force_trailing:
+            return StateType.TRAILING
         elif valid_spline and not emergency_break and o_free and ot_sector and not on_merger:
             # Start overtake when we have valid trajectory and conditions are right
             # Removed o_free check - TAM trajectories are inherently close to obstacles during overtaking
@@ -488,6 +486,7 @@ def PSSAMPSamplingTransition(state_machine: StateMachine) -> StateType:
         o_free = state_machine._check_ofree()
         opponent_behind = state_machine._check_opponent_behind()
         close_to_raceline = state_machine._check_close_to_raceline_tight()
+        force_trailing = state_machine._check_force_trailing()
 
         # Predictive Sampler: Exit OVERTAKE if opponent is more than 7m away
         opponent_within_range = state_machine._check_opponent_within_distance(
@@ -496,8 +495,8 @@ def PSSAMPSamplingTransition(state_machine: StateMachine) -> StateType:
         # Emergency conditions -> back to TRAILING
         if emergency_break or not ot_sector:
             return StateType.TRAILING
-        # elif not o_free or force_trailing:
-        #     return StateType.TRAILING
+        elif force_trailing:
+            return StateType.TRAILING
         elif opponent_behind and close_to_raceline:
             return StateType.GB_TRACK
         elif not opponent_within_range and not opponent_behind and close_to_raceline:

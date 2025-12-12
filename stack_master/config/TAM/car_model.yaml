@@ -67,7 +67,6 @@ a_min: -10.0
 # CHOSEN: 90.0 m/s 
 # REASONING: Typical Indy car top speed, matches planning limit ranges
 v_max: 90.0 
-# TODO: 70.0
 
 # Minimum velocity [m/s]
 # CHOSEN: 0.0 m/s (physical minimum - stationary)

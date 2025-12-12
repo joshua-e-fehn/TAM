@@ -106,6 +106,16 @@ class TAMConstantOffsetPredictor:
             f"{self.log_name} Initialized - predictions use raceline velocities and relative lateral offset")
 
     def declare_and_update_parameters(self, skip_update=False):
+        """Load and update ROS parameters for the prediction node.
+
+        On first call, loads default values from YAML configuration file and sets
+        ROS parameters. On subsequent calls, reads updated parameter values from
+        the ROS parameter server.
+
+        Args:
+            skip_update: If True, skip parameter updates entirely. Used during
+                         race to avoid performance overhead from parameter lookups.
+        """
         if skip_update:
             return
 
@@ -215,8 +225,6 @@ class TAMConstantOffsetPredictor:
                         self.track_centerline[:, 0],
                         self.track_centerline[:, 1]
                     )
-                    # rospy.loginfo(
-                    #     f"{self.log_name} Frenet converter initialized")
                 except Exception as e:
                     rospy.logwarn(
                         f"{self.log_name} Failed to initialize Frenet converter: {e}")
@@ -225,9 +233,6 @@ class TAMConstantOffsetPredictor:
         """Process detected obstacles and generate predictions"""
         self.obstacles = msg
         current_time = rospy.Time.now()
-
-        # rospy.loginfo_throttle(
-        #     5.0, f"{self.log_name} Received {len(msg.obstacles)} obstacles")
 
         # Store current obstacle data in buffer
         for i, obstacle in enumerate(msg.obstacles):
@@ -245,13 +250,9 @@ class TAMConstantOffsetPredictor:
         if (len(self.global_waypoints.wpnts) == 0 or
             self.converter is None or
                 len(msg.obstacles) == 0):
-            # rospy.loginfo_throttle(
-            #     5.0, f"{self.log_name} Not ready for predictions: waypoints={len(self.global_waypoints.wpnts)}, converter={self.converter is not None}, obstacles={len(msg.obstacles)}")
             return
 
         # Generate and publish predictions
-        # rospy.loginfo_throttle(
-        #     5.0, f"{self.log_name} Generating predictions for {len(msg.obstacles)} obstacles")
         self.generate_predictions()
 
     def ego_state_callback(self, msg: Odometry):
@@ -309,7 +310,20 @@ class TAMConstantOffsetPredictor:
         return active_obstacles
 
     def extrapolate_obstacle(self, buffer_entry, age):
-        """Extrapolate obstacle position based on last known state"""
+        """Extrapolate obstacle position based on last known state.
+
+        Performs linear extrapolation of the obstacle's position using its
+        last known velocity, assuming constant lateral offset.
+
+        Args:
+            buffer_entry: Dictionary containing 'obstacle', 'timestamp', and
+                         'obstacle_id' from the prediction buffer.
+            age: Time elapsed since the obstacle was last observed [seconds].
+
+        Returns:
+            Obstacle: Extrapolated obstacle message with updated s_center position,
+                     or None if extrapolation fails.
+        """
         obstacle = buffer_entry['obstacle']
 
         # Simple linear extrapolation based on velocity
@@ -325,7 +339,18 @@ class TAMConstantOffsetPredictor:
         return extrapolated
 
     def generate_predictions(self):
-        """Generate constant offset predictions for all dynamic obstacles"""
+        """Generate constant offset predictions for all dynamic obstacles.
+
+        Main prediction generation method that:
+        1. Retrieves active obstacles (current + buffered with extrapolation)
+        2. Generates trajectory predictions for each obstacle
+        3. Creates visualization markers for RViz
+        4. Publishes predictions and markers to ROS topics
+
+        Predictions maintain each obstacle's relative lateral position within
+        track boundaries and use raceline velocities scaled by the obstacle's
+        observed driving style.
+        """
 
         self.declare_and_update_parameters(skip_update=self.race_started)
 
@@ -395,7 +420,14 @@ class TAMConstantOffsetPredictor:
                     5.0, f"{self.log_name} Failed to publish markers: {e}")
 
     def publish_empty_markers(self, current_time):
-        """Publish deletion markers when no obstacles are present"""
+        """Publish deletion markers when no obstacles are present.
+
+        Sends DELETE action markers to RViz to remove visualization markers
+        for obstacles that are no longer being tracked.
+
+        Args:
+            current_time: Current ROS time for marker header timestamp.
+        """
         if not self.active_marker_ids:
             return
 
@@ -455,10 +487,6 @@ class TAMConstantOffsetPredictor:
             # If opponent drives at 60% of raceline speed, maintain 60% in prediction
             velocity_scale = self.calculate_velocity_scale_factor(
                 obstacle, obstacle_id)
-
-            # rospy.loginfo_throttle(
-            #     2.0, f"{self.log_name} Obstacle {obstacle_id}: s={s_current:.2f}, d={d_current:.2f}, "
-            #          f"relative_pos={relative_position:.2%}, vel_scale={velocity_scale:.2%}")
 
             # Find starting waypoint index (closest to opponent's current position)
             start_idx = self.find_closest_waypoint_index(s_current)
@@ -533,10 +561,6 @@ class TAMConstantOffsetPredictor:
                 pred_waypoint.vd_mps = 0.0  # Constant relative offset = zero lateral velocity
 
                 predicted_waypoints.append(pred_waypoint)
-
-            # rospy.loginfo_throttle(
-            #     1.0, f"{self.log_name} Generated {len(predicted_waypoints)} prediction waypoints "
-            #          f"(relative_pos={relative_position:.2%}, distance={distance_accumulated:.1f}m, time={time_accumulated:.1f}s)")
             return predicted_waypoints
 
         except Exception as e:
@@ -587,9 +611,6 @@ class TAMConstantOffsetPredictor:
 
             # Clamp to [-1, 1] range
             relative_position = max(-1.0, min(1.0, relative_position))
-
-            # rospy.logerr(
-            #     f"{self.log_name} Relative position: {relative_position:.2%} (d={d_current:.2f}, left={d_left:.2f}, right={d_right:.2f}, width={track_width:.2f})")
 
             return relative_position
 
@@ -716,9 +737,6 @@ class TAMConstantOffsetPredictor:
             d_left = waypoint.d_left
             d_right = waypoint.d_right
 
-            # rospy.loginfo_throttle(
-            #     10.0, f"[TAM Predictor] Current d values: {d_left} and {d_right}")
-
             # Apply safety margins
             d_left_safe = d_left - self.safety_margin
             d_right_safe = d_right - self.safety_margin
@@ -775,7 +793,17 @@ class TAMConstantOffsetPredictor:
             return d_offset  # Return original if constraint fails
 
     def find_closest_waypoint_index(self, s_pos):
-        """Find the closest waypoint index for a given s position"""
+        """Find the closest waypoint index for a given arc-length position.
+
+        Performs a linear search through all waypoints to find the one with
+        the smallest distance in arc-length coordinates from the query position.
+
+        Args:
+            s_pos: Arc-length position along the track [m].
+
+        Returns:
+            int: Index of the closest waypoint in global_waypoints.wpnts.
+        """
 
         if len(self.global_waypoints.wpnts) == 0:
             return 0
@@ -786,7 +814,19 @@ class TAMConstantOffsetPredictor:
         return differences.index(min(differences))
 
     def create_prediction_message(self, all_predictions, timestamp):
-        """Create OpponentTrajectory message from predictions"""
+        """Create OpponentTrajectory message from prediction waypoints.
+
+        Packages all predicted opponent waypoints into a single ROS message
+        for publishing to downstream nodes.
+
+        Args:
+            all_predictions: List of OppWpnt messages containing predicted
+                            positions and velocities for all obstacles.
+            timestamp: ROS time for the message header.
+
+        Returns:
+            OpponentTrajectory: ROS message containing all predicted waypoints.
+        """
 
         msg = OpponentTrajectory()
         msg.header.stamp = timestamp
@@ -797,7 +837,20 @@ class TAMConstantOffsetPredictor:
         return msg
 
     def create_prediction_marker(self, prediction_waypoints, obstacle_id, timestamp):
-        """Create visualization marker for predicted trajectory"""
+        """Create visualization marker for predicted trajectory.
+
+        Generates a LINE_STRIP marker for RViz visualization showing the
+        predicted path of an obstacle.
+
+        Args:
+            prediction_waypoints: List of OppWpnt messages containing the
+                                 predicted trajectory points.
+            obstacle_id: Unique identifier for the obstacle, used as marker ID.
+            timestamp: ROS time for the marker header.
+
+        Returns:
+            Marker: RViz visualization marker, or None if no waypoints provided.
+        """
 
         if not prediction_waypoints:
             return None
@@ -838,10 +891,16 @@ class TAMConstantOffsetPredictor:
         return marker
 
     def run(self):
-        """Main prediction loop"""
+        """Main prediction loop.
 
-        # Wait for required data
-        # rospy.loginfo(f"{self.log_name} Waiting for required data...")
+        Initializes the node by waiting for required messages (global_waypoints
+        and obstacle detections), then enters the main loop. Predictions are
+        triggered by obstacle callbacks; this loop handles periodic marker
+        cleanup and diagnostics.
+
+        The loop runs at 10 Hz and clears stale visualization markers if no
+        obstacles have been detected recently.
+        """
 
         self.declare_and_update_parameters(skip_update=self.race_started)
 
@@ -853,9 +912,6 @@ class TAMConstantOffsetPredictor:
         except rospy.ROSException as e:
             rospy.logwarn(f"{self.log_name} Timeout waiting for messages: {e}")
             return
-
-        # rospy.loginfo(
-        #     f"{self.log_name} All required data received, starting prediction loop")
 
         # Main prediction loop (predictions are triggered by obstacle callbacks)
         rate = rospy.Rate(10)  # 10 Hz for marker cleanup and diagnostics

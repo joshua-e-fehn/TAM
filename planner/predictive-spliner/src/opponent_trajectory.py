@@ -335,8 +335,10 @@ class Opponent_Trajectory:
     def find_nearest_dyn_obstacle(self, obstacle_array: ObstacleArray, position_in_map_frenet: np.ndarray, track_length: float) -> (np.ndarray, Obstacle):
         """Find the nearest dynamic obstacle and return the obstacle and the obstacle message"""
 
+        opponent = None  # Initialize opponent to None before the loop
+
         if len(obstacle_array.obstacles) > 0 and len(position_in_map_frenet):
-            allowed_distance = 4
+            allowed_distance = 50
             timestanp = obstacle_array.header.stamp
             closest_opp = track_length
             for obstacle in obstacle_array.obstacles:
@@ -359,14 +361,13 @@ class Opponent_Trajectory:
                     # convert timestamp to seconds (not supported by np array otherwise)
                     opponent[6] = opponent[6].to_sec()
                     # if we found an opponent we allow a bigger distance to the next opponent (variable)
-                    allowed_distance = 6
-                else:
-                    opponent = None
+                    allowed_distance = 50
+                # NOTE: Removed incorrect 'else: opponent = None' that would reset opponent
+                # even when a valid dynamic obstacle had already been found
 
-                if closest_opp > allowed_distance:  # if the closest opponent is more than xm away we do not want to start trailing
-                    opponent = None
-        else:
-            opponent = None
+            # After iterating all obstacles, check if the found opponent is within allowed distance
+            if closest_opp > allowed_distance:
+                opponent = None
 
         return opponent
 

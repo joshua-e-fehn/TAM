@@ -209,18 +209,6 @@ class SQPAvoidanceNode:
         self.avoid_static_obs = get_param(
             "avoid_static_obs", "dynamic_sqp_tuner_node/avoid_static_obs", True)
 
-        print(
-            f"[Planner] Dynamic reconf triggered new spline params: \n"
-            f" Evasion apex distance: {self.evasion_dist} [m],\n"
-            f" Obstacle trajectory treshold: {self.obs_traj_tresh} [m]\n"
-            f" Spline boundary mindist: {self.spline_bound_mindist} [m]\n"
-            f" Lookahead distance: {self.lookahead} [m]\n"
-            f" Avoid static obstacles: {self.avoid_static_obs}\n"
-            f" Avoidance resolution: {self.avoidance_resolution}\n"
-            f" Back to raceline before: {self.back_to_raceline_before} [m]\n"
-            f" Back to raceline after: {self.back_to_raceline_after} [m]\n"
-        )
-
     def loop(self):
         # Wait for critical Messages and services
         rospy.loginfo("[OBS Spliner] Waiting for messages and services...")
@@ -232,6 +220,7 @@ class SQPAvoidanceNode:
         rospy.loginfo("[OBS Spliner] Ready!")
 
         while not rospy.is_shutdown():
+            # )
             start_time = time.perf_counter()
             obs = deepcopy(self.obs)
             mrks = MarkerArray()
@@ -277,7 +266,7 @@ class SQPAvoidanceNode:
             self.rate.sleep()
 
     def sqp_solver(self, considered_obs: list, cur_s: float):
-
+        start_time = time.perf_counter()
         danger_flag = False
         # Get the initial guess of the overtaking side (see spliner)
         initial_guess_object = self.group_objects(considered_obs)
@@ -339,7 +328,6 @@ class SQPAvoidanceNode:
         bounds = np.array([(-wpnt.d_right + self.spline_bound_mindist, wpnt.d_left -
                           self.spline_bound_mindist) for wpnt in corresponding_scaled_wpnts])
 
-        # Debug: Log track boundary information
         d_left_arr = np.array(
             [wpnt.d_left for wpnt in corresponding_scaled_wpnts])
         d_right_arr = np.array(
@@ -417,7 +405,6 @@ class SQPAvoidanceNode:
         elif len(self.past_avoidance_d) > 0:
             initial_guess = self.past_avoidance_d
         else:
-            # TODO: Remove -> print("this happend")
             if self.last_ot_side == "left":
                 initial_guess = np.full(len(s_avoidance), 2)
             else:
@@ -425,8 +412,9 @@ class SQPAvoidanceNode:
 
         result = self.solve_sqp(initial_guess, bounds)
 
-        # if len(self.obs_downsampled_indices) < 2 or danger_flag == True:
-        #     result.success = False
+        end_time = time.perf_counter()
+        # print(
+        #     f"[SQP Avoidance] SQP solve time: {end_time - start_time:.4f} seconds", flush=True)
 
         if result.success == True:
             # Create a new s array for the global waypoints as close to delta s as possible

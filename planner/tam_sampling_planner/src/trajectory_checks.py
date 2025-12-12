@@ -12,12 +12,14 @@ MODIFICATIONS:
 - Simplified for use with Pacejka tire model parameters
 - NodeMonitor dependencies simplified to basic print statements
 
-ACTIVE CHECKS:
-- Curvature limits (kappa_thr parameter)
-- Vehicle capability limits (max_speed, max_accel)
-- Path collision with track boundaries
-- Physics-based friction limits using Pacejka tire model
-- Combined slip modeling (friction circle)
+ACTIVE CHECKS (called by mandatory_checks_trajectory):
+- Curvature limits (kappa_thr parameter) - check_curvature()
+- Path collision with track boundaries - __check_path_collision()
+- Physics-based friction limits using Pacejka tire model - __check_friction_limits()
+
+AVAILABLE BUT NOT CALLED:
+- Vehicle capability limits (__check_vehicle_capabilities) - NOT called in mandatory_checks_trajectory
+  Lateral limits handled by Pacejka friction model instead
 
 DISABLED CHECKS (commented out due to missing GGGV diagrams):
 - Speed rule compliance (no rules defined)
@@ -37,9 +39,9 @@ Required ROS Parameters (with defaults):
 - behavior/tire_util_max_check: 1.1
 - behavior/tire_util_relaxation: 1.0 (friction check relaxation: 1.0=default, >1.0=relaxed, <1.0=strict)
 - behavior/kappa_thr: 0.1
-- behavior/max_speed: 6.0 (m/s)
-- behavior/max_accel: 2.0 (m/s²) - longitudinal acceleration limit
-- behavior/max_lateral_accel: 2.0 (m/s²) - DEPRECATED: not used (lateral forces checked by Pacejka friction model)
+- behavior/max_speed: 6.0 (m/s) - NOT USED (vehicle capability check not called)
+- behavior/max_accel: 2.0 (m/s²) - NOT USED (vehicle capability check not called)
+- behavior/max_lateral_accel: 2.0 (m/s²) - DEPRECATED: not used
 - safety_distances/safety_distance_track_left: 0.0
 - safety_distances/safety_distance_track_right: 0.0
 - safety_distances/safety_distance_pitlane_left: 0.0
@@ -237,6 +239,19 @@ class TrajectoryChecks():
         Omega_z: np.ndarray,
         invalid_array_info: np.ndarray,
     ):
+        """
+        Check if trajectory curvatures exceed the maximum allowed curvature.
+
+        Args:
+            valid_array: Boolean mask of currently valid trajectories (modified in-place)
+            Omega_z: Curvature array (rad/m) - NOTE: Named Omega_z for legacy reasons,
+                     but actually contains path curvature (kappa), not yaw rate!
+                     Shape: (n_trajectories, n_points)
+            invalid_array_info: Array for storing failure reasons (not modified here)
+
+        Modifies:
+            valid_array: Trajectories exceeding kappa_thr are marked invalid
+        """
         valid_tmp = np.all(
             np.abs(Omega_z[valid_array]) <= self.params.kappa_thr, axis=1)
 
@@ -314,6 +329,27 @@ class TrajectoryChecks():
         vehicle_params: dict,
         invalid_array_info: np.ndarray,
     ):
+        """
+        Check if trajectories collide with track boundaries.
+
+        Validates that all trajectory points stay within usable track width,
+        accounting for vehicle width, safety distances, and tube width margins.
+
+        Args:
+            track_handler: Track handler for boundary interpolation
+            valid_array: Boolean mask of currently valid trajectories (modified in-place)
+            s_array: Arc length positions (n_trajectories, n_points)
+            n_array: Lateral offsets from centerline (n_trajectories, n_points)
+            pitlane_mode: If True, use pitlane safety distances (currently disabled)
+            vehicle_params: Dict with 'total_width' key for vehicle width [m]
+            invalid_array_info: Array for storing failure reasons (not modified here)
+
+        Returns:
+            Tuple of (left_bound, right_bound) arrays showing usable track boundaries
+
+        Note:
+            Logs critical warning if safety margins are too large for track width.
+        """
         # if pitlane_mode:
         #     safety_distance_left = self.params.safety_distance_pitlane_left
         #     safety_distance_right = self.params.safety_distance_pitlane_right
@@ -457,6 +493,40 @@ class TrajectoryChecks():
             invalid_array_info: np.ndarray,
             postprocessed_raceline: dict,
     ):
+        """
+        Check if trajectories exceed tire friction limits using Pacejka model.
+
+        Uses combined slip friction circle model to validate that tire forces
+        are within physical limits. Formula: (|ax|/ax_max)^n + (|ay|/ay_max)^n <= 1
+
+        Args:
+            valid_array: Boolean mask of currently valid trajectories (modified in-place)
+            track_handler: Track handler (unused, kept for API compatibility)
+            s_array: Arc length positions (n_trajectories, n_points)
+            V_array: Velocities (unused in current implementation)
+            n_array: Lateral offsets (unused in current implementation)
+            chi_array: Heading angles (unused in current implementation)
+            ax_array: Longitudinal accelerations in velocity frame (m/s²)
+            ay_array: Lateral accelerations in velocity frame (m/s²)
+            t_array: Time stamps (unused)
+            ggv_mode: GGV mode string (unused, GGGV disabled)
+            gggv_handler: GGGV handler (unused, set to None)
+            traj_cnt: Trajectory counter for logging
+            msgs_logger: Message logger (unused, simplified)
+            pitlane_mode: Pitlane mode flag (unused)
+            invalid_array_info: Array for storing failure reasons (not modified here)
+            postprocessed_raceline: Raceline data (unused)
+
+        Returns:
+            Tuple of (ax_tilde, ay_tilde, g_tilde, tire_util_array):
+            - ax_tilde: Apparent longitudinal acceleration (equals ax_array, flat track)
+            - ay_tilde: Apparent lateral acceleration (equals ay_array, flat track)
+            - g_tilde: Apparent gravity (9.81 m/s² constant, flat track)
+            - tire_util_array: Tire utilization values for each trajectory point
+
+        Note:
+            Falls back to accepting all trajectories if Pacejka model unavailable.
+        """
         ax_tilde = np.zeros_like(s_array)
         ay_tilde = np.zeros_like(s_array)
         g_tilde = np.zeros_like(s_array)
@@ -591,6 +661,45 @@ class TrajectoryChecks():
                                     gggv_handler,  # GGGVManager - commented out due to no GGGV diagrams
                                     postprocessed_raceline: dict,
                                     ):
+        """
+        Run all mandatory trajectory validation checks.
+
+        Executes checks in order:
+        1. Curvature check - validates path curvature <= kappa_thr
+        2. Path collision check - validates trajectories within track boundaries
+        3. Friction check - validates tire forces within Pacejka model limits
+
+        Args:
+            Omega_z_vf_array: Path curvature array (rad/m) - NOTE: named Omega_z for legacy
+                              but contains curvature (kappa), not yaw rate!
+            track_handler: Track handler for boundary interpolation
+            s_array: Arc length positions (n_trajectories, n_points)
+            n_array: Lateral offsets from centerline (n_trajectories, n_points)
+            t_array: Time stamps (n_trajectories, n_points)
+            V_array: Velocities (n_trajectories, n_points)
+            V_target_rules: Target velocity for rules check (unused, rules disabled)
+            chi_array: Heading angles relative to track (n_trajectories, n_points)
+            ax_vf_array: Longitudinal accelerations in velocity frame (m/s²)
+            ay_vf_array: Lateral accelerations in velocity frame (m/s²)
+            node_monitor: Node monitor object (unused, simplified)
+            msgs_logger: Message logger (unused, simplified)
+            traj_cnt: Trajectory counter for logging
+            pitlane_mode: If True, use pitlane parameters
+            vehicle_params: Dict with 'total_width' for vehicle dimensions
+            ggv_mode: GGV mode string (unused, GGGV disabled)
+            gggv_handler: GGGV handler (unused, set to None)
+            postprocessed_raceline: Preprocessed raceline segment
+
+        Returns:
+            Tuple of 7 elements:
+            - valid_array: Boolean mask of valid trajectories
+            - ax_tilde: Apparent longitudinal accelerations
+            - ay_tilde: Apparent lateral accelerations
+            - g_tilde: Apparent gravity values
+            - tire_util_array: Tire utilization for each point
+            - invalid_array_info: String array with failure reasons per trajectory
+            - (left_bound, right_bound): Tuple of track boundary arrays
+        """
 
         # Pass skip_update flag if available from parent
         skip_update = getattr(self, '_skip_param_updates', False)

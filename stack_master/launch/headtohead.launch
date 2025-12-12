@@ -413,7 +413,7 @@
             <remap from="global_waypoints" to="$(arg global_waypoints_topic)"/>
             <remap from="global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
             <remap from="local_waypoints" to="local_waypoints"/>
-            <!-- Remap to use conditional obstacles topic (multi-car or single-car) -->
+            <!-- Remap to use conditional obstacles topic (multi-car or single12-car) -->
             <remap from="perception/obstacles" to="$(arg obstacles_topic)"/>
             <!-- Remap collision prediction obstacles (from Predictive Spliner nodes) -->
             <remap from="collision_prediction/obstacles" to="collision_prediction/obstacles"/>
@@ -483,6 +483,21 @@
             <!-- Remap to use car-specific topics -->
             <remap from="/proj_opponent_trajectory" to="/$(arg car_name)/proj_opponent_trajectory"/>
             <remap from="/opponent_trajectory" to="/$(arg car_name)/opponent_trajectory"/>
+        </node>
+        
+        <!-- Waypoint Updater from Predictive Spliner (required for collision_predictor) -->
+        <node pkg="predictive_spliner" type="update_waypoints.py" name="waypoint_updater" output="screen">
+            <!-- Remap global waypoints to car-specific topics -->
+            <remap from="/global_waypoints" to="$(arg global_waypoints_topic)"/>
+            <remap from="/global_waypoints_scaled" to="$(arg global_waypoints_scaled_topic)"/>
+            <remap from="/global_waypoints_updated" to="/$(arg car_name)/global_waypoints_updated"/>
+            <remap from="/local_waypoints" to="/$(arg car_name)/local_waypoints"/>
+            <!-- Remap Frenet conversion services to car-specific services -->
+            <remap from="convert_frenet2globarr_service" to="/$(arg car_name)/convert_frenet2globarr_service"/>
+            <remap from="convert_glob2frenetarr_service" to="/$(arg car_name)/convert_glob2frenetarr_service"/>
+            <!-- Remap to use car-specific topics -->
+            <remap from="/car_state/odom_frenet" to="/$(arg car_name)/car_state/odom_frenet"/>
+            <remap from="/state_machine" to="/$(arg car_name)/state_machine"/>
         </node>
         
         <!-- TAM Visualization for trajectory markers -->

@@ -108,7 +108,7 @@ class StateMachine:
         self.avoidance_wpnts = None
         self.last_valid_avoidance_wpnts = None
         self.overtaking_horizon_m = rospy.get_param(
-            'state_machine/overtaking_horizon_m', 6.9)
+            'state_machine/overtaking_horizon_m', 4.0)
         self.lateral_width_ot_m = rospy.get_param(
             'state_machine/lateral_width_ot_m', 0.3)
         self.splini_hyst_timer_sec = rospy.get_param(
@@ -510,8 +510,6 @@ class StateMachine:
 
         # Choose the dyn ot param value
         self.ot_begin_margin = params.doubles[2].value
-        rospy.logwarn(
-            f"[{self.name}] Using OT beginning { self.ot_begin_margin}[m] from param: {params.doubles[2].name}")
         # Spline new OT if they exist already
         self.recompute_ot_spline = True
 
@@ -536,7 +534,6 @@ class StateMachine:
             for sector in self.only_ftg_zones:
                 if sector[0] <= self.cur_s / self.waypoints_dist <= sector[1]:
                     ftg_only = True
-                    # rospy.logwarn(f"[{self.name}] IN FTG ONLY ZONE")
                     break  # cannot be in two ftg zones
         return ftg_only
 
@@ -671,7 +668,6 @@ class StateMachine:
     def _check_ot_sector(self) -> bool:
         for sector in self.overtake_zones:
             if sector[0] <= self.cur_s / self.waypoints_dist <= sector[1]:
-                # rospy.loginfo(f"[{self.name}] In overtaking sector!")
                 self.ot_section_check_pub.publish(True)
                 return True
         self.ot_section_check_pub.publish(False)
@@ -816,12 +812,8 @@ class StateMachine:
     def _check_availability_splini_wpts(self) -> bool:
 
         if self.avoidance_wpnts is None:
-            # rospy.logwarn_throttle(2.0,
-            #                        f"[{self.name}] _check_availability: avoidance_wpnts is None -> returning False")
             return False
         elif len(self.avoidance_wpnts.wpnts) == 0:
-            # rospy.logwarn(
-            #     f"[{self.name}] _check_availability: avoidance_wpnts has 0 waypoints -> returning False")
             return False
 
         # TAM sampling planner: Skip hysteresis check (doesn't switch between discrete sides)
@@ -913,9 +905,6 @@ class StateMachine:
                             if abs(ot_obs_dist) < self.emergency_break_d:
                                 emergency_break = True
                                 obstacle_type = "STATIC" if obs.is_static else "DYNAMIC"
-                                # rospy.logwarn_throttle(1.0, f"[{car_name}] STATE MACHINE EMERGENCY BRAKE TRIGGERED! "
-                                #                        f"Obstacle {obs.id} ({obstacle_type}): lateral_distance={abs(ot_obs_dist):.3f}m < threshold={self.emergency_break_d:.3f}m, "
-                                #                        f"longitudinal_distance={dist_to_obj:.2f}m < horizon={horizon:.2f}m, {self.cur_state}")
             else:
                 emergency_break = False
             return emergency_break
@@ -934,6 +923,17 @@ class StateMachine:
         return False
 
     def _check_on_merger(self) -> bool:
+        """Check if the car is currently in a merger zone.
+
+        A merger zone is the track section where the car transitions from an 
+        overtaking/avoidance trajectory back to the main racing line. State 
+        transitions are typically blocked during this phase to ensure smooth 
+        and safe completion of the merge-back maneuver.
+
+        Returns:
+            True if car's current s-position is within the merger zone bounds,
+            False otherwise (including when no merger zone is defined).
+        """
         if self.merger is not None:
             if self.merger[0] < self.merger[1]:
                 if self.cur_s > self.merger[0] and self.cur_s < self.merger[1]:
@@ -1005,10 +1005,6 @@ class StateMachine:
         # DEBUG: Check status of avoidance waypoints
         avoidance_status = "None" if self.avoidance_wpnts is None else f"{len(self.avoidance_wpnts.wpnts)} wpnts"
         last_valid_status = "None" if self.last_valid_avoidance_wpnts is None else f"{len(self.last_valid_avoidance_wpnts)} wpnts"
-
-        # rospy.loginfo_throttle(2.0,
-        #                        f"[{self.name}] get_splini_wpts() called | "
-        #                        f"avoidance_wpnts={avoidance_status}, last_valid={last_valid_status}")
 
         splini_glob = self.glb_wpnts.copy()
 
@@ -1368,9 +1364,10 @@ class StateMachine:
         self.visualize_state(state=self.cur_state.value)
 
         # Continuous state output for monitoring - print directly to terminal
-        import sys
-        print(f"\r[{self.name}] STATE: {self.cur_state.value}    ",
-              end='', file=sys.stdout, flush=True)
+        # if self.car_name == "car1":
+        #     import sys
+        #     print(f"\r[{self.name}] STATE: {self.cur_state.value}    ",
+        #           end='', file=sys.stdout, flush=True)
 
         # Also log every 1 second for rosout
         rospy.loginfo_throttle(
@@ -1378,81 +1375,6 @@ class StateMachine:
 
         rospy.loginfo_throttle(
             5.0, f"[{self.name}] Current Planer: {self.ot_planner}")
-
-        # # Debug logging for Predictive Spliner Trailing Transition conditions
-        # if self.ot_planner == "predictive_spliner":
-        #     ot_sector = self._check_ot_sector()
-        #     valid_spline = self._check_availability_splini_wpts()
-        #     emergency_break = self._check_emergency_break()
-        #     enemy_in_front = self._check_enemy_in_front()
-        #     gb_free = self._check_gbfree()
-        #     gb_predict_free = self._check_prediction_gbfree()
-        #     o_free = self._check_ofree()
-        #     on_avoidance_spline = self._check_on_spline()
-        #     on_merger = self._check_on_merger()
-        #     force_trailing = self._check_force_trailing()
-
-        #     rospy.logwarn_throttle(
-        #         2.0, f"[{self.name}] Trailing Transition Check: ot_sector={ot_sector}, valid_spline={valid_spline}, emergency_break={emergency_break}, enemy_in_front={enemy_in_front}, gb_free={gb_free}, gb_predict_free={gb_predict_free}, o_free={o_free}, on_avoidance_spline={on_avoidance_spline}, on_merger={on_merger}, force_trailing={force_trailing}")
-        #     path1_conditions = valid_spline and not emergency_break and o_free and ot_sector and not on_merger
-        #     # path2_conditions = not enemy_in_front and on_avoidance_spline and not on_merger
-
-        #     if path1_conditions:
-        #         rospy.logwarn_throttle(
-        #             2.0, f"[{self.name}] OVERTAKE Path 1 READY: All conditions met for primary overtaking transition!")
-        #     # elif path2_conditions:
-        #     #     rospy.logwarn_throttle(
-        #     #         2.0, f"[{self.name}] OVERTAKE Path 2 READY: All conditions met for alternative overtaking transition!")
-        #     else:
-        #         # Analyze why transitions are failing
-        #         path1_failures = []
-        #         # path2_failures = []
-
-        #         # Path 1 analysis: valid_spline and not emergency_break and o_free and ot_sector and not on_merger
-        #         if not valid_spline:
-        #             path1_failures.append("valid_spline=False")
-        #         if emergency_break:
-        #             path1_failures.append("emergency_break=True")
-        #         if not o_free:
-        #             path1_failures.append("o_free=False")
-        #         if not ot_sector:
-        #             path1_failures.append("ot_sector=False")
-        #         if on_merger:
-        #             path1_failures.append("on_merger=True")
-
-        #         # # Path 2 analysis: not enemy_in_front and on_avoidance_spline and not on_merger
-        #         # if enemy_in_front:
-        #         #     path2_failures.append("enemy_in_front=True")
-        #         # if not on_avoidance_spline:
-        #         #     path2_failures.append("on_avoidance_spline=False")
-        #         # if on_merger:
-        #         #     path2_failures.append("on_merger=True")
-
-        #         # Report the blocking conditions
-        #         path1_reason = ", ".join(
-        #             path1_failures) if path1_failures else "ALL_CONDITIONS_MET"
-        #         # path2_reason = ", ".join(
-        #         #     path2_failures) if path2_failures else "ALL_CONDITIONS_MET"
-
-        #         rospy.logwarn_throttle(
-        #             2.0, f"[{self.name}] OVERTAKE BLOCKED - Path1 blocked by: [{path1_reason}]")
-
-        #         avoidance_status = "None" if self.avoidance_wpnts is None else f"{len(self.avoidance_wpnts.wpnts)} waypoints"
-        #         obstacles_count = len(self.obstacles)
-        #         obstacles_perception_count = len(self.obstacles_perception)
-        #         obstacles_prediction_count = len(self.obstacles_prediction)
-
-        #         rospy.logwarn_throttle(
-        #             2.0, f"[{self.name}] SQP Debug: avoidance_wpnts={avoidance_status}, "
-        #             f"obstacles_total={obstacles_count}, perception={obstacles_perception_count}, prediction={obstacles_prediction_count}, "
-        #             f"cur_s={self.cur_s:.2f}, cur_d={self.cur_d:.2f}")
-
-        #         # Check if SQP planner is receiving the right inputs
-        #         if hasattr(self, 'last_collision_prediction_time'):
-        #             time_since_collision = (
-        #                 rospy.Time.now() - self.last_collision_prediction_time).to_sec()
-        #             rospy.logwarn_throttle(
-        #                 2.0, f"[{self.name}] Time since last collision prediction: {time_since_collision:.2f}s")
 
         if self.timetrials_only:
             rospy.logdebug_throttle_identical(

@@ -1,0 +1,487 @@
+# Multi-Car Test Configuration
+# Two cars racing against each other
+# Tests different planner matchups and speed configurations
+
+test_matrix:
+  - simulation_id: "mult_0001"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.5
+    accel_multiplier_car2: 0.5
+
+  - simulation_id: "mult_0002"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.52
+    accel_multiplier_car2: 0.52
+
+  - simulation_id: "mult_0003"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.54
+    accel_multiplier_car2: 0.54
+
+  - simulation_id: "mult_0004"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.56
+    accel_multiplier_car2: 0.56
+
+  - simulation_id: "mult_0005"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.58
+    accel_multiplier_car2: 0.58
+
+  - simulation_id: "mult_0006"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.60
+    accel_multiplier_car2: 0.60
+
+  - simulation_id: "mult_0007"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.62
+    accel_multiplier_car2: 0.62
+
+  - simulation_id: "mult_0008"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.64
+    accel_multiplier_car2: 0.64
+
+  - simulation_id: "mult_0009"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.66
+    accel_multiplier_car2: 0.66
+  
+  - simulation_id: "mult_0010"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.68
+    accel_multiplier_car2: 0.68
+
+  - simulation_id: "mult_0011"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.70
+    accel_multiplier_car2: 0.70
+
+  - simulation_id: "mult_0012"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.72
+    accel_multiplier_car2: 0.72
+
+  - simulation_id: "mult_0013"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.74
+    accel_multiplier_car2: 0.74
+
+  - simulation_id: "mult_0014"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.76
+    accel_multiplier_car2: 0.76
+
+  - simulation_id: "mult_0015"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.78
+    accel_multiplier_car2: 0.78
+
+  - simulation_id: "mult_0016"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.80
+    accel_multiplier_car2: 0.80
+
+  - simulation_id: "mult_0017"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.82
+    accel_multiplier_car2: 0.82
+
+  - simulation_id: "mult_0018"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.84
+    accel_multiplier_car2: 0.84
+
+  - simulation_id: "mult_0019"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.86
+    accel_multiplier_car2: 0.86
+
+  - simulation_id: "mult_0020"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.88
+    accel_multiplier_car2: 0.88
+
+  - simulation_id: "mult_0021"
+    name: "spliner_vs_spliner"
+    mode: "multi_car"
+    planner_car1: "tam_sampling"
+    planner_car2: "spliner"
+    speed_multiplier_car1: 1.0
+    accel_multiplier_car1: 1.0
+    global_map: "my_map_20%s_100%w_NUC2_mintime"
+    show_simulation_output: false
+    use_global_prediction: true
+
+    car2_spliner_spline_bound_mindist: 0.3
+    car2_spliner_evasion_dist: 0.925
+    car2_spliner_pre_apex_dist0: 4
+    car2_spliner_pre_apex_dist1: 3
+    car2_spliner_pre_apex_dist2: 2
+    car2_spliner_post_apex_dist0: 4
+    car2_spliner_post_apex_dist1: 5
+    car2_spliner_post_apex_dist2: 6
+
+    speed_multiplier_car2: 0.90
+    accel_multiplier_car2: 0.90

@@ -50,6 +50,10 @@ class ObstaclePublisher:
         self.path_phase = rospy.get_param(
             '~path_phase', rospy.get_param('obstacle_publisher/path_phase', 0.0))
 
+        # Sinusoidal speed variation amplitude (m/s) - adds/subtracts from raceline speed
+        self.speed_amplitude = rospy.get_param(
+            '~speed_amplitude', rospy.get_param('obstacle_publisher/speed_amplitude', 0.0))
+
         # Frames (allow override & multi-car namespacing). Map frame may be prefixed externally.
         self.map_frame = rospy.get_param(
             '~map_frame', rospy.get_param('/map_frame', 'map'))
@@ -87,7 +91,8 @@ class ObstaclePublisher:
                     'speed_scaler': self.speed_scaler,
                     'path_amplitude': self.path_amplitude,
                     'path_frequency': self.path_frequency,
-                    'path_phase': self.path_phase
+                    'path_phase': self.path_phase,
+                    'speed_amplitude': self.speed_amplitude
                 })
                 rospy.loginfo(
                     f"Dynamic reconfigure updated: speed_scaler={self.speed_scaler}, path_amplitude={self.path_amplitude}")
@@ -201,6 +206,7 @@ class ObstaclePublisher:
                 old_amplitude = self.path_amplitude
                 old_frequency = self.path_frequency
                 old_phase = self.path_phase
+                old_speed_amplitude = self.speed_amplitude
 
                 self.speed_scaler = config.get(
                     'speed_scaler', self.speed_scaler)
@@ -209,15 +215,19 @@ class ObstaclePublisher:
                 self.path_frequency = config.get(
                     'path_frequency', self.path_frequency)
                 self.path_phase = config.get('path_phase', self.path_phase)
+                self.speed_amplitude = config.get(
+                    'speed_amplitude', self.speed_amplitude)
 
                 # Log parameter changes for debugging
                 if (old_speed != self.speed_scaler or old_amplitude != self.path_amplitude or
-                        old_frequency != self.path_frequency or old_phase != self.path_phase):
+                        old_frequency != self.path_frequency or old_phase != self.path_phase or
+                        old_speed_amplitude != self.speed_amplitude):
                     rospy.loginfo_throttle(1.0, f"[Obstacle Publisher] Updated parameters: "
                                            f"speed={self.speed_scaler:.3f}, "
                                            f"amplitude={self.path_amplitude:.3f}, "
                                            f"frequency={self.path_frequency:.3f}, "
-                                           f"phase={self.path_phase:.3f}")
+                                           f"phase={self.path_phase:.3f}, "
+                                           f"speed_amplitude={self.speed_amplitude:.3f}")
 
             except Exception as e:
                 # If dynamic reconfigure fails, keep using current values
@@ -410,8 +420,22 @@ class ObstaclePublisher:
             # Now apply speed scaler to the capped speed
             target_speed = capped_base_speed * self.speed_scaler
 
-            # Apply acceleration limit: max_accel_limit * speed_scaler
-            max_allowed_accel = self.max_accel_limit * self.speed_scaler
+            # Apply sinusoidal speed variation to target speed
+            # This allows speed to exceed max_speed_limit (e.g., for testing GP prediction)
+            # Uses same frequency and phase as lateral deviation
+            if self.speed_amplitude > 0:
+                speed_variation = self.speed_amplitude * np.sin(
+                    self.path_frequency * s + self.path_phase
+                )
+                target_speed = target_speed + speed_variation
+
+            # Ensure minimum speed of 1 m/s to prevent getting stuck
+            target_speed = max(1.0, target_speed)
+
+            # Apply acceleration limit AFTER sinusoidal variation is added
+            # Use higher acceleration limit to allow following the sinusoidal profile
+            max_allowed_accel = self.max_accel_limit * \
+                (1.0 + self.speed_amplitude / 2.0)  # Scale with amplitude
             max_speed_change = max_allowed_accel * self.looptime
 
             # Limit speed change to respect acceleration constraint

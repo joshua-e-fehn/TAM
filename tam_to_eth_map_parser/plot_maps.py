@@ -4,7 +4,7 @@ Script to plot the Marina raceline trajectories from the generated map data.
 
 This script visualizes the three trajectory types:
 - Centerline (blue): Conservative path through track center
-- IQP (red): Aggressive racing line for minimum lap time
+- Mintime (red): Time-optimal racing line for minimum lap time
 - SP (green): Moderate racing line balancing speed and safety
 """
 
@@ -155,7 +155,7 @@ def plot_trajectories(centerline_waypoints, iqp_waypoints, sp_waypoints, trackbo
 
     if iqp_waypoints:
         ax1.plot(iqp_x, iqp_y, 'r-', linewidth=2,
-                 label=f'IQP - Aggressive (avg: {np.mean(iqp_speeds):.1f} m/s)', alpha=0.8)
+                 label=f'Mintime Racing Line (avg: {np.mean(iqp_speeds):.1f} m/s)', alpha=0.8)
 
     if sp_waypoints:
         ax1.plot(sp_x, sp_y, 'g-', linewidth=2,
@@ -192,7 +192,7 @@ def plot_trajectories(centerline_waypoints, iqp_waypoints, sp_waypoints, trackbo
     if iqp_waypoints:
         iqp_s = [get_value(wp, 's_m') for wp in iqp_waypoints]
         ax2.plot(iqp_s, iqp_speeds, 'r-', linewidth=2,
-                 label=f'IQP (max: {max(iqp_speeds):.1f} m/s)')
+                 label=f'Mintime (max: {max(iqp_speeds):.1f} m/s)')
 
     if sp_waypoints:
         sp_s = [get_value(wp, 's_m') for wp in sp_waypoints]
@@ -286,7 +286,27 @@ def plot_speed_heatmap(waypoints, trajectory_name, trackbounds_markers=None):
     """Create a speed heatmap for a single trajectory with optional track boundaries."""
     x_coords, y_coords, speeds = extract_coordinates_and_speeds(waypoints)
 
-    fig, ax = plt.subplots(figsize=(12, 10))
+    # Calculate aspect ratio from data to maintain consistent figure proportions
+    x_range = max(x_coords) - min(x_coords)
+    y_range = max(y_coords) - min(y_coords)
+    aspect_ratio = x_range / y_range if y_range > 0 else 1.0
+
+    # Set figure size with consistent height and width based on data aspect ratio
+    fig_height = 10
+    # 1.2 factor for colorbar space
+    fig_width = max(12, fig_height * aspect_ratio * 1.2)
+
+    # Set larger font sizes for thesis readability
+    plt.rcParams.update({
+        'font.size': 14,
+        'axes.titlesize': 18,
+        'axes.labelsize': 16,
+        'xtick.labelsize': 14,
+        'ytick.labelsize': 14,
+        'legend.fontsize': 14,
+    })
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
     # Plot track boundaries first if available
     if trackbounds_markers:
@@ -294,27 +314,42 @@ def plot_speed_heatmap(waypoints, trajectory_name, trackbounds_markers=None):
             trackbounds_markers)
         if left_bounds_x and left_bounds_y:
             ax.plot(left_bounds_x, left_bounds_y, 'gray',
-                    linewidth=2, alpha=0.6, label='Left Boundary')
+                    linewidth=2.5, alpha=0.7, label='Track Boundary')
         if right_bounds_x and right_bounds_y:
             ax.plot(right_bounds_x, right_bounds_y, 'gray',
-                    linewidth=2, alpha=0.6, label='Right Boundary')
+                    linewidth=2.5, alpha=0.7)
 
-    # Create scatter plot with speed as color
+    # Create scatter plot with speed as color (larger marker size)
     scatter = ax.scatter(x_coords, y_coords, c=speeds,
-                         cmap='viridis', s=20, alpha=0.8)
+                         cmap='viridis', s=40, alpha=0.9)
 
-    # Add colorbar
-    cbar = plt.colorbar(scatter, ax=ax)
-    cbar.set_label('Speed (m/s)')
+    # Add start point marker (s=0)
+    ax.plot(x_coords[0], y_coords[0], 'o', markersize=14,
+            markerfacecolor='white', markeredgecolor='black',
+            markeredgewidth=2.5, zorder=10)
+    ax.annotate('Start', (x_coords[0], y_coords[0]),
+                textcoords='offset points', xytext=(10, 10),
+                fontsize=14, fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor='black', alpha=0.9))
 
-    ax.set_xlabel('X Position (m)')
-    ax.set_ylabel('Y Position (m)')
-    ax.set_title(f'{trajectory_name} - Speed Heatmap with Track Boundaries')
+    # Add colorbar with larger font
+    cbar = plt.colorbar(scatter, ax=ax, shrink=0.8, pad=0.02)
+    cbar.set_label('Speed (m/s)', fontsize=16, labelpad=10)
+    cbar.ax.tick_params(labelsize=14)
+
+    ax.set_xlabel('X Position (m)', fontsize=16)
+    ax.set_ylabel('Y Position (m)', fontsize=16)
+    ax.set_title(f'{trajectory_name} - Speed Heatmap',
+                 fontsize=18, fontweight='bold')
     ax.grid(True, alpha=0.3)
-    ax.axis('equal')
+    ax.set_aspect('equal', adjustable='box')
+    ax.tick_params(axis='both', which='major', labelsize=14)
 
     if trackbounds_markers:
-        ax.legend()
+        ax.legend(fontsize=14, loc='best')
+
+    plt.tight_layout()
 
     return fig
 
@@ -335,7 +370,7 @@ def plot_acceleration_profiles(centerline_waypoints, iqp_waypoints, sp_waypoints
         iqp_x, iqp_y, iqp_speeds, iqp_accels, iqp_s = extract_full_trajectory_data(
             iqp_waypoints)
         ax1.plot(iqp_s, iqp_accels, 'r-', linewidth=2, alpha=0.8,
-                 label=f'IQP - Racing Line (max: {max(iqp_accels):.2f} m/s²)')
+                 label=f'Mintime Racing Line (max: {max(iqp_accels):.2f} m/s²)')
 
     if sp_waypoints:
         sp_x, sp_y, sp_speeds, sp_accels, sp_s = extract_full_trajectory_data(
@@ -361,7 +396,7 @@ def plot_acceleration_profiles(centerline_waypoints, iqp_waypoints, sp_waypoints
 
     if iqp_waypoints:
         ax2.scatter(iqp_speeds, iqp_accels, c='red', s=20,
-                    alpha=0.6, label='IQP - Racing Line')
+                    alpha=0.6, label='Mintime Racing Line')
 
     if sp_waypoints:
         ax2.scatter(sp_speeds, sp_accels, c='green', s=20,
@@ -522,9 +557,9 @@ def plot_map(map_info, plots_dir):
 
         # IQP trajectory plot (only if available)
         if iqp_waypoints:
-            print("Creating IQP trajectory plot...")
+            print("Creating Mintime trajectory plot...")
             fig_iqp = plot_single_trajectory_with_boundaries(
-                iqp_waypoints, "IQP (Aggressive)", 'r-', trackbounds_markers)
+                iqp_waypoints, "Mintime Racing Line", 'r-', trackbounds_markers)
             iqp_path = os.path.join(plots_dir, f"{clean_name}_iqp.png")
             fig_iqp.savefig(iqp_path, dpi=300, bbox_inches='tight')
             print(f"Saved IQP plot: {iqp_path}")
@@ -548,11 +583,18 @@ def plot_map(map_info, plots_dir):
         # IQP heatmap (only if available)
         if iqp_waypoints:
             fig2 = plot_speed_heatmap(
-                iqp_waypoints, "IQP (Aggressive)", trackbounds_markers)
+                iqp_waypoints, "Mintime Racing Line", trackbounds_markers)
             iqp_heatmap_path = os.path.join(
                 plots_dir, f"{clean_name}_iqp_heatmap.png")
             fig2.savefig(iqp_heatmap_path, dpi=300, bbox_inches='tight')
             print(f"Saved IQP heatmap: {iqp_heatmap_path}")
+            # Save high-quality PDF for thesis
+            iqp_heatmap_pdf_path = os.path.join(
+                plots_dir, f"{clean_name}_iqp_heatmap.pdf")
+            fig2.savefig(iqp_heatmap_pdf_path, format='pdf', dpi=600,
+                         bbox_inches='tight', backend='pdf')
+            print(
+                f"Saved IQP heatmap PDF (high-quality): {iqp_heatmap_pdf_path}")
         else:
             print("Skipping IQP heatmap (no IQP waypoints available)")
 
@@ -564,6 +606,13 @@ def plot_map(map_info, plots_dir):
                 plots_dir, f"{clean_name}_sp_heatmap.png")
             fig3.savefig(sp_heatmap_path, dpi=300, bbox_inches='tight')
             print(f"Saved SP heatmap: {sp_heatmap_path}")
+            # Save high-quality PDF for thesis
+            sp_heatmap_pdf_path = os.path.join(
+                plots_dir, f"{clean_name}_sp_heatmap.pdf")
+            fig3.savefig(sp_heatmap_pdf_path, format='pdf', dpi=600,
+                         bbox_inches='tight', backend='pdf')
+            print(
+                f"Saved SP heatmap PDF (high-quality): {sp_heatmap_pdf_path}")
         else:
             print("Skipping SP heatmap (no SP waypoints available)")
 
