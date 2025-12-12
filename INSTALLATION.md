@@ -48,20 +48,23 @@ docker compose build sim_x86
 
 Then check that the following folder structure is existing:
 ```bash
-<race_stack directory>/../
+<race_stack directory>/
 ...
 ├── cache
-│   └── noetic
-│       ├── build
-│       ├── devel
-│       └── logs
+│   └── noetic
+│       ├── build
+│       ├── devel
+│       └── logs
 └ ...
 ```
 It can be created from the command line, for example:
 ```bash
 cd <race_stack folder>
-mkdir -p ../cache/noetic/build ../cache/noetic/devel ../cache/noetic/logs
+mkdir -p cache/noetic/build cache/noetic/devel cache/noetic/logs
 ```
+
+**Note for MacOS + LimaVM users**: If you are using MacOS with LimaVM and need the cache outside the workspace, use `.devcontainer/devcontainer.macos-lima.json` instead (rename it to `devcontainer.json`) and create the cache one directory up with `mkdir -p ../cache/noetic/{build,devel,logs}`.
+
 Then launch the devcontainer from VS Code
 
 To now test the simulator, launch the simulator with base system with the following command:

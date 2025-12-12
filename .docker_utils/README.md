@@ -29,26 +29,31 @@ docker compose build sim_x86
 ```
 This should take much less time, less than 1 minute.
 
-**Step 3/4**: Create  folder structure that resembles the following. Note that it is two folders up from the position of the `race_stack`.
+**Step 3/4**: Create  folder structure that resembles the following. Note that the cache is inside the `race_stack` directory.
 
 ```bash
-<race_stack directory>/../
+<race_stack directory>/
 ...
 ├── cache
-│   └── noetic
-│       ├── build
-│       ├── devel
-│       └── logs
+│   └── noetic
+│       ├── build
+│       ├── devel
+│       └── logs
 └ ...
 ```
 
 It can be done with the following command:
 ```bash
 cd <race_stack folder>
+mkdir -p cache/noetic/build cache/noetic/devel cache/noetic/logs
+```
+
+**Note for MacOS + LimaVM users**: If you are using MacOS with LimaVM, you may need to use the alternative devcontainer configuration that places the cache folder one directory up (outside the workspace). To use this configuration, rename `.devcontainer/devcontainer.macos-lima.json` to `.devcontainer/devcontainer.json` and create the cache structure one directory up:
+```bash
+cd <race_stack folder>
 mkdir -p ../cache/noetic/build ../cache/noetic/devel ../cache/noetic/logs
 ```
 
-**Note**: In case it is particularly problematic to create such a folder structure two parent directories up, it can also be created just one directoy up, but the cache mounting point must be changed in the devcontainer.json for the build, devel and log folder.  
 
 **Step 4/4**: Launch the VS Code devcontainer. This can be done by opening the race_stack folder in VS Code, launching the command palette with the shortcut `Ctrl`+`Shift`+`p`, and selecting `Dev Containers: Rebuild and Reopen in Container`. Make sure that the field `image` has the correct name of the simulator docker image that you want to use, name that can be found in the [`docker-compose.yaml`](../docker-compose.yaml) in the field `image`. In this case, it is `race_stack_sim_x86` .
 
@@ -70,26 +75,30 @@ export GID=$(id -g)
 docker compose build nuc
 ```
 
-**Step 3/4**: Create  folder structure that resembles the following. Note that it is two folders up from the position of the `race_stack`.
+**Step 3/4**: Create  folder structure that resembles the following. Note that the cache is inside the `race_stack` directory.
 
 ```bash
-<race_stack directory>/../
+<race_stack directory>/
 ...
 ├── cache
-│   └── noetic
-│       ├── build
-│       ├── devel
-│       └── logs
+│   └── noetic
+│       ├── build
+│       ├── devel
+│       └── logs
 └ ...
 ```
 
 It can be done with the following command:
 ```bash
 cd <race_stack folder>
-mkdir -p ../cache/noetic/build ../cache/noetic/devel ../cache/noetic/logs
+mkdir -p cache/noetic/build cache/noetic/devel cache/noetic/logs
 ```
 
-**Note**: In case it is particularly problematic to create such a folder structure two parent directories up, it can also be created just one directoy up, but the cache mounting point must be changed in the devcontainer.json for the build, devel and log folder.  
+**Note for MacOS + LimaVM users**: If you are using MacOS with LimaVM, you may need to use the alternative devcontainer configuration that places the cache folder one directory up (outside the workspace). To use this configuration, rename `.devcontainer/devcontainer.macos-lima.json` to `.devcontainer/devcontainer.json` and create the cache structure one directory up:
+```bash
+cd <race_stack folder>
+mkdir -p ../cache/noetic/build ../cache/noetic/devel ../cache/noetic/logs
+```
 
 **Step 4/4**: 
 Since we prefer to not launch the car nodes with a VS Code session attached to them, we will in this case use the scripts present in the folder [.docker_utils](../.docker_utils). First make sure that the environment variable `IMAGE` in the [`main_dock.sh`](./main_dock.sh) has the correct name of the car docker image that you want to use, name that can be found in the [`docker-compose.yaml`](../docker-compose.yaml) in the field `image`. In this case, it is `race_stack_nuc`.
