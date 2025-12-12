@@ -4,7 +4,7 @@
   "remoteUser": "${localEnv:USER}",
   "privileged": true,
   "initializeCommand": "/bin/bash -c 'mkdir -p ${localWorkspaceFolder}/../cache/noetic/{build,devel,logs} && mkdir -p /tmp/.X11-unix && sudo chmod 1777 /tmp/.X11-unix && export DISPLAY=:10.0 && xhost +local: 2>/dev/null || true'",
-  "image": "race_stack_sim_x86", // change name in case you are working on arm/on the car
+  "image": "race_stack_sim_arm", // change name in case you are working on arm/on the car
   "workspaceFolder": "/home/${localEnv:USER}/catkin_ws",
   "workspaceMount": "source=${localWorkspaceFolder},target=/home/${localEnv:USER}/catkin_ws/src/race_stack,type=bind",
   "customizations": {
@@ -43,7 +43,7 @@
     "--privileged"
   ],
   "mounts": [
-    "source=${localEnv:HOME}/.Xauthority,target=/tmp/.Xauthority,type=bind,consistency=cached",
+    "source=/home/atlas.linux/.Xauthority,target=/tmp/.Xauthority,type=bind,consistency=cached",
     "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
     "source=/dev,target=/dev,type=bind,consistency=cached",
     "source=${localWorkspaceFolder}/../cache/noetic/build,target=/home/${localEnv:USER}/catkin_ws/build,type=bind",
